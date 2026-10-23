@@ -1,69 +1,76 @@
-local-first app based on the webview
+# Noctis
 
-## tech stack
+A Material You client for YouTube Music, in the spirit of InnerTune / ArchiveTune, built
+with **Vue 3.5** and **Capacitor 8**.
 
-### desktop
+- **Home**: search bar on top, mood chips, and YouTube Music's own home rows (Quick picks,
+  "Similar to …", mixes, your playlists when signed in) with infinite scroll. Signed out,
+  on-device "Listen again" and downloads rows are added.
+- **Library**: liked songs, downloads, cached songs, recently played, your playlists and
+  your artists (from your account, or derived from local listening when signed out).
+- **Settings**: a list of rows, each opening its own screen: Account, Appearance,
+  Playback, Content, Storage, About.
+- **Player**: one surface that morphs between a floating mini player (cover, title,
+  artist, prev/play/next) and the full player. Drag it up or down, or swipe the mini player
+  sideways to skip. It has a queue with drag-to-reorder, and colours from the artwork.
+- **Predictive back**: on Android 14+ the back gesture's progress drives the transition
+  (the screen shrinks into a card and reveals the previous one; the player gets pulled
+  down). Releasing commits it, and swiping back cancels it.
 
-- Wails
-- TypeScript
-- Svelte 5
-- UnoCSS with presetWind3
-- TypeBox
-- https://github.com/kitschpatrol/svelte-tweakpane-ui
+## Quick start
 
-### mobile
+```sh
+nix develop
+npm install
+npm run dev          # http://localhost:5173
+```
 
-Probably Jetpack Compose with the Kotlin, but... do we really need it? There is plenty of options there, maybe we can either fork some app or abandon an idea for making a mobile app
+In the browser, InnerTune requests go through a small proxy in `vite.config.ts` (CORS,
+and Cookie/Origin headers browsers refuse to send). Dragging in from the left or right
+screen edge simulates the Android back gesture, so predictive back works there too.
 
-## plan
+### Android
 
-### yt-dlp
+```sh
+npm run sync                                   # build + cap sync
+cd android
+export ANDROID_HOME=$HOME/Android/Sdk
+steam-run ./gradlew assembleDebug              # NixOS: gradle's binaries need an FHS env
+```
 
-<details>
+## How it fits together
 
-Add a way to download music from the YouTube
+| Path | |
+| --- | --- |
+| `src/ytm/client.ts` | youtubei.js sessions, cookie sign-in, account info |
+| `src/ytm/http.ts` | fetch adapter: Capacitor native HTTP on device, Vite proxy in the browser |
+| `src/ytm/api.ts`, `parse.ts`, `models.ts` | home, search, albums, playlists, artists, queues, library, mapped to plain models |
+| `src/ytm/stream.ts`, `potoken.ts` | resolves audio stream URLs with BotGuard proof-of-origin tokens (see *Streaming*) |
+| `src/player.ts` | queue, shuffle/repeat, radio autoplay, offline-first sources, persisted queue |
+| `src/offline.ts` | downloads and the auto-trimmed cache (1 MB ranged chunks → app storage / Cache Storage) |
+| `src/library.ts` | on-device likes (mirrored to YouTube when signed in), history, search history |
+| `src/back.ts` | single back-handling stack: native predictive back, browser back, Escape, edge swipe |
+| `src/navigation.ts`, `components/ScreenStack.vue` | per-tab screen stacks; every screen is a layer, so back gestures can reveal the real previous screen |
+| `src/theme.ts` | OKLCH Material 3 schemes from wallpaper (Android 12+), album art or a preset |
+| `android/.../NoctisPlugin.java` | predictive back events, system accent colour, Google sign-in, cookie clearing |
+| `android/.../LoginActivity.java` | WebView sign-in at accounts.google.com; returns music.youtube.com cookies |
 
-**Current implementation idea:** tbd
+## Streaming
 
-**Results:** tbd
+googlevideo serves only the first ~1 MB of a stream unless the URL carries a
+proof-of-origin (`pot`) token. `src/ytm/potoken.ts` mints one per video the way
+InnerTune-style clients do: it loads Google's BotGuard challenge (from
+`jnn-pa.googleapis.com`), runs it in the page (the app is a real Chromium WebView), and
+exchanges the snapshot for an integrity token at `youtube.com/api/jnn/v1/GenerateIT`.
+`src/ytm/stream.ts` then uses the YouTube Music web client, deciphers the URL with the
+player script, and appends `&pot=`. BotGuard and the player script are pre-warmed shortly
+after launch.
 
-</details>
+Headless/automated browsers get a fallback token only (no integrity token). Run tests
+with `--disable-blink-features=AutomationControlled`.
 
-### music formats and conversion
+## Known gaps
 
-<details>
-
-Try to support as many file formats as possible, like FLAC, WAV, M4A, MP3, etc.
-
-Also implement a functionality to convert music formats locally
-
-**Current implementation idea:** tbd
-
-**Results:** tbd
-
-</details>
-
-### extensions
-
-<details>
-
-JS code can be dynamically fetched from somewhere and then executed with the `new Function(JS_CODE_AS_STRING)`. That is a key idea for implementing user plugin system. Plugins can communicate with the host app and each other through `window.postMessage`, and the variables can be shared using the `window` object. JS code can also handle applying CSS styles, adding DOM nodes, etc. Any fully CSR JS framework will work perfectly.
-
-The biggest concern here is the security. Even if the `new Function` can't access local variables and runs in a different scope (unlike `eval`), it still has a lot (and I mean really a lot) of other security issues. Executing an unknown code (especially with the access to the filesystem) is a **horrible** thing
-
-Unfortunately, if VSCode, Obsidian, Vencord and other apps can't implement a secure user plugin system, I won't be able to do it too. It's either functionality or security, not both
-
-**Current implementation idea:** An extension repository that hosts moderated plugin versions. Moderation will require only a source code and, if differs from usual, build manual. Plugins will run only once on application load, without blocking the main thread
-
-**Results:** custom elements, insane UI customization, etc.
-
-</details>
-
-## design
-
-tbd
-
-## testing
-
-- vitest
-- playwright
+- No native media service: no lock-screen/notification controls, and Android may stop
+  background playback when it reclaims the process.
+- Library pages (playlists/artists) load up to 6 continuation pages.
