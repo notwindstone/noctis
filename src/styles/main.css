@@ -102,10 +102,18 @@ textarea {
   color: inherit;
 }
 
-:focus-visible {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: 2px;
-  border-radius: var(--md-sys-shape-xs);
+/* Touch devices get no focus ring: Android's back key/gesture is a key event, so Chromium
+   flips into keyboard modality and rings whatever was last tapped. */
+:focus {
+  outline: none;
+}
+
+@media (pointer: fine) {
+  :focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+    border-radius: var(--md-sys-shape-xs);
+  }
 }
 
 p,
