@@ -6,14 +6,19 @@ dist/
 !.vscode/extensions.json
 
 # Android build output
-android/.gradle/
-android/app/build/
-android/build/
-android/local.properties
-android/.idea/
-android/app/src/main/assets/public/
-android/app/src/main/assets/capacitor.config.json
-android/app/src/main/assets/capacitor.plugins.json
+apps/client/android/.gradle/
+apps/client/android/app/build/
+apps/client/android/build/
+apps/client/android/local.properties
+apps/client/android/.idea/
+apps/client/android/app/src/main/assets/public/
+apps/client/android/app/src/main/assets/capacitor.config.json
+apps/client/android/app/src/main/assets/capacitor.plugins.json
 
-# Packed plugin archives (scripts/pack-plugin.mjs)
+# Server data (database, plugin cache, plugins) and settings
+apps/server/data/
+.env
+
+# Packed plugin archives (scripts/pack-plugin.mjs) and uploaded builds
 dist-plugins/
+builds/

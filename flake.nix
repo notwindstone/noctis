@@ -18,18 +18,20 @@
       devShells = eachSystem (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
+            bun
             nodejs_24
             git
           ];
 
           shellHook = ''
-            echo "noctis devshell — node $(node --version), npm $(npm --version)"
-            echo "  npm install       install JS dependencies"
-            echo "  npm run dev       start Vite at http://localhost:5173"
-            echo "  npm run typecheck run vue-tsc"
-            echo "  npm run build     build web assets into dist/"
-            echo "  npm run sync      build + copy assets into android/"
-            echo "  npm run android   build + sync + open Android Studio"
+            echo "noctis devshell — bun $(bun --version), node $(node --version)"
+            echo "  bun install            install every workspace's dependencies"
+            echo "  bun run dev            client: Vite at http://localhost:5173"
+            echo "  bun run dev:server     server: http://localhost:4747"
+            echo "  bun run typecheck      typecheck every workspace"
+            echo "  bun test               client-free tests (plugin core, server)"
+            echo "  bun run sync           build the client + copy it into apps/client/android"
+            echo "  bun run pack-plugin examples/plugins/<name>   pack a plugin"
             echo
             echo "Building an APK additionally needs the Android SDK / JDK 21,"
             echo "which this shell intentionally leaves out."

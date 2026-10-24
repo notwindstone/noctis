@@ -1,35 +1,26 @@
 {
   "name": "noctis",
   "private": true,
-  "version": "0.1.0",
   "type": "module",
-  "description": "A Material You night-sky companion built with Vue 3 and Capacitor",
+  "description": "A music client and server you can reshape with plugins",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "examples/plugins"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
-    "typecheck": "vue-tsc --noEmit",
-    "preview": "vite preview",
-    "sync": "npm run build && cap sync",
-    "android": "npm run sync && cap open android",
-    "pack-plugin": "node scripts/pack-plugin.mjs"
-  },
-  "dependencies": {
-    "@capacitor/android": "^8.5.3",
-    "@capacitor/app": "^8.1.2",
-    "@capacitor/core": "^8.5.3",
-    "@capacitor/filesystem": "^8.1.5",
-    "@capacitor/status-bar": "^8.0.4",
-    "@material-symbols/svg-400": "^0.48.1",
-    "fflate": "^0.8.3",
-    "vue": "^3.5.44"
+    "dev": "bun run --filter @noctis/client dev",
+    "dev:server": "bun run --filter @noctis/server dev",
+    "build": "bun run --filter @noctis/client build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun test",
+    "sync": "bun run --filter @noctis/client sync",
+    "pack-plugin": "bun scripts/pack-plugin.mjs"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.3",
     "@vitejs/plugin-vue": "^6.0.10",
-    "bgutils-js": "^4.0.3",
+    "fflate": "^0.8.3",
     "typescript": "~6.0.3",
-    "vite": "^8.3.5",
-    "vue-tsc": "^3.3.13",
-    "youtubei.js": "^18.3.0"
+    "vite": "^8.3.5"
   }
 }

@@ -1,8 +1,16 @@
 # Noctis
 
-A Material You music client, in the spirit of InnerTune / ArchiveTune, built with
-**Vue 3.5** and **Capacitor 8**. Music comes from plugins: the app ships with none, and
-YouTube Music is one you install (see [Quick start](#quick-start)).
+A music client and server you can reshape with plugins. Why, and where it's going:
+[docs/VISION.md](docs/VISION.md).
+
+- **Client** (`apps/client`): a Material You app built with **Vue 3.5** and
+  **Capacitor 8**, in the spirit of InnerTune / ArchiveTune. Music comes from plugins:
+  the app ships with none, and YouTube Music is one you install.
+- **Server** (`apps/server`): **Bun** + **Elysia 2**, extended with server plugins.
+  Like a modded Minecraft server, it can require clients to have matching plugins.
+- **Plugin core** (`packages/plugin-core`): the plugin system both share.
+
+The client:
 
 - **Home**: search bar on top, mood chips, and YouTube Music's own home rows (Quick picks,
   "Similar to …", mixes, your playlists when signed in) with infinite scroll. Signed out,
@@ -22,13 +30,24 @@ YouTube Music is one you install (see [Quick start](#quick-start)).
 
 ```sh
 nix develop
-npm install
-npm run dev          # http://localhost:5173
-npm run pack-plugin -- examples/plugins/youtube-music
+bun install
+bun run dev                                       # client: http://localhost:5173
+bun run pack-plugin examples/plugins/youtube-music
 ```
 
 Then install `dist-plugins/youtube-music.noctis` from **Settings → Plugins → Install from
 file**.
+
+The server, with the example plugin that needs both sides:
+
+```sh
+bun run pack-plugin examples/plugins/play-stats
+mkdir -p apps/server/data/plugins && cp dist-plugins/play-stats.noctis apps/server/data/plugins/
+bun run dev:server                                # http://localhost:4747
+```
+
+In the client, **Settings → Server → localhost:4747** connects, and offers to install the
+plugin the server requires. `bun test` runs the plugin core's and the server's tests.
 
 In the browser, InnerTune requests go through a small proxy in `vite.config.ts` (CORS,
 and Cookie/Origin headers browsers refuse to send). Dragging in from the left or right
@@ -37,8 +56,8 @@ screen edge simulates the Android back gesture, so predictive back works there t
 ### Android
 
 ```sh
-npm run sync                                   # build + cap sync
-cd android
+bun run sync                                   # build + cap sync
+cd apps/client/android
 export ANDROID_HOME=$HOME/Android/Sdk
 steam-run ./gradlew assembleDebug              # NixOS: gradle's binaries need an FHS env
 ```
@@ -47,10 +66,19 @@ steam-run ./gradlew assembleDebug              # NixOS: gradle's binaries need a
 
 | Path | |
 | --- | --- |
+| `packages/plugin-core/` | shared by client and server: manifests (`side`, dependencies, client requirements), archives, semver, load order, the hook engine, `PluginBase`, client–server negotiation |
+| `apps/server/src/plugins/` | server plugins: loading, `Plugin.routes()`, SQLite storage (see [docs/SERVER-PLUGINS.md](docs/SERVER-PLUGINS.md)) |
+| `apps/server/src/app.ts` | the HTTP API: info, handshake, plugin downloads, plugin routes, client-plugin enforcement |
+
+Client paths below are in `apps/client/`.
+
+| Path | |
+| --- | --- |
+| `src/server.ts`, `src/settings/server.ts` | connecting to a server, and installing the plugins it requires |
 | `src/models.ts` | plain models every screen uses (songs, albums, sections, pages…) |
 | `src/services/` | the service layer: `types.ts` (what a service provides), `registry.ts`, `api.ts` (routes every call to the item's or the active service, through the `onRequest` hook) |
 | `examples/plugins/youtube-music/` | YouTube Music, as a plugin built from TypeScript: youtubei.js sessions and sign-in (`client.ts`), native/proxied fetch (`http.ts`), endpoints (`api.ts`, `parse.ts`), streams with BotGuard tokens (`stream.ts`, `potoken.ts`) |
-| `src/plugins/` | the plugin system: runtime, hooks, component/action registries, settings rows (see [docs/PLUGINS.md](docs/PLUGINS.md)) |
+| `src/plugins/` | the client's side of the plugin system: runtime, hooks, component/action registries, settings rows (see [docs/PLUGINS.md](docs/PLUGINS.md)) |
 | `src/player.ts` | queue, shuffle/repeat, radio autoplay, offline-first sources, persisted queue |
 | `src/offline.ts` | downloads and the auto-trimmed cache (1 MB ranged chunks → app storage / Cache Storage) |
 | `src/library.ts` | on-device likes (mirrored to the service when it takes them), history, search history |

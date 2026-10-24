@@ -16,6 +16,14 @@ a plugin you install. Examples:
 - [`examples/plugins/youtube-music`](../examples/plugins/youtube-music) — YouTube Music:
   home, search, library, sign-in and playback. Written in TypeScript with npm packages
   (youtubei.js, BotGuard); see [Building from source](#building-from-source);
+- [`examples/plugins/liquid-glass`](../examples/plugins/liquid-glass) — a theme: an
+  iOS-style skin with a Liquid Glass tab bar and mini player (replaces `BottomNav`) and
+  CSS that repoints the Material colour roles at Apple's system colours. Glass from
+  [@sohumsuthar/liquid-glass](https://www.npmjs.com/package/@sohumsuthar/liquid-glass)'s
+  CSS and optics (its React components aren't used). For your own glass: no ancestor
+  of a `backdrop-filter` may have `transform`, `will-change`, `contain`, `opacity`
+  below 1, or a `mix-blend-mode` descendant in the same stacking context, or it blurs
+  nothing;
 - [`examples/plugins/spotify`](../examples/plugins/spotify) — a real service plugin:
   Spotify through the same GraphQL API its web player uses (session from a hidden web
   player, operation hashes read from its scripts), with audio matched on YouTube Music
@@ -45,10 +53,17 @@ type Metadata = {
   source?: string // e.g. the repository
   categories?: string[]
   languages?: string[] // ISO 639-1
+  side?: 'client' | 'server' | 'both' // default 'client'
+  dependencies?: Record<string, string> // plugin id → semver range, e.g. { "youtube-music": "^1.0.0" }
 }
 ```
 
-Pack a folder with `npm run pack-plugin -- path/to/folder` (writes
+Plugins whose `dependencies` are missing or the wrong version don't start; the log on
+their page says why. Plugins that run on the server, or on both sides, are covered in
+[SERVER-PLUGINS.md](SERVER-PLUGINS.md). Installing a "both" plugin in the app installs
+its client half.
+
+Pack a folder with `bun run pack-plugin path/to/folder` (writes
 `dist-plugins/<folder>.noctis`). Install it from **Settings → Plugins → Install from
 file** or **Install from URL**.
 
@@ -69,11 +84,11 @@ calls the default export of `src/index.ts` with `scopedThis`. `vue` and
 `@capacitor/core` aren't bundled; imports of them resolve to the app's own copies
 (`Noctis.packages.vue` and `Noctis.packages.capacitor`). Reach the app itself through
 `window.__NOCTIS__` (the same object as `scopedThis.Noctis`); `import type` from the
-app's `src/` is fine, since types are erased. See
+app's `apps/client/src/` is fine, since types are erased. See
 [`examples/plugins/youtube-music/src/host.ts`](../examples/plugins/youtube-music/src/host.ts).
 
 ```sh
-npm run pack-plugin -- examples/plugins/youtube-music   # dist-plugins/youtube-music.noctis
+bun run pack-plugin examples/plugins/youtube-music   # dist-plugins/youtube-music.noctis
 ```
 
 ## How code runs
@@ -185,8 +200,8 @@ required; leave out what a service can't do and the app hides or disables what n
 | `thumbnails` | `resize(url, px)` → URL or `undefined` if it isn't yours — **synchronous**, runs while rendering |
 | `account` | `{ signedIn, info, sessionKey, section?, signInTitle?, signInDescription?, refresh?() }` |
 
-The full types are in [`src/services/types.ts`](../src/services/types.ts) and
-[`src/models.ts`](../src/models.ts). Use getters for live values (`get signedIn()`,
+The full types are in [`apps/client/src/services/types.ts`](../apps/client/src/services/types.ts) and
+[`apps/client/src/models.ts`](../apps/client/src/models.ts). Use getters for live values (`get signedIn()`,
 even `get library()` to offer library endpoints only when signed in, as YouTube Music
 does) — as with settings rows, nothing needs rebuilding.
 
@@ -283,8 +298,15 @@ Plugin.restoreComponent('BottomNav')
 | Group | Entries |
 | --- | --- |
 | App shell | `ScreenStack`, `PlayerSheet`, `BottomNav`, `SheetHost`, `SnackbarHost` |
-| Building blocks | `TopAppBar`, `ItemRow`, `ItemCard`, `SectionView`, `SettingsRow` |
+| Sheets and player parts | `BottomSheet`, `DialogShell`, `QueuePanel`, `SeekBar` |
+| Building blocks | `TopAppBar`, `ItemRow`, `ItemCard`, `SectionView`, `SettingsRow`, `SettingsBlocks`, `CollectionView`, `StateView`, `RefreshIndicator`, `MIcon`, `Thumb` |
 | Screens | `HomeScreen`, `LibraryScreen`, `SettingsScreen`, `SearchScreen`, `AlbumScreen`, `PlaylistScreen`, `ArtistScreen`, `BrowseScreen`, `CollectionScreen`, `LibraryItemsScreen`, `SettingsPageScreen` |
+
+Every component the app uses goes through the registry, down to icons (`MIcon`) and
+artwork (`Thumb`), so a theme plugin can restyle all of it. Use them from `Noctis.C` in
+your own components too (`h(Noctis.C.MIcon, { name: 'music' })`), so they follow
+whatever replaced them. The only exceptions are the small widgets inside built-in
+settings pages (About, colour swatches, storage meter, plugin log).
 
 A name that isn't built in adds a new component. Screens receive `route`, `screenKey`
 and `isRoot` props; a registered screen opens with

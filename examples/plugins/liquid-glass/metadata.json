@@ -1,0 +1,13 @@
+{
+  "name": "Liquid Glass",
+  "version": "1.0.0",
+  "authors": [
+    "Noctis"
+  ],
+  "type": "unrestricted",
+  "description": "Turns Noctis into an iOS-style app: a floating Liquid Glass tab bar and mini player, iOS colours and typography, grouped lists and iOS controls. Glass by @sohumsuthar/liquid-glass.",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/liquid-glass",
+  "categories": [
+    "theme"
+  ]
+}

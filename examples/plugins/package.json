@@ -1,0 +1,11 @@
+{
+  "name": "@noctis/example-plugins",
+  "private": true,
+  "type": "module",
+  "description": "Example plugins. Pack one with `bun run pack-plugin examples/plugins/<name>`.",
+  "devDependencies": {
+    "@sohumsuthar/liquid-glass": "^3.1.0",
+    "bgutils-js": "^4.0.3",
+    "youtubei.js": "^18.3.0"
+  }
+}

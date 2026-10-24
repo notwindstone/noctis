@@ -88,6 +88,9 @@ function rememberMatch(trackId, song) {
   saveMatchesTimer = window.setTimeout(() => Plugin.storage.set('matches', matches.value), 500)
 }
 
+/** A URL without its query and fragment (they can carry one-time codes). */
+const redactUrl = (url) => String(url ?? '').replace(/[?#].*$/, (rest) => (rest.length > 1 ? '?…' : ''))
+
 const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 const settled = async (promise) => {
@@ -109,8 +112,29 @@ async function captureSession() {
   if (!auth.canCaptureWeb) {
     throw new Error('Spotify works in the Android app: it borrows the session of a hidden Spotify web player.')
   }
-  const { body } = await auth.captureWebResponse({ url: WEB_PLAYER, match: '/api/token', userAgent: DESKTOP_UA, timeoutMs: 40_000 })
-  const json = JSON.parse(body)
+  Plugin.log('[auth] Capturing a session from the hidden web player…')
+  const started = Date.now()
+  let captured
+  try {
+    captured = await auth.captureWebResponse({ url: WEB_PLAYER, match: '/api/token', userAgent: DESKTOP_UA, timeoutMs: 40_000 })
+  } catch (error) {
+    Plugin.error(`[auth] Capture failed after ${Date.now() - started} ms: ${error.message}`)
+    throw error
+  }
+  let json
+  try {
+    json = JSON.parse(captured.body)
+  } catch {
+    Plugin.error(`[auth] Token response isn't JSON (${captured.body.length} chars): ${captured.body.slice(0, 200)}`)
+    throw new Error("Spotify didn't hand out a session")
+  }
+  // Never log the token itself: only its shape.
+  Plugin.log(
+    `[auth] Captured ${redactUrl(captured.url)} in ${Date.now() - started} ms: ` +
+      `anonymous=${json.isAnonymous}, token=${json.accessToken ? `${json.accessToken.length} chars` : 'missing'}, ` +
+      `clientId=${json.clientId ?? '?'}, expires in ${json.accessTokenExpirationTimestampMs ? Math.round((json.accessTokenExpirationTimestampMs - Date.now()) / 60_000) : '?'} min, ` +
+      `other keys: ${Object.keys(json).filter((key) => !['accessToken', 'isAnonymous', 'clientId', 'accessTokenExpirationTimestampMs'].includes(key)).join(', ') || 'none'}`,
+  )
   if (!json.accessToken) throw new Error("Spotify didn't hand out a session")
   setSession({
     token: json.accessToken,
@@ -201,6 +225,9 @@ async function gql(name, variables, attempt = 0) {
     method: 'POST',
     headers: {
       authorization: `Bearer ${await accessToken({ fresh: attempt === 1 })}`,
+      // Without it, Android's HTTP client sends "Dalvik/…", which Spotify answers with
+      // 403 "Client/request not allowed".
+      'user-agent': DESKTOP_UA,
       'app-platform': 'WebPlayer',
       ...(known?.appVersion ? { 'spotify-app-version': known.appVersion } : {}),
       accept: 'application/json',
@@ -211,6 +238,14 @@ async function gql(name, variables, attempt = 0) {
 
   const json = typeof response.data === 'object' && response.data !== null ? response.data : {}
   const message = json.errors?.[0]?.message ?? ''
+  if (response.status >= 400 || !json.data) {
+    const body = typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? null)
+    Plugin.warn(
+      `[gql] ${name} (attempt ${attempt}) → HTTP ${response.status}; session anonymous=${session.value?.anonymous}, ` +
+        `appVersion=${known?.appVersion ?? 'none'}, hash ${known?.hashes?.[name] ? 'discovered' : 'built-in'}; ` +
+        `www-authenticate=${response.headers['www-authenticate'] ?? '-'}; body: ${body.slice(0, 300)}`,
+    )
+  }
   if (response.status === 401 && attempt === 0) return gql(name, variables, 1)
   if (/PersistedQueryNotFound/i.test(message) && attempt < 2) return gql(name, variables, 2)
   if (response.status === 429 && attempt < 3) {
@@ -229,6 +264,7 @@ async function refreshProfile() {
   if (session.value?.anonymous !== false) return null
   const data = await gql('profileAttributes', {})
   const profile = data?.me?.profile
+  Plugin.log(`[auth] Profile: ${profile ? `found (${profile.name ? 'has name' : 'no name'})` : `missing; data keys: ${Object.keys(data ?? {}).join(', ')}`}`)
   if (!profile) return null
   setMe({ id: profile.username ?? profile.uri, name: profile.name || profile.username, photo: largest(profile.avatar?.sources) })
   return me.value
@@ -239,24 +275,29 @@ async function signIn() {
     notify('Signing in to Spotify works in the Android app')
     return
   }
+  Plugin.log('[auth] Opening the Spotify sign-in window')
   try {
-    await auth.openAuthWindow({
+    const landed = await auth.openAuthWindow({
       url: `https://accounts.spotify.com/login?continue=${encodeURIComponent(WEB_PLAYER)}`,
       redirect: 'https://open.spotify.com',
       title: 'Sign in to Spotify',
     })
+    Plugin.log(`[auth] Sign-in window closed at ${redactUrl(landed)}`)
   } catch (error) {
+    Plugin.warn(`[auth] Sign-in window: ${error.message}`)
     if (!/cancel/i.test(error.message)) notify(error.message)
     return
   }
   try {
     const fresh = await captureSession()
     if (fresh.anonymous) {
+      Plugin.warn('[auth] Signed in, but the web player still handed out an anonymous session (no sign-in cookies?)')
       notify("Spotify didn't keep the sign-in; try again")
       return
     }
     await refreshProfile()
   } catch (error) {
+    Plugin.error(`[auth] Sign-in failed: ${error.message}`)
     notify(error.message)
     return
   }

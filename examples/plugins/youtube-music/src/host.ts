@@ -1,4 +1,4 @@
-import type { NoctisNamespace } from '../../../../src/plugins/namespace'
+import type { NoctisNamespace } from '../../../../apps/client/src/plugins/namespace'
 
 /**
  * The app, as this plugin sees it: `window.__NOCTIS__` (the same object as
@@ -8,7 +8,7 @@ import type { NoctisNamespace } from '../../../../src/plugins/namespace'
  */
 export const Noctis: NoctisNamespace = window.__NOCTIS__
 
-export type { PluginScope } from '../../../../src/plugins/runtime'
-export type { SettingsBlock } from '../../../../src/plugins/rows'
-export type { RadioSeed, ServiceDefinition } from '../../../../src/services/types'
-export type * from '../../../../src/models'
+export type { PluginScope } from '../../../../apps/client/src/plugins/runtime'
+export type { SettingsBlock } from '../../../../apps/client/src/plugins/rows'
+export type { RadioSeed, ServiceDefinition } from '../../../../apps/client/src/services/types'
+export type * from '../../../../apps/client/src/models'

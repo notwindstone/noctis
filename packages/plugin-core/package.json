@@ -1,0 +1,20 @@
+{
+  "name": "@noctis/plugin-core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The plugin system shared by the Noctis client and server: manifests, archives, versions, dependencies, hooks and client–server negotiation",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}

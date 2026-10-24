@@ -1,0 +1,21 @@
+{
+  "name": "@noctis/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Noctis server: Bun + Elysia, extended with server plugins",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@noctis/plugin-core": "workspace:*",
+    "elysia": "2.0.0-rc.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "typescript": "~6.0.3"
+  }
+}

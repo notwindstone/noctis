@@ -1,0 +1,708 @@
+/* ------------------------------------------------------------------ *
+ * Liquid Glass: iOS look for Noctis. Everything is scoped to html.lg-ios,
+ * which the plugin adds while it's on.
+ * ------------------------------------------------------------------ */
+
+/* Colour roles. The app's CSS is written against Material roles; pointing them at
+   Apple's system colours restyles every screen at once. `!important` because the app
+   writes its generated scheme inline on <html>. */
+html.lg-ios[data-theme='dark'] {
+  --ios-accent: var(--ios-accent-dark, #fa2d48);
+  --ios-bg: #000000;
+  --ios-grouped-bg: #000000;
+  --ios-cell: #1c1c1e;
+  --ios-cell-pressed: #2c2c2e;
+  --ios-fill: rgb(118 118 128 / 0.24);
+  --ios-label: #ffffff;
+  --ios-secondary-label: rgb(235 235 245 / 0.6);
+  --ios-separator: rgb(84 84 88 / 0.6);
+  --ios-switch-on: #30d158;
+  --ios-red: #ff453a;
+  --ios-chrome: rgb(22 22 24 / 0.72);
+
+  --md-sys-color-surface-container-lowest: #000000 !important;
+  --md-sys-color-surface-container-low: #1c1c1e !important;
+  --md-sys-color-surface-container: #1c1c1e !important;
+  --md-sys-color-surface-container-high: #2c2c2e !important;
+  --md-sys-color-surface-container-highest: #3a3a3c !important;
+  --md-sys-color-outline: #8e8e93 !important;
+  --md-sys-color-outline-variant: #38383a !important;
+  --md-sys-color-inverse-surface: #f2f2f7 !important;
+  --md-sys-color-inverse-on-surface: #000000 !important;
+}
+
+html.lg-ios[data-theme='light'] {
+  --ios-accent: var(--ios-accent-light, #fa233b);
+  --ios-bg: #ffffff;
+  --ios-grouped-bg: #f2f2f7;
+  --ios-cell: #ffffff;
+  --ios-cell-pressed: #e5e5ea;
+  --ios-fill: rgb(118 118 128 / 0.12);
+  --ios-label: #000000;
+  --ios-secondary-label: rgb(60 60 67 / 0.6);
+  --ios-separator: rgb(60 60 67 / 0.29);
+  --ios-switch-on: #34c759;
+  --ios-red: #ff3b30;
+  --ios-chrome: rgb(249 249 249 / 0.78);
+
+  --md-sys-color-surface-container-lowest: #ffffff !important;
+  --md-sys-color-surface-container-low: #f2f2f7 !important;
+  --md-sys-color-surface-container: #f2f2f7 !important;
+  --md-sys-color-surface-container-high: #e5e5ea !important;
+  --md-sys-color-surface-container-highest: #d1d1d6 !important;
+  --md-sys-color-outline: #8e8e93 !important;
+  --md-sys-color-outline-variant: #c6c6c8 !important;
+  --md-sys-color-inverse-surface: #1c1c1e !important;
+  --md-sys-color-inverse-on-surface: #ffffff !important;
+}
+
+html.lg-ios {
+  --md-sys-color-primary: var(--ios-accent) !important;
+  --md-sys-color-on-primary: #ffffff !important;
+  --md-sys-color-primary-container: color-mix(in srgb, var(--ios-accent) 22%, var(--ios-cell)) !important;
+  --md-sys-color-on-primary-container: var(--ios-accent) !important;
+  --md-sys-color-secondary: var(--ios-secondary-label) !important;
+  --md-sys-color-secondary-container: var(--ios-fill) !important;
+  --md-sys-color-on-secondary-container: var(--ios-accent) !important;
+  --md-sys-color-tertiary: #ff9f0a !important;
+  --md-sys-color-surface: var(--ios-bg) !important;
+  --md-sys-color-on-surface: var(--ios-label) !important;
+  --md-sys-color-on-surface-variant: var(--ios-secondary-label) !important;
+  --md-sys-color-error: var(--ios-red) !important;
+
+  --md-sys-motion-easing: cubic-bezier(0.32, 0.72, 0, 1);
+  --md-sys-motion-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
+
+  /* The floating tab bar: 62px capsule plus its margins. (--mini-height stays: the
+     player lays the mini player out at 64px.) */
+  --nav-height: 86px;
+}
+
+/* Typography: San Francisco where it exists, the closest system face elsewhere, with
+   SF's tighter tracking on large text. */
+html.lg-ios body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, 'Roboto Flex', Roboto, sans-serif;
+  letter-spacing: -0.2px;
+  -webkit-font-smoothing: antialiased;
+}
+
+html.lg-ios .type-display-small,
+html.lg-ios .type-headline-large,
+html.lg-ios .type-headline-medium {
+  font-size: 34px;
+  line-height: 41px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+html.lg-ios .type-headline-small,
+html.lg-ios .type-title-large,
+html.lg-ios .section-title {
+  font-weight: 700;
+  letter-spacing: -0.4px;
+}
+
+html.lg-ios .screen-headline {
+  padding: 8px 20px 12px;
+}
+
+/* ---------------- Glass ---------------- */
+
+/* The library turns lensing off on touch screens; the Refraction setting turns it back on. */
+html.lg-ios.lg-refract .liquid-glass {
+  --lg-refract: url(#lg-refract-sm);
+}
+
+html.lg-ios.lg-refract .lg-macro {
+  --lg-refract: url(#lg-refract);
+}
+
+/* The library's grain (::before) and hover glow (::after) use mix-blend-mode. Inside the
+   tab bar's stacking context (fixed, z-indexed) that makes Chromium render the bar as an
+   isolated group, and the blur layer then has no backdrop: the glass comes out sharp.
+   Plain alpha looks the same at these opacities. */
+html.lg-ios .liquid-glass::before,
+html.lg-ios .liquid-glass::after {
+  mix-blend-mode: normal;
+}
+
+/* The blur layer relies on its parent's rounded overflow clip, which Chromium doesn't
+   apply to a backdrop-filtered, SVG-filtered layer: it renders as a dark rectangle
+   past the rounded corners. Rounding the layer itself fixes it. */
+html.lg-ios .liquid-glass-effect,
+html.lg-ios .liquid-glass-tint {
+  border-radius: inherit;
+}
+
+/* Tab bar: a glass capsule with the tabs, and a glass circle for search. */
+html.lg-ios .lg-tabbar {
+  position: fixed;
+  right: 0;
+  left: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  height: calc(var(--nav-height) + var(--safe-bottom));
+  padding: 0 16px calc(var(--safe-bottom) + 14px);
+  /* The app's .bottom-nav is opaque and has will-change: transform, which would make
+     it a backdrop root: the glass inside would have nothing to refract. */
+  background: none;
+  will-change: auto;
+  pointer-events: none;
+}
+
+html.lg-ios .lg-tabbar > * {
+  pointer-events: auto;
+}
+
+html.lg-ios .lg-tabbar-tabs {
+  flex: 1;
+  height: 62px;
+  --lg-radius: 31px;
+}
+
+html.lg-ios .lg-tabbar-row {
+  position: relative;
+  display: flex;
+  height: 62px;
+  padding: 4px;
+}
+
+/* Capsules must be round, not squircles: at a radius of half the height a squircle
+   comes out as a rounded rectangle, and its blur layer isn't clipped to that shape. */
+html.lg-ios .lg-tabbar .liquid-glass,
+html.lg-ios .lg-mini-glass {
+  corner-shape: round;
+}
+
+/* The selected tab's glass pill. It moves with `left`, not `transform`: a transformed
+   glass element has no backdrop to blur. The overshooting curve gives iOS's bounce. */
+html.lg-ios .liquid-glass.lg-tab-pill {
+  --pill-w: calc((100% - 8px) / var(--lg-tabs));
+  --lg-radius: 27px;
+  --lg-blur: 4px;
+  --lg-brightness: 1.15;
+  --lg-saturate: 160%;
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: var(--pill-w);
+  box-shadow: 0 2px 10px -2px rgb(0 0 0 / 0.3);
+  pointer-events: none;
+  transition: left 0.5s cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+
+html.lg-ios .lg-tab-pill > .liquid-glass-tint {
+  background: rgb(255 255 255 / 0.12);
+}
+
+html:not(.dark).lg-ios .lg-tab-pill > .liquid-glass-tint {
+  background: rgb(255 255 255 / 0.55);
+}
+
+/* Liquid stretch while travelling: wider mid-move, settling back with the bounce. */
+html.lg-ios .lg-tab-pill.is-moving {
+  animation: lg-pill-stretch 0.5s cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+@keyframes lg-pill-stretch {
+  0% {
+    width: var(--pill-w);
+    margin-left: 0;
+  }
+  35% {
+    width: calc(var(--pill-w) * 1.22);
+    margin-left: calc(var(--pill-w) * -0.11);
+  }
+  100% {
+    width: var(--pill-w);
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.lg-ios .liquid-glass.lg-tab-pill {
+    transition-duration: 0.01s;
+  }
+  html.lg-ios .lg-tab-pill.is-moving {
+    animation: none;
+  }
+}
+
+html.lg-ios .lg-tab {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 27px;
+  color: var(--ios-label);
+  transition:
+    background-color 0.25s var(--md-sys-motion-easing),
+    color 0.25s ease;
+}
+
+html.lg-ios .lg-tab.is-active {
+  color: var(--ios-accent);
+}
+
+html.lg-ios .lg-tab-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+
+html.lg-ios .lg-tabbar-search {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 62px;
+  height: 62px;
+  --lg-radius: 31px;
+  color: var(--ios-label);
+}
+
+html.lg-ios .lg-tabbar-search > .liquid-glass-content {
+  display: grid;
+  place-items: center;
+}
+
+/* Glass under the mini player, matching the rectangle the player draws it in. */
+html.lg-ios .lg-mini-glass {
+  position: fixed;
+  right: 10px;
+  bottom: calc(var(--nav-height) + var(--safe-bottom) + 8px);
+  left: 10px;
+  z-index: 34;
+  height: var(--mini-height);
+  --lg-radius: 28px;
+  pointer-events: none;
+}
+
+/* ---------------- Player ---------------- */
+
+/* Collapsed, the frame is see-through so the glass underneath shows; its tint (whose
+   opacity follows the expansion) becomes the full player's background. */
+html.lg-ios .player-backdrop {
+  background: transparent;
+}
+
+html.lg-ios .player-backdrop-tint {
+  background:
+    radial-gradient(130% 80% at 50% 0%, color-mix(in oklab, var(--md-sys-color-primary-container) 85%, transparent), transparent 80%),
+    var(--ios-grouped-bg);
+}
+
+html.lg-ios .mini-player {
+  background: transparent;
+  border-radius: 28px;
+  padding: 0 8px 0 6px;
+}
+
+html.lg-ios .mini-player-art {
+  border-radius: 10px;
+}
+
+html.lg-ios .mini-play {
+  background: transparent;
+  color: var(--ios-label);
+}
+
+html.lg-ios .mini-progress {
+  display: none;
+}
+
+html.lg-ios .full-player-art .thumb {
+  border-radius: 12px;
+  box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.55);
+}
+
+html.lg-ios .play-button,
+html.lg-ios .play-button.is-playing {
+  background: transparent;
+  color: var(--ios-label);
+  box-shadow: none;
+}
+
+html.lg-ios .play-button .m-icon {
+  width: 48px;
+  height: 48px;
+}
+
+html.lg-ios .control-button {
+  background: transparent;
+  color: var(--ios-label);
+}
+
+html.lg-ios .control-button .m-icon {
+  width: 36px;
+  height: 36px;
+}
+
+/* Seek bar: a thin capsule, no handle. The inactive part runs the full width under the
+   active one, closing the gaps the Material handle leaves. */
+html.lg-ios .seek-active,
+html.lg-ios .seek-inactive {
+  height: 6px;
+  border-radius: 3px;
+}
+
+html.lg-ios .seek-track:active .seek-active,
+html.lg-ios .seek-track:active .seek-inactive {
+  height: 12px;
+  border-radius: 6px;
+}
+
+html.lg-ios .seek-active {
+  z-index: 1;
+  background: color-mix(in srgb, var(--ios-label) 85%, transparent);
+}
+
+html.lg-ios .seek-inactive {
+  left: 0 !important;
+  background: color-mix(in srgb, var(--ios-label) 22%, transparent);
+}
+
+html.lg-ios .seek-handle {
+  display: none;
+}
+
+/* ---------------- Top bars ---------------- */
+
+html.lg-ios .top-bar.is-scrolled,
+html.lg-ios .home-top {
+  background: var(--ios-chrome);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: 0 0.5px 0 var(--ios-separator);
+}
+
+html.lg-ios .top-bar .icon-button {
+  color: var(--ios-accent);
+}
+
+html.lg-ios .search-bar {
+  height: 40px;
+  padding: 0 12px;
+  gap: 8px;
+  border-radius: 12px;
+  background: var(--ios-fill);
+  color: var(--ios-secondary-label);
+  font-size: 17px;
+}
+
+html.lg-ios .avatar-button {
+  color: var(--ios-accent);
+}
+
+/* ---------------- Chips and buttons ---------------- */
+
+html.lg-ios .chip {
+  height: 32px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ios-fill);
+  color: var(--ios-label);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+html.lg-ios .chip[aria-pressed='true'],
+html.lg-ios .chip.is-selected {
+  background: var(--ios-label);
+  color: var(--ios-bg);
+}
+
+html.lg-ios .filled-button,
+html.lg-ios .tonal-button {
+  height: 44px;
+  border-radius: 22px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+
+html.lg-ios .tonal-button {
+  background: var(--ios-fill);
+  color: var(--ios-accent);
+}
+
+html.lg-ios .text-button {
+  color: var(--ios-accent);
+  font-size: 17px;
+  font-weight: 400;
+}
+
+html.lg-ios .icon-button:active:not(:disabled) {
+  background: var(--ios-fill);
+}
+
+/* ---------------- Lists ---------------- */
+
+html.lg-ios .thumb-rounded {
+  border-radius: 8px;
+}
+
+html.lg-ios .item-card-art {
+  border-radius: 10px;
+}
+
+html.lg-ios .item-row-title {
+  font-size: 16px;
+}
+
+/* Settings: inset grouped lists, as in the Settings app. */
+html.lg-ios .screen-layer:has(.settings-group) {
+  background: var(--ios-grouped-bg);
+}
+
+html.lg-ios .settings-group {
+  gap: 0;
+  margin: 0 16px 24px;
+  overflow: hidden;
+  border-radius: 26px;
+  background: var(--ios-cell);
+}
+
+html.lg-ios .settings-group > * {
+  border-radius: 0;
+  background: transparent;
+}
+
+html.lg-ios .settings-row {
+  position: relative;
+  gap: 14px;
+  min-height: 52px;
+  padding: 8px 16px;
+}
+
+html.lg-ios .settings-group > * + * .settings-row::before,
+html.lg-ios .settings-group > .settings-row + .settings-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 60px;
+  height: 0.5px;
+  background: var(--ios-separator);
+}
+
+html.lg-ios .settings-row:active:not(:disabled) {
+  background: var(--ios-cell-pressed);
+}
+
+html.lg-ios .settings-row-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--ios-accent);
+  color: #ffffff;
+}
+
+/* A different system colour per row, cycling, as in the Settings app. */
+html.lg-ios .settings-group > :nth-child(8n + 2) .settings-row-icon { background: #8e8e93; }
+html.lg-ios .settings-group > :nth-child(8n + 3) .settings-row-icon { background: #ff2d55; }
+html.lg-ios .settings-group > :nth-child(8n + 4) .settings-row-icon { background: #007aff; }
+html.lg-ios .settings-group > :nth-child(8n + 5) .settings-row-icon { background: #34c759; }
+html.lg-ios .settings-group > :nth-child(8n + 6) .settings-row-icon { background: #ff9500; }
+html.lg-ios .settings-group > :nth-child(8n + 7) .settings-row-icon { background: #5856d6; }
+html.lg-ios .settings-group > :nth-child(8n + 8) .settings-row-icon { background: #00c7be; }
+
+html.lg-ios .settings-row-icon .m-icon {
+  width: 20px;
+  height: 20px;
+}
+
+html.lg-ios .settings-row-text > .type-body-large {
+  font-size: 17px;
+  letter-spacing: -0.4px;
+}
+
+html.lg-ios .settings-row-text > .muted {
+  font-size: 13px;
+  letter-spacing: -0.1px;
+}
+
+html.lg-ios .settings-row.is-destructive,
+html.lg-ios .settings-row.is-destructive .settings-row-icon {
+  color: var(--ios-red);
+}
+
+html.lg-ios .settings-row.is-destructive .settings-row-icon {
+  background: color-mix(in srgb, var(--ios-red) 18%, transparent);
+}
+
+html.lg-ios .settings-row-chevron {
+  width: 18px;
+  height: 18px;
+  color: var(--ios-secondary-label);
+  opacity: 0.6;
+}
+
+html.lg-ios .settings-subheader {
+  padding: 4px 36px 8px;
+  color: var(--ios-secondary-label);
+  font-size: 13px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+html.lg-ios .settings-note {
+  padding: 0 36px 24px;
+  margin-top: -16px;
+  color: var(--ios-secondary-label);
+  font-size: 13px;
+}
+
+html.lg-ios .account-card {
+  border-radius: 26px;
+  background: var(--ios-cell);
+  color: var(--ios-label);
+}
+
+html.lg-ios .account-card-icon {
+  background: var(--ios-fill);
+  color: var(--ios-secondary-label);
+}
+
+html.lg-ios .library-tile {
+  border-radius: 18px;
+  background: var(--md-sys-color-surface-container);
+}
+
+/* iOS switch: 51×31, green, white knob with a soft shadow. */
+html.lg-ios .switch {
+  width: 51px;
+  height: 31px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ios-fill);
+}
+
+html.lg-ios .switch > span {
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  background: #ffffff;
+  box-shadow:
+    0 3px 8px rgb(0 0 0 / 0.15),
+    0 3px 1px rgb(0 0 0 / 0.06);
+}
+
+html.lg-ios .switch > span .m-icon {
+  display: none;
+}
+
+html.lg-ios .switch.is-on {
+  background: var(--ios-switch-on);
+}
+
+html.lg-ios .switch.is-on > span {
+  left: 22px;
+  width: 27px;
+  height: 27px;
+  background: #ffffff;
+}
+
+/* ---------------- Sheets, alerts, snackbars ---------------- */
+
+html.lg-ios .sheet-panel {
+  right: 8px;
+  bottom: calc(var(--safe-bottom) + 8px);
+  left: 8px;
+  padding-bottom: 8px;
+  border-radius: 34px;
+  background: var(--ios-chrome);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.08), 0 20px 40px -12px rgb(0 0 0 / 0.5);
+  contain: none;
+}
+
+html.lg-ios .sheet-handle {
+  width: 36px;
+  height: 5px;
+  margin: 8px auto 10px;
+  border-radius: 3px;
+  background: var(--ios-secondary-label);
+  opacity: 0.5;
+}
+
+html.lg-ios .menu-item {
+  gap: 16px;
+  min-height: 50px;
+  color: var(--ios-label);
+  font-size: 17px;
+}
+
+html.lg-ios .menu-item .m-icon {
+  color: var(--ios-accent);
+}
+
+html.lg-ios .dialog {
+  width: min(calc(100% - 64px), 300px);
+  padding: 20px 0 0;
+  border-radius: 26px;
+  background: var(--ios-chrome);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  text-align: center;
+}
+
+html.lg-ios .dialog-title {
+  padding: 0 16px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+html.lg-ios .dialog-description {
+  padding: 2px 16px 0;
+  font-size: 13px;
+}
+
+html.lg-ios .dialog-actions {
+  justify-content: stretch;
+  gap: 0;
+  margin-top: 16px;
+  padding: 0;
+  border-top: 0.5px solid var(--ios-separator);
+}
+
+html.lg-ios .dialog-actions > button {
+  flex: 1;
+  height: 44px;
+  border-radius: 0;
+}
+
+html.lg-ios .dialog-actions > button + button {
+  border-left: 0.5px solid var(--ios-separator);
+}
+
+html.lg-ios .snackbar {
+  border-radius: 22px;
+  background: var(--ios-chrome);
+  color: var(--ios-label);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: 0 0 0 0.5px var(--ios-separator), 0 12px 32px -8px rgb(0 0 0 / 0.45);
+}
+
+html.lg-ios .snackbar .text-button {
+  color: var(--ios-accent);
+}
+
+html.lg-ios .text-field {
+  border: 0;
+  border-radius: 10px;
+  background: var(--ios-fill);
+}
+
+/* The focus ring is still there for keyboards; just in the accent colour. */
+html.lg-ios :focus-visible {
+  outline-color: var(--ios-accent);
+}

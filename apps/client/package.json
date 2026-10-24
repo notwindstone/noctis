@@ -1,0 +1,33 @@
+{
+  "name": "@noctis/client",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "The Noctis app: Vue 3 + Capacitor",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "preview": "vite preview",
+    "sync": "bun run build && cap sync",
+    "android": "bun run sync && cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/status-bar": "^8.0.4",
+    "@material-symbols/svg-400": "^0.48.1",
+    "fflate": "^0.8.3",
+    "vue": "^3.5.44",
+    "@noctis/plugin-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.5",
+    "vue-tsc": "^3.3.13"
+  }
+}

@@ -4,7 +4,8 @@ import { account, canSignInNatively, signedIn, signInWithGoogle } from './client
 import { Noctis } from './host'
 
 const { notify } = Noctis.libs.snackbar
-const { MIcon, Thumb } = Noctis.components
+// Through the registry, so a plugin replacing them (e.g. a theme) applies here too.
+const { C } = Noctis
 
 const signingIn = ref(false)
 
@@ -23,19 +24,19 @@ async function googleSignIn() {
 
 <template>
   <div v-if="signedIn" class="account-hero">
-    <Thumb :src="account?.photo" :size="88" shape="circle" icon="account" />
+    <C.Thumb :src="account?.photo" :size="88" shape="circle" icon="account" />
     <strong class="type-title-large">{{ account?.name ?? 'Signed in' }}</strong>
     <span v-if="account?.handle" class="type-body-medium muted">{{ account.handle }}</span>
   </div>
   <div v-else class="account-hero">
-    <span class="account-card-icon large"><MIcon name="account" :size="48" /></span>
+    <span class="account-card-icon large"><C.MIcon name="account" :size="48" /></span>
     <strong class="type-title-large">Not signed in</strong>
     <span class="type-body-medium muted account-hero-note">
       Sign in to bring your YouTube Music library, liked songs and personal mixes. Without an account, Noctis still
       works: likes, history and downloads stay on this device.
     </span>
     <button v-if="canSignInNatively" class="filled-button large" type="button" :disabled="signingIn" @click="googleSignIn">
-      <MIcon name="login" />
+      <C.MIcon name="login" />
       Sign in with Google
     </button>
     <p v-else class="type-body-small muted account-hero-note">
