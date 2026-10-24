@@ -148,12 +148,13 @@ h3 {
   flex: none;
   width: 48px;
   height: 48px;
-  border-radius: var(--md-sys-shape-full);
+  /* 50%, not 999px: morphing to a rounded square then interpolates visibly and evenly. */
+  border-radius: 50%;
   color: var(--md-sys-color-on-surface-variant);
   transition:
     background-color 0.15s ease,
     color 0.15s ease,
-    border-radius 0.3s var(--md-sys-motion-spring),
+    border-radius 0.3s var(--md-sys-motion-easing),
     transform 0.15s ease;
 }
 
@@ -195,13 +196,13 @@ h3 {
   flex: none;
   height: 40px;
   padding: 0 24px;
-  border-radius: var(--md-sys-shape-full);
+  border-radius: 20px;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.1px;
   transition:
     background-color 0.2s ease,
-    border-radius 0.3s var(--md-sys-motion-spring),
+    border-radius 0.3s var(--md-sys-motion-easing),
     transform 0.15s ease,
     opacity 0.2s ease;
 }
@@ -219,6 +220,7 @@ h3 {
 .filled-button.large,
 .tonal-button.large {
   height: 56px;
+  border-radius: 28px;
   padding: 0 28px;
   font-size: 16px;
 }
@@ -314,6 +316,15 @@ h3 {
   color: var(--md-sys-color-on-surface-variant);
   font-size: 14px;
   font-weight: 500;
+}
+
+.chip-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
 }
 
 .chip-button.is-active {
@@ -765,10 +776,6 @@ h3 {
   transform: scale(0.96);
 }
 
-.item-card.is-wide .item-card-art {
-  aspect-ratio: 16 / 9;
-}
-
 .item-card.is-artist {
   align-items: center;
   text-align: center;
@@ -981,6 +988,39 @@ h3 {
 
 .state-error .state-icon {
   color: var(--md-sys-color-error);
+}
+
+.refresh-indicator {
+  position: absolute;
+  top: calc(var(--safe-top) + 68px);
+  left: 50%;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-primary);
+  box-shadow: var(--md-sys-elevation-2);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transition:
+    transform 0.32s var(--md-sys-motion-easing),
+    opacity 0.2s ease;
+}
+
+.refresh-indicator.is-dragging {
+  transition: none;
+}
+
+.refresh-arc {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: conic-gradient(currentColor calc(var(--p) * 360deg), transparent 0);
+  mask: radial-gradient(circle, transparent 8px, #000 8.5px);
 }
 
 .infinite-sentinel {
@@ -1295,7 +1335,7 @@ h3 {
   text-align: left;
   transition:
     transform 0.2s var(--md-sys-motion-spring),
-    border-radius 0.3s var(--md-sys-motion-spring);
+    border-radius 0.3s var(--md-sys-motion-easing);
 }
 
 .library-tile:active {
@@ -1422,6 +1462,11 @@ h3 {
   min-width: 0;
 }
 
+/* Values like URLs or hashes have no natural break points; wrap them anyway. */
+.settings-row-text > span {
+  overflow-wrap: anywhere;
+}
+
 .settings-row.is-destructive,
 .settings-row.is-destructive .settings-row-icon {
   color: var(--md-sys-color-error);
@@ -1539,7 +1584,7 @@ h3 {
   color: #fff;
   transition:
     transform 0.2s var(--md-sys-motion-spring),
-    border-radius 0.3s var(--md-sys-motion-spring);
+    border-radius 0.3s var(--md-sys-motion-easing);
 }
 
 .seed-swatch[aria-pressed='true'] {
@@ -1551,6 +1596,59 @@ h3 {
 
 .seed-swatch:active {
   transform: scale(0.9);
+}
+
+.plugin-log {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 16px 16px;
+  padding: 12px;
+  border-radius: 20px;
+  background: var(--md-sys-color-surface-container);
+}
+
+.plugin-log-empty {
+  padding: 4px;
+}
+
+.plugin-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-height: 60dvh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  font-family: ui-monospace, 'Roboto Mono', monospace;
+  font-size: 12px;
+  line-height: 16px;
+  user-select: text;
+}
+
+.plugin-log-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: var(--md-sys-color-surface-container-high);
+  overflow-wrap: anywhere;
+}
+
+.plugin-log-meta {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.plugin-log-entry.is-warn .plugin-log-message {
+  color: var(--md-sys-color-tertiary);
+}
+
+.plugin-log-entry.is-error .plugin-log-message {
+  color: var(--md-sys-color-error);
 }
 
 .storage-meter {
@@ -1870,22 +1968,29 @@ h3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
   margin: 12px -6px 20px;
+  /* Buttons are sized in cqi (percent of this row) and capped at their full size, so
+     narrow phones get proportionally smaller controls instead of clipped ones. */
+  container-type: inline-size;
+}
+
+.full-player-controls .icon-button.large {
+  width: min(56px, 13cqi);
+  height: min(56px, 13cqi);
 }
 
 .control-button {
   display: grid;
   place-items: center;
   flex: none;
-  width: 64px;
-  height: 64px;
+  width: min(64px, 16cqi);
+  height: min(64px, 16cqi);
   border-radius: 22px;
   background: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
   transition:
     transform 0.2s var(--md-sys-motion-spring),
-    border-radius 0.3s var(--md-sys-motion-spring);
+    border-radius 0.3s var(--md-sys-motion-easing);
 }
 
 .control-button:active {
@@ -1899,20 +2004,20 @@ h3 {
   display: grid;
   place-items: center;
   flex: none;
-  width: 96px;
-  height: 80px;
+  width: min(96px, 24cqi);
+  height: min(80px, 20cqi);
   border-radius: 26px;
   background: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
   box-shadow: var(--md-sys-elevation-2);
   transition:
-    border-radius 0.45s var(--md-sys-motion-spring),
+    border-radius 0.45s var(--md-sys-motion-easing),
     width 0.45s var(--md-sys-motion-spring),
     transform 0.2s var(--md-sys-motion-spring);
 }
 
 .play-button.is-playing {
-  width: 104px;
+  width: min(104px, 26cqi);
   border-radius: 40px;
 }
 
@@ -1924,23 +2029,6 @@ h3 {
   display: flex;
   justify-content: center;
   gap: 12px;
-}
-
-@media (max-width: 360px) {
-  .control-button {
-    width: 54px;
-    height: 54px;
-  }
-
-  .play-button {
-    width: 80px;
-    height: 68px;
-  }
-
-  .full-player-controls .icon-button.large {
-    width: 44px;
-    height: 44px;
-  }
 }
 
 @media (max-height: 640px) {
@@ -2029,6 +2117,26 @@ h3 {
   background: var(--md-sys-color-surface-container-low);
   box-shadow: 0 -8px 32px rgb(0 0 0 / 0.3);
   animation: sheet-up 0.38s var(--md-sys-motion-emphasized-decel);
+  transition: transform 0.25s var(--md-sys-motion-easing);
+  will-change: transform;
+  contain: layout paint;
+}
+
+.queue-panel.is-dragging {
+  transition: none;
+}
+
+/* Closing slides down from wherever the panel is (e.g. mid-drag). */
+.queue-panel-leave-active {
+  transition: transform 0.24s cubic-bezier(0.3, 0, 0.8, 0.15);
+}
+
+.queue-panel-leave-to {
+  transform: translate3d(0, 100%, 0) !important;
+}
+
+.queue-list.is-settling .queue-row {
+  transition: none;
 }
 
 .queue-header {
@@ -2061,6 +2169,7 @@ h3 {
 }
 
 .queue-list {
+  position: relative;
   flex: 1;
   margin: 0;
   padding: 0 4px calc(var(--safe-bottom) + 12px) 8px;
@@ -2130,6 +2239,8 @@ h3 {
   position: fixed;
   inset: 0;
   z-index: 60;
+  /* Opening, dragging and closing a sheet must never reflow the app behind it. */
+  contain: strict;
 }
 
 .sheet-scrim,
@@ -2156,6 +2267,8 @@ h3 {
   transform-origin: 50% 100%;
   transition: transform 0.25s var(--md-sys-motion-easing);
   touch-action: pan-y;
+  will-change: transform;
+  contain: layout paint;
 }
 
 .sheet-panel.is-dragging {

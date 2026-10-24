@@ -6,9 +6,9 @@ import { isNative } from './native'
 import { cacheEnabled, maxCacheMb } from './preferences'
 import { notify } from './snackbar'
 import { persisted } from './storage'
-import { fetchRange } from './ytm/http'
-import type { Song } from './ytm/models'
-import { forgetStream, resolveStream } from './ytm/stream'
+import { fetchRange } from './http'
+import type { Song } from './models'
+import { forgetStream, resolveStream } from './services/stream'
 
 /**
  * Offline audio. "Downloads" are kept until removed; the "cache" is filled
@@ -89,6 +89,7 @@ function bytesToBase64(bytes: ArrayBuffer): string {
 
 async function fetchAll(
   url: string,
+  headers: Record<string, string> | undefined,
   total: number,
   onChunk: (base64: string, bytes: ArrayBuffer | undefined, index: number) => Promise<void>,
   onProgress: (fraction: number) => void,
@@ -98,7 +99,7 @@ async function fetchAll(
     const end = Math.min(start + CHUNK, total) - 1
     let attempt = 0
     for (;;) {
-      const result = await fetchRange(url, start, end)
+      const result = await fetchRange(url, start, end, headers)
       if (result.status === 200 || result.status === 206) {
         const base64 = result.base64 ?? (result.bytes ? bytesToBase64(result.bytes) : '')
         await onChunk(base64, result.bytes, index)
@@ -111,15 +112,17 @@ async function fetchAll(
 }
 
 async function save(song: Song, kind: OfflineKind): Promise<OfflineEntry> {
-  const stream = await resolveStream(song.id)
+  const stream = await resolveStream(song)
   const total = stream.contentLength
   if (!total) throw new Error('Unknown file size')
 
-  const path = `audio/${song.id}.${extensionFor(stream.mimeType)}`
+  // Ids from other services may contain ":" ("spotify:track:…"); keep file names plain.
+  const path = `audio/${song.id.replace(/[^\w.-]/g, '_')}.${extensionFor(stream.mimeType)}`
   const webParts: ArrayBuffer[] = []
 
   await fetchAll(
-    stream.url,
+    stream.fetchUrl ?? stream.url,
+    stream.fetchHeaders,
     total,
     async (base64, bytes, index) => {
       if (isNative) {

@@ -4,7 +4,8 @@ import { ICON_VIEWBOX, ICONS, type IconName } from '../icons'
 
 const props = withDefaults(
   defineProps<{
-    name: IconName
+    /** A built-in Material Symbols name, or one added with registerIcon. */
+    name: IconName | string
     size?: number
     filled?: boolean
   }>(),
@@ -13,6 +14,7 @@ const props = withDefaults(
 
 const path = computed(() => {
   const icon = ICONS[props.name]
+  if (!icon) return ''
   return props.filled ? icon.filled : icon.outlined
 })
 </script>

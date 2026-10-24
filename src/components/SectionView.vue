@@ -1,10 +1,9 @@
 <script setup lang="ts">
+import { C } from '../plugins/components'
 import { computed } from 'vue'
 import { useItemDelegation } from '../itemActions'
 import { openBrowse } from '../navigation'
-import type { Section, Song } from '../ytm/models'
-import ItemCard from './ItemCard.vue'
-import ItemRow from './ItemRow.vue'
+import type { Section, Song } from '../models'
 import MIcon from './MIcon.vue'
 import Thumb from './Thumb.vue'
 
@@ -52,16 +51,16 @@ function more() {
 
     <div v-if="section.layout === 'quick-picks'" class="quick-picks">
       <div v-for="(column, columnIndex) in columns" :key="columnIndex" class="quick-picks-column">
-        <ItemRow v-for="(song, row) in column" :key="song.id" :item="song" :index="columnIndex * 4 + row" compact />
+        <C.ItemRow v-for="(song, row) in column" :key="song.id" :item="song" :index="columnIndex * 4 + row" compact />
       </div>
     </div>
 
     <div v-else-if="section.layout === 'carousel'" class="carousel">
-      <ItemCard v-for="(item, index) in section.items" :key="`${item.type}:${item.id}`" :item="item" :index="index" />
+      <C.ItemCard v-for="(item, index) in section.items" :key="`${item.type}:${item.id}`" :item="item" :index="index" />
     </div>
 
     <div v-else class="section-list">
-      <ItemRow
+      <C.ItemRow
         v-for="(item, index) in section.items"
         :key="`${item.type}:${item.id}`"
         :item="item"

@@ -1,5 +1,5 @@
 import { YTNodes, type Helpers } from 'youtubei.js'
-import type { Album, Artist, ArtistRef, Item, Playlist, Section, Song } from './models'
+import type { Album, Artist, ArtistRef, Item, Playlist, Section, Song } from '../../models'
 import { largest } from './thumbnails'
 
 type YTNode = Helpers.YTNode
@@ -251,6 +251,9 @@ export function songsOf(nodes: Iterable<YTNode> | null | undefined): Song[] {
  * ------------------------------------------------------------------ */
 
 let sectionCounter = 0
+/** Section ids must stay unique next to sections restored from the on-device cache. */
+const sectionPrefix = Math.random().toString(36).slice(2, 8)
+const nextSectionId = () => `section-${sectionPrefix}-${sectionCounter++}`
 
 export function fromCarousel(shelf: YTNodes.MusicCarouselShelf): Section | null {
   const items = itemsOf(shelf.contents)
@@ -262,7 +265,7 @@ export function fromCarousel(shelf: YTNodes.MusicCarouselShelf): Section | null 
   const headerThumb = largest(header?.thumbnail?.contents)
 
   return {
-    id: `section-${sectionCounter++}`,
+    id: nextSectionId(),
     title: textOf(header?.title),
     strapline: textOf(header?.strapline) || undefined,
     thumbnail: headerThumb,
@@ -279,7 +282,7 @@ export function fromShelf(shelf: YTNodes.MusicShelf): Section | null {
 
   const more = payloadOf(shelf.endpoint ?? shelf.bottom_button?.endpoint)
   return {
-    id: `section-${sectionCounter++}`,
+    id: nextSectionId(),
     title: textOf(shelf.title),
     layout: 'list',
     items,
@@ -291,7 +294,7 @@ export function fromGrid(grid: YTNodes.Grid, title = ''): Section | null {
   const items = itemsOf(grid.items)
   if (items.length === 0) return null
   const header = grid.header?.is(YTNodes.GridHeader) ? textOf(grid.header.title) : ''
-  return { id: `section-${sectionCounter++}`, title: title || header, layout: 'carousel', items }
+  return { id: nextSectionId(), title: title || header, layout: 'carousel', items }
 }
 
 /** Turn whatever shelves a page contains into sections, in order. */
@@ -304,7 +307,7 @@ export function sectionsOf(nodes: Iterable<YTNode> | null | undefined): Section[
     else if (node.is(YTNodes.Grid)) section = fromGrid(node)
     else if (node.is(YTNodes.MusicPlaylistShelf)) {
       const items = itemsOf(node.contents)
-      if (items.length > 0) section = { id: `section-${sectionCounter++}`, title: '', layout: 'list', items }
+      if (items.length > 0) section = { id: nextSectionId(), title: '', layout: 'list', items }
     }
     if (section) sections.push(section)
   }

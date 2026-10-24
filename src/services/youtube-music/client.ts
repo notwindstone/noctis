@@ -1,10 +1,10 @@
 import { computed, ref, watch } from 'vue'
 import { Innertube, Log, Platform, UniversalCache } from 'youtubei.js'
-import { hasNoctisPlugin, Noctis } from '../native'
-import { contentCountry, contentLanguage } from '../preferences'
-import { isBoolean, persisted } from '../storage'
+import { hasNoctisPlugin, Noctis } from '../../native'
+import { contentCountry, contentLanguage } from '../../preferences'
+import { isBoolean, persisted } from '../../storage'
 import { ytFetch } from './http'
-import type { AccountInfo } from './models'
+import type { AccountInfo } from '../../models'
 
 Log.setLevel(Log.Level.NONE)
 

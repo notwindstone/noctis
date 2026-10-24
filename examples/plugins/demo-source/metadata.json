@@ -1,0 +1,16 @@
+{
+  "name": "Demo source",
+  "version": "2.0.0",
+  "authors": [
+    "Noctis"
+  ],
+  "type": "unrestricted",
+  "description": "An example service plugin: a fake \"demo\" streaming service that plays generated tones. Pick it in Settings → Content → Service, or search for \"demo …\" from any service. Also adds a song-menu action, a settings page and a screen.",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/demo-source",
+  "categories": [
+    "example"
+  ],
+  "languages": [
+    "en"
+  ]
+}

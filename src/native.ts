@@ -55,7 +55,9 @@ interface NoctisPlugin {
   setBackEnabled(options: { enabled: boolean }): Promise<void>
   getSystemColors(): Promise<SystemColors>
   openLogin(): Promise<LoginResult>
-  clearCookies(): Promise<void>
+  openAuth(options: { url: string; redirect: string; title?: string }): Promise<{ url: string }>
+  clearCookies(options?: { url?: string }): Promise<void>
+  captureResponse(options: { url: string; match: string; userAgent?: string; timeoutMs?: number }): Promise<{ url: string; body: string }>
   haptic(options: { type: HapticType }): Promise<void>
   updateMediaSession(state: MediaState): Promise<void>
   clearMediaSession(): Promise<void>

@@ -56,8 +56,8 @@ export function useAsync<T>(fetcher: () => Promise<T>) {
 export function describeError(cause: unknown): string {
   const message = cause instanceof Error ? cause.message : String(cause)
   if (/failed to fetch|network|load failed|timeout|unable to resolve/i.test(message)) {
-    return "You're offline or YouTube Music can't be reached."
+    return "You're offline or the service can't be reached."
   }
-  if (/status code 401|status code 403/i.test(message)) return 'YouTube Music refused the request. Try signing in again.'
+  if (/status code 401|status code 403/i.test(message)) return 'The service refused the request. Try signing in again.'
   return message.length > 160 ? `${message.slice(0, 160)}…` : message
 }

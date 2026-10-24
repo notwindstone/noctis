@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { formatTime } from '../format'
 import { offlineState } from '../offline'
 import { currentSong, isPlaying } from '../player'
-import { artistNames, type Item } from '../ytm/models'
+import { artistNames, type Item } from '../models'
 import MIcon from './MIcon.vue'
 import Thumb from './Thumb.vue'
 

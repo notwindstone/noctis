@@ -1,53 +1,30 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useBackTarget } from '../back'
-import { thresholdTracker } from '../haptics'
+import { useSheetDrag } from '../sheetDrag'
 
-/** M3 modal bottom sheet: drag down or swipe back to dismiss. */
+/** M3 modal bottom sheet: drag down to dismiss (src/sheetDrag.ts), predictive back shrinks it. */
 const props = defineProps<{ open: boolean; label?: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const panel = ref<HTMLElement | null>(null)
-const offset = ref(0)
 const backProgress = ref(0)
-let startY = 0
-let dragging = false
-let lastY = 0
-let lastT = 0
-let speed = 0
-const threshold = thresholdTracker()
 
-function onDown(event: PointerEvent) {
-  const scroller = (event.target as HTMLElement).closest('.sheet-scroll')
-  if (scroller && scroller.scrollTop > 0) return
-  dragging = true
-  startY = event.clientY
-  lastY = event.clientY
-  lastT = event.timeStamp
-  speed = 0
-}
+// Closing animates from wherever the finger left the sheet (the leave transition starts there).
+const { offset, dragging, onTouchStart, onTouchEnd, onPointerDown } = useSheetDrag(panel, {
+  onClose: () => emit('close'),
+  scrollSelector: '.sheet-scroll',
+})
 
-function onMove(event: PointerEvent) {
-  if (!dragging) return
-  const dy = event.clientY - startY
-  if (dy > 6 && !panel.value?.hasPointerCapture(event.pointerId)) {
-    panel.value?.setPointerCapture(event.pointerId)
-  }
-  offset.value = Math.max(0, dy)
-  threshold.update(offset.value > (panel.value?.offsetHeight ?? 400) * 0.3)
-  speed = (event.clientY - lastY) / Math.max(1, event.timeStamp - lastT)
-  lastY = event.clientY
-  lastT = event.timeStamp
-}
-
-function onUp() {
-  if (!dragging) return
-  dragging = false
-  threshold.reset()
-  const height = panel.value?.offsetHeight ?? 400
-  if (offset.value > height * 0.3 || speed > 0.6) emit('close')
-  offset.value = 0
-}
+watch(
+  () => props.open,
+  (open) => {
+    if (open) {
+      offset.value = 0
+      backProgress.value = 0
+    }
+  },
+)
 
 useBackTarget({
   priority: 20,
@@ -59,7 +36,6 @@ useBackTarget({
     backProgress.value = 0
   },
   onInvoke() {
-    backProgress.value = 0
     emit('close')
   },
 })
@@ -76,17 +52,17 @@ useBackTarget({
           role="dialog"
           aria-modal="true"
           :aria-label="label"
-          :class="{ 'is-dragging': offset > 0 }"
+          :class="{ 'is-dragging': dragging }"
           :style="{
             transform:
               offset > 0 || backProgress > 0
                 ? `translate3d(0, ${offset + backProgress * 24}px, 0) scale(${1 - backProgress * 0.06})`
                 : undefined,
           }"
-          @pointerdown="onDown"
-          @pointermove="onMove"
-          @pointerup="onUp"
-          @pointercancel="onUp"
+          @touchstart.passive="onTouchStart"
+          @touchend="onTouchEnd"
+          @touchcancel="onTouchEnd"
+          @pointerdown="onPointerDown"
         >
           <span class="sheet-handle" aria-hidden="true" />
           <slot />

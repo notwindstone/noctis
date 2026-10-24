@@ -3,13 +3,73 @@ import { nextTick, onMounted, ref } from 'vue'
 import { formatTime } from '../format'
 import { haptic, tap } from '../haptics'
 import { currentIndex, isPlaying, jumpTo, moveInQueue, queue, queueTitle, removeFromQueue } from '../player'
-import { artistNames } from '../ytm/models'
+import { useSheetDrag } from '../sheetDrag'
+import { artistNames } from '../models'
 import MIcon from './MIcon.vue'
 import Thumb from './Thumb.vue'
 
 const emit = defineEmits<{ close: [] }>()
 
+/**
+ * Moves and removals are animated by hand (animateRows, removeRow). A TransitionGroup
+ * would treat every drag frame as a reorder and fight the dragged row's position.
+ */
 const list = ref<HTMLElement | null>(null)
+const panelEl = ref<HTMLElement | null>(null)
+/** True for the frame a reorder lands, so the drag-shift transition doesn't fight the FLIP. */
+const settling = ref(false)
+
+// Drag the panel down to dismiss; touches on the reorder handles never move it.
+const sheet = useSheetDrag(panelEl, {
+  onClose: () => emit('close'),
+  scrollSelector: '.queue-list',
+  ignoreSelector: '.queue-handle',
+})
+
+const listEl = () => list.value
+
+/** Where every row is on screen right now (including drag offsets), by song id. */
+function rowPositions(): Map<string, number> {
+  const tops = new Map<string, number>()
+  for (const row of listEl()?.querySelectorAll<HTMLElement>('[data-song-id]') ?? []) {
+    tops.set(row.dataset.songId!, row.getBoundingClientRect().top)
+  }
+  return tops
+}
+
+/** FLIP: glide each row from where it was on screen to its new slot (compositor-only). */
+function animateRows(before: Map<string, number>) {
+  for (const row of listEl()?.querySelectorAll<HTMLElement>('[data-song-id]') ?? []) {
+    const from = before.get(row.dataset.songId!)
+    if (from === undefined) continue
+    const delta = from - row.getBoundingClientRect().top
+    if (Math.abs(delta) < 0.5) continue
+    row.animate([{ transform: `translate3d(0, ${delta}px, 0)` }, { transform: 'none' }], {
+      duration: 340,
+      easing: 'cubic-bezier(0.05, 0.7, 0.1, 1)',
+    })
+  }
+}
+
+/** Slide the row out, then let the rows below glide up into its place. */
+async function removeRow(index: number) {
+  const row = listEl()?.querySelector<HTMLElement>(`[data-queue-index="${index}"]`)
+  if (row) {
+    await row
+      .animate(
+        [
+          { opacity: 1, transform: 'none' },
+          { opacity: 0, transform: 'translate3d(24%, 0, 0)' },
+        ],
+        { duration: 180, easing: 'cubic-bezier(0.3, 0, 0.8, 0.15)', fill: 'forwards' },
+      )
+      .finished.catch(() => {})
+  }
+  const before = rowPositions()
+  removeFromQueue(index)
+  await nextTick()
+  animateRows(before)
+}
 const dragIndex = ref<number | null>(null)
 const dragOffset = ref(0)
 let dragStartY = 0
@@ -37,7 +97,7 @@ function onListClick(event: MouseEvent) {
   const action = (event.target as Element).closest<HTMLElement>('[data-action]')?.dataset.action
   if (!hit || !action) return
   if (action === 'play') play(hit.index)
-  else if (action === 'remove') removeFromQueue(hit.index)
+  else if (action === 'remove') void removeRow(hit.index)
 }
 
 function onListPointerDown(event: PointerEvent) {
@@ -69,14 +129,22 @@ function onHandleMove(event: PointerEvent) {
   }
 }
 
-function onHandleUp() {
+async function onHandleUp() {
   if (dragIndex.value === null) return
   const from = dragIndex.value
   const to = Math.min(queue.value.length - 1, Math.max(0, from + Math.round(dragOffset.value / rowHeight)))
+  haptic('gestureEnd')
+
+  // Measure while rows still show their drag offsets, so the dropped row glides from
+  // under the finger and the others from where they had shifted to.
+  const before = rowPositions()
+  settling.value = true
   dragIndex.value = null
   dragOffset.value = 0
-  haptic('gestureEnd')
   moveInQueue(from, to)
+  await nextTick()
+  animateRows(before)
+  requestAnimationFrame(() => (settling.value = false))
 }
 
 /** Rows between the dragged row and its target shift to make room. */
@@ -96,7 +164,17 @@ function play(index: number) {
 </script>
 
 <template>
-  <section class="queue-panel" aria-label="Up next">
+  <section
+    ref="panelEl"
+    class="queue-panel"
+    :class="{ 'is-dragging': sheet.dragging.value }"
+    :style="{ transform: sheet.offset.value > 0 ? `translate3d(0, ${sheet.offset.value}px, 0)` : undefined }"
+    aria-label="Up next"
+    @touchstart.passive="sheet.onTouchStart"
+    @touchend="sheet.onTouchEnd"
+    @touchcancel="sheet.onTouchEnd"
+    @pointerdown="sheet.onPointerDown"
+  >
     <header class="queue-header">
       <span class="sheet-handle" aria-hidden="true" />
       <div class="queue-title">
@@ -111,6 +189,7 @@ function play(index: number) {
     <ol
       ref="list"
       class="queue-list"
+      :class="{ 'is-settling': settling }"
       @click="onListClick"
       @pointerdown="onListPointerDown"
       @pointermove="onHandleMove"
@@ -122,6 +201,7 @@ function play(index: number) {
         :key="song.id"
         class="queue-row"
         :data-queue-index="index"
+        :data-song-id="song.id"
         :class="{ 'is-current': index === currentIndex, 'is-dragging': index === dragIndex, 'is-played': index < currentIndex }"
         :style="{ transform: rowShift(index) ? `translate3d(0, ${rowShift(index)}px, 0)` : undefined }"
       >

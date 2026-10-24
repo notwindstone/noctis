@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import ItemCard from '../components/ItemCard.vue'
+import { C } from '../plugins/components'
+import { computed, onMounted, ref } from 'vue'
 import MIcon from '../components/MIcon.vue'
+import RefreshIndicator from '../components/RefreshIndicator.vue'
 import Thumb from '../components/Thumb.vue'
-import TopAppBar from '../components/TopAppBar.vue'
 import { songCount } from '../format'
 import { tap } from '../haptics'
 import type { IconName } from '../icons'
@@ -11,9 +11,23 @@ import { useItemDelegation } from '../itemActions'
 import { history, likedSongs, listenedArtists } from '../library'
 import { navigate, type CollectionId, type Route } from '../navigation'
 import { cached, downloads, formatBytes, usage } from '../offline'
-import { getLibraryArtists, getLibraryPlaylists } from '../ytm/api'
-import { account, sessionVersion, signedIn } from '../ytm/client'
-import type { Artist, Item, Playlist } from '../ytm/models'
+import { readPageCache, writePageCache } from '../pageCache'
+import { usePullToRefresh } from '../pullToRefresh'
+import { notify } from '../snackbar'
+import { getLibraryArtists, getLibraryPlaylists } from '../services/api'
+import { servicesReady } from '../services/registry'
+import {
+  account,
+  hasAccounts,
+  hasLibrary,
+  onSessionChange,
+  openAccountSettings,
+  refreshAccount,
+  serviceName,
+  signedIn,
+  syncsLikes,
+} from '../services/session'
+import type { Artist, Item, Playlist } from '../models'
 
 defineProps<{ route: Route; screenKey: number; isRoot: boolean }>()
 
@@ -22,29 +36,56 @@ const artists = ref<Artist[]>([])
 const loadingRemote = ref(false)
 const remoteError = ref(false)
 
-async function loadRemote() {
-  if (!signedIn.value) {
+interface LibraryCache {
+  playlists: Playlist[]
+  artists: Artist[]
+}
+
+const root = ref<HTMLElement | null>(null)
+
+/** Fetch the account's playlists and artists. `quiet` keeps the current ones on failure. */
+async function loadRemote(quiet = false) {
+  if (!hasLibrary.value) {
     playlists.value = []
     artists.value = []
     return
   }
-  loadingRemote.value = true
+  if (!quiet) loadingRemote.value = true
   remoteError.value = false
   try {
     const [lists, people] = await Promise.all([getLibraryPlaylists(), getLibraryArtists()])
     playlists.value = lists as Playlist[]
     artists.value = people as Artist[]
+    writePageCache<LibraryCache>('library', { playlists: playlists.value, artists: artists.value })
   } catch {
-    remoteError.value = true
+    if (quiet && playlists.value.length > 0) notify("Couldn't refresh your library")
+    else remoteError.value = true
   } finally {
     loadingRemote.value = false
   }
 }
 
-onMounted(loadRemote)
-watch(sessionVersion, loadRemote)
+const { pull, dragging, refreshing } = usePullToRefresh(root, () =>
+  Promise.all([loadRemote(true), signedIn.value ? refreshAccount() : null]),
+)
 
-const shownArtists = computed<Artist[]>(() => (signedIn.value && artists.value.length > 0 ? artists.value : listenedArtists.value))
+// Open straight into the last fetched library; only fetch when there's nothing cached.
+onMounted(async () => {
+  await servicesReady()
+  const cached = hasLibrary.value ? readPageCache<LibraryCache>('library') : null
+  if (cached) {
+    playlists.value = cached.playlists
+    artists.value = cached.artists
+  } else {
+    void loadRemote()
+  }
+})
+
+// Different service, account, language or region: the cached library no longer applies.
+onSessionChange(() => void loadRemote())
+
+const fromAccount = computed(() => hasLibrary.value && artists.value.length > 0)
+const shownArtists = computed<Artist[]>(() => (fromAccount.value ? artists.value : listenedArtists.value))
 
 interface Tile {
   id: CollectionId
@@ -57,7 +98,7 @@ const tiles = computed<Tile[]>(() => [
   {
     id: 'liked',
     title: 'Liked songs',
-    detail: signedIn.value ? 'Synced' : songCount(likedSongs.value.length),
+    detail: syncsLikes.value ? 'Synced' : songCount(likedSongs.value.length),
     icon: 'favorite',
   },
   {
@@ -95,15 +136,16 @@ function open(id: CollectionId) {
 </script>
 
 <template>
-  <div class="screen library-screen">
-    <TopAppBar title="Library" :reveal-at="56">
+  <div ref="root" class="screen library-screen">
+    <RefreshIndicator :pull="pull" :dragging="dragging" :refreshing="refreshing" />
+    <C.TopAppBar title="Library" :reveal-at="56">
       <template #actions>
-        <button class="avatar-button" type="button" aria-label="Account" @click="navigate({ name: 'settings-page', page: 'account' })">
+        <button v-if="hasAccounts" class="avatar-button" type="button" aria-label="Account" @click="openAccountSettings">
           <Thumb v-if="account?.photo" :src="account.photo" :size="32" shape="circle" icon="account" />
           <MIcon v-else name="account" :size="26" />
         </button>
       </template>
-    </TopAppBar>
+    </C.TopAppBar>
     <h1 class="screen-headline type-headline-large">Library</h1>
 
     <div class="library-tiles">
@@ -116,32 +158,32 @@ function open(id: CollectionId) {
       </button>
     </div>
 
-    <section class="home-section">
+    <section v-if="hasLibrary || (hasAccounts && !signedIn)" class="home-section">
       <header class="section-header">
-        <button class="section-header-text" type="button" :disabled="!signedIn" @click="navigate({ name: 'library-playlists' })">
+        <button class="section-header-text" type="button" :disabled="!hasLibrary" @click="navigate({ name: 'library-playlists' })">
           <span class="section-title type-title-large">Your playlists</span>
         </button>
-        <button v-if="signedIn" class="icon-button" type="button" aria-label="All playlists" @click="navigate({ name: 'library-playlists' })">
+        <button v-if="hasLibrary" class="icon-button" type="button" aria-label="All playlists" @click="navigate({ name: 'library-playlists' })">
           <MIcon name="chevron-right" />
         </button>
       </header>
 
-      <div v-if="!signedIn" class="signin-card">
+      <div v-if="!hasLibrary" class="signin-card">
         <MIcon name="playlist" :size="28" />
         <div>
-          <p class="type-title-medium">Your YouTube Music playlists</p>
+          <p class="type-title-medium">Your {{ serviceName }} playlists</p>
           <p class="type-body-medium muted">Sign in to see playlists, liked music and artists from your account.</p>
         </div>
-        <button class="filled-button" type="button" @click="navigate({ name: 'settings-page', page: 'account' })">Sign in</button>
+        <button class="filled-button" type="button" @click="openAccountSettings">Sign in</button>
       </div>
       <div v-else-if="loadingRemote && playlists.length === 0" class="skeleton-row" aria-hidden="true">
         <span v-for="card in 4" :key="card" class="skeleton skeleton-card" />
       </div>
       <p v-else-if="remoteError" class="type-body-medium muted section-note">
-        Couldn't load your playlists. <button class="link-button" type="button" @click="loadRemote">Retry</button>
+        Couldn't load your playlists. <button class="link-button" type="button" @click="loadRemote()">Retry</button>
       </p>
       <div v-else-if="playlists.length > 0" class="carousel" @click="playlistActions.onClick" @contextmenu="playlistActions.onContextmenu">
-        <ItemCard v-for="(item, index) in shownPlaylists" :key="item.id" :item="item" :index="index" />
+        <C.ItemCard v-for="(item, index) in shownPlaylists" :key="item.id" :item="item" :index="index" />
       </div>
       <p v-else class="type-body-medium muted section-note">You haven't saved any playlists yet.</p>
     </section>
@@ -149,7 +191,7 @@ function open(id: CollectionId) {
     <section v-if="shownArtists.length > 0" class="home-section">
       <header class="section-header">
         <button class="section-header-text" type="button" @click="navigate({ name: 'library-artists' })">
-          <span v-if="!signedIn" class="section-strapline type-label-medium">From your listening</span>
+          <span v-if="!fromAccount" class="section-strapline type-label-medium">From your listening</span>
           <span class="section-title type-title-large">Your artists</span>
         </button>
         <button class="icon-button" type="button" aria-label="All artists" @click="navigate({ name: 'library-artists' })">
@@ -157,7 +199,7 @@ function open(id: CollectionId) {
         </button>
       </header>
       <div class="carousel" @click="artistActions.onClick" @contextmenu="artistActions.onContextmenu">
-        <ItemCard v-for="(item, index) in artistCards" :key="item.id" :item="item" :index="index" :width="112" />
+        <C.ItemCard v-for="(item, index) in artistCards" :key="item.id" :item="item" :index="index" :width="112" />
       </div>
     </section>
 
@@ -171,7 +213,7 @@ function open(id: CollectionId) {
         </button>
       </header>
       <div class="carousel" @click="recentActions.onClick" @contextmenu="recentActions.onContextmenu">
-        <ItemCard v-for="(item, index) in recent" :key="item.id" :item="item" :index="index" />
+        <C.ItemCard v-for="(item, index) in recent" :key="item.id" :item="item" :index="index" />
       </div>
     </section>
   </div>

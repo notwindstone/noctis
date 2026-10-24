@@ -1,5 +1,5 @@
 import { CapacitorHttp } from '@capacitor/core'
-import { isNative } from '../native'
+import { isNative } from '../../native'
 
 /**
  * Network access for InnerTube.
@@ -70,22 +70,4 @@ export async function ytFetch(input: RequestInfo | URL, init?: RequestInit): Pro
   }
 
   return fetch(proxiedUrl(url), { method, headers: browserHeaders, body })
-}
-
-/** Fetch a byte range of a media URL, e.g. one chunk of a download. */
-export async function fetchRange(url: string, start: number, end: number): Promise<{ status: number; base64?: string; bytes?: ArrayBuffer }> {
-  const range = `bytes=${start}-${end}`
-
-  if (isNative) {
-    const response = await CapacitorHttp.request({
-      url,
-      method: 'GET',
-      headers: { range, 'user-agent': DESKTOP_UA },
-      responseType: 'arraybuffer',
-    })
-    return { status: response.status, base64: typeof response.data === 'string' ? response.data : undefined }
-  }
-
-  const response = await fetch(proxiedUrl(url), { headers: { range } })
-  return { status: response.status, bytes: response.ok ? await response.arrayBuffer() : undefined }
 }

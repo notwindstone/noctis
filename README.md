@@ -42,13 +42,13 @@ steam-run ./gradlew assembleDebug              # NixOS: gradle's binaries need a
 
 | Path | |
 | --- | --- |
-| `src/ytm/client.ts` | youtubei.js sessions, cookie sign-in, account info |
-| `src/ytm/http.ts` | fetch adapter: Capacitor native HTTP on device, Vite proxy in the browser |
-| `src/ytm/api.ts`, `parse.ts`, `models.ts` | home, search, albums, playlists, artists, queues, library, mapped to plain models |
-| `src/ytm/stream.ts`, `potoken.ts` | resolves audio stream URLs with BotGuard proof-of-origin tokens (see *Streaming*) |
+| `src/models.ts` | plain models every screen uses (songs, albums, sections, pages…) |
+| `src/services/` | the service layer: `types.ts` (what a service provides), `registry.ts`, `api.ts` (routes every call to the item's or the active service, through the `onRequest` hook) |
+| `src/services/youtube-music/` | YouTube Music, as a bundled plugin: youtubei.js sessions and sign-in (`client.ts`), native/proxied fetch (`http.ts`), endpoints (`api.ts`, `parse.ts`), streams with BotGuard tokens (`stream.ts`, `potoken.ts`) |
+| `src/plugins/` | the plugin system: runtime, hooks, component/action registries, settings rows (see [docs/PLUGINS.md](docs/PLUGINS.md)) |
 | `src/player.ts` | queue, shuffle/repeat, radio autoplay, offline-first sources, persisted queue |
 | `src/offline.ts` | downloads and the auto-trimmed cache (1 MB ranged chunks → app storage / Cache Storage) |
-| `src/library.ts` | on-device likes (mirrored to YouTube when signed in), history, search history |
+| `src/library.ts` | on-device likes (mirrored to the service when it takes them), history, search history |
 | `src/back.ts` | single back-handling stack: native predictive back, browser back, Escape, edge swipe |
 | `src/navigation.ts`, `components/ScreenStack.vue` | per-tab screen stacks; every screen is a layer, so back gestures can reveal the real previous screen |
 | `src/theme.ts` | OKLCH Material 3 schemes from wallpaper (Android 12+), album art or a preset |
@@ -58,11 +58,11 @@ steam-run ./gradlew assembleDebug              # NixOS: gradle's binaries need a
 ## Streaming
 
 googlevideo serves only the first ~1 MB of a stream unless the URL carries a
-proof-of-origin (`pot`) token. `src/ytm/potoken.ts` mints one per video the way
+proof-of-origin (`pot`) token. `src/services/youtube-music/potoken.ts` mints one per video the way
 InnerTune-style clients do: it loads Google's BotGuard challenge (from
 `jnn-pa.googleapis.com`), runs it in the page (the app is a real Chromium WebView), and
 exchanges the snapshot for an integrity token at `youtube.com/api/jnn/v1/GenerateIT`.
-`src/ytm/stream.ts` then uses the YouTube Music web client, deciphers the URL with the
+`src/services/youtube-music/stream.ts` then uses the YouTube Music web client, deciphers the URL with the
 player script, and appends `&pot=`. BotGuard and the player script are pre-warmed shortly
 after launch.
 

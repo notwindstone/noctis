@@ -2,13 +2,13 @@ import { computed } from 'vue'
 import { pauseHistory } from './preferences'
 import { notify } from './snackbar'
 import { persisted } from './storage'
-import { setLiked } from './ytm/api'
-import { signedIn } from './ytm/client'
-import type { Artist, Song } from './ytm/models'
+import { sourceOf, type Artist, type Song } from './models'
+import { setLiked } from './services/api'
+import { services } from './services/registry'
 
 /**
- * The on-device library. Likes are mirrored to YouTube Music when signed in; history
- * and search history stay local (YouTube's own history is untouched).
+ * The on-device library. Likes are mirrored to the song's service when it takes them
+ * (YouTube Music does when signed in); history and search history stay local.
  */
 
 const isArray = (value: unknown) => Array.isArray(value)
@@ -40,11 +40,10 @@ export async function toggleLike(song: Song) {
     ? [song, ...likedSongs.value.filter((item) => item.id !== song.id)]
     : likedSongs.value.filter((item) => item.id !== song.id)
 
-  if (!signedIn.value) return
   try {
-    await setLiked(song.id, liked)
+    await setLiked(song, liked)
   } catch {
-    notify('Saved on this device; YouTube Music could not be updated.')
+    notify(`Saved on this device; ${services[sourceOf(song)]?.name ?? 'the service'} could not be updated.`)
   }
 }
 

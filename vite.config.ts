@@ -8,7 +8,7 @@ import vue from '@vitejs/plugin-vue'
  * the same requests go through Capacitor's native HTTP stack instead.
  */
 const PROXY_PREFIX = '/__yt/'
-const ALLOWED_HOSTS = /^(music\.youtube\.com|www\.youtube\.com|youtubei\.googleapis\.com|jnn-pa\.googleapis\.com|[a-z0-9-]+\.googlevideo\.com)$/
+const ALLOWED_HOSTS = /^(music\.youtube\.com|www\.youtube\.com|youtubei\.googleapis\.com|jnn-pa\.googleapis\.com|[a-z0-9-]+\.googlevideo\.com|api-partner\.spotify\.com|clienttoken\.spotify\.com|open\.spotify\.com|open\.spotifycdn\.com)$/
 const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
 

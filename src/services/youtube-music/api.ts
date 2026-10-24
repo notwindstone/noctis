@@ -7,11 +7,28 @@ import {
   type YTMusic,
 } from 'youtubei.js'
 import { innertube } from './client'
-import type { ArtistPage, ArtistRef, BrowseTarget, CollectionPage, Item, Section, Song } from './models'
+import type {
+  Artist,
+  ArtistPage,
+  ArtistRef,
+  BrowseTarget,
+  CollectionPage,
+  HomeResult,
+  Item,
+  Playlist,
+  QueuePage,
+  SearchResult,
+  SearchType,
+  Section,
+  Song,
+  Suggestions,
+} from '../../models'
 import { fromNode, itemsOf, payloadOf, sectionsOf, songsOf, stripBrowsePrefix } from './parse'
 import { largest } from './thumbnails'
+import type { RadioSeed, ServiceDefinition } from '../types'
 
 type YTNode = Helpers.YTNode
+type YTSearchType = 'all' | 'song' | 'video' | 'album' | 'playlist' | 'artist'
 
 interface TextLike {
   toString(): string
@@ -33,13 +50,6 @@ function artistRefsFromText(text: TextLike | null | undefined): ArtistRef[] {
  * Home
  * ------------------------------------------------------------------ */
 
-export interface HomeResult {
-  sections: Section[]
-  filters: string[]
-  selectedFilter: string | null
-  hasMore: boolean
-}
-
 let homeFeed: YTMusic.HomeFeed | null = null
 let homeFilters: string[] = []
 
@@ -47,7 +57,7 @@ function homeSections(feed: YTMusic.HomeFeed): Section[] {
   return sectionsOf((feed.sections ?? []).filter((section) => section.is(YTNodes.MusicCarouselShelf)))
 }
 
-export async function loadHome(filter: string | null = null): Promise<HomeResult> {
+async function ytLoadHome(filter: string | null = null): Promise<HomeResult> {
   const yt = await innertube()
   let feed = await yt.music.getHomeFeed()
   homeFilters = feed.filters
@@ -65,7 +75,9 @@ export async function loadHome(filter: string | null = null): Promise<HomeResult
   }
 }
 
-export async function loadMoreHome(): Promise<{ sections: Section[]; hasMore: boolean }> {
+async function ytLoadMoreHome(filter: string | null = null): Promise<{ sections: Section[]; hasMore: boolean }> {
+  // Started from the on-device cache: fetch the first page again just to get its continuation.
+  if (!homeFeed) await ytLoadHome(filter)
   if (!homeFeed?.has_continuation) return { sections: [], hasMore: false }
   homeFeed = await homeFeed.getContinuation()
   return { sections: homeSections(homeFeed), hasMore: homeFeed.has_continuation }
@@ -74,17 +86,6 @@ export async function loadMoreHome(): Promise<{ sections: Section[]; hasMore: bo
 /* ------------------------------------------------------------------ *
  * Search
  * ------------------------------------------------------------------ */
-
-export type SearchType = 'all' | 'song' | 'video' | 'album' | 'playlist' | 'artist'
-
-export interface SearchResult {
-  /** For 'all': a top result followed by one section per category. */
-  sections: Section[]
-  /** For a filtered search: a flat list. */
-  items: Item[]
-  hasMore: boolean
-  correctedQuery?: string
-}
 
 type SearchContinuation = Awaited<ReturnType<YTMusic.Search['getContinuation']>>
 let searchState: YTMusic.Search | SearchContinuation | null = null
@@ -114,9 +115,9 @@ function topResult(card: YTNodes.MusicCardShelf): Item | null {
   return null
 }
 
-export async function search(query: string, type: SearchType): Promise<SearchResult> {
+async function ytSearch(query: string, type: SearchType): Promise<SearchResult> {
   const yt = await innertube()
-  const result = await yt.music.search(query, { type })
+  const result = await yt.music.search(query, { type: type as YTSearchType })
   searchState = result
 
   const corrected = textOf(result.did_you_mean?.corrected_query) || textOf(result.showing_results_for?.corrected_query)
@@ -152,19 +153,14 @@ export async function search(query: string, type: SearchType): Promise<SearchRes
   return { sections, items: [], hasMore: false, correctedQuery: corrected || undefined }
 }
 
-export async function searchMore(): Promise<{ items: Item[]; hasMore: boolean }> {
+async function ytSearchMore(): Promise<{ items: Item[]; hasMore: boolean }> {
   if (!searchState?.has_continuation) return { items: [], hasMore: false }
   const next = await searchState.getContinuation()
   searchState = next
   return { items: itemsOf(next.contents?.contents), hasMore: next.has_continuation }
 }
 
-export interface Suggestions {
-  queries: string[]
-  items: Item[]
-}
-
-export async function searchSuggestions(input: string): Promise<Suggestions> {
+async function ytSearchSuggestions(input: string): Promise<Suggestions> {
   const yt = await innertube()
   const sections = await yt.music.getSearchSuggestions(input)
   const queries: string[] = []
@@ -208,7 +204,7 @@ function playlistIdFrom(buttons: Iterable<YTNode> | undefined): string | undefin
   return undefined
 }
 
-export async function getAlbum(id: string): Promise<CollectionPage> {
+async function ytGetAlbum(id: string): Promise<CollectionPage> {
   const yt = await innertube()
   const album = await yt.music.getAlbum(id)
   const header = album.header
@@ -261,7 +257,7 @@ export async function getAlbum(id: string): Promise<CollectionPage> {
 
 const playlistPages = new Map<string, YTMusic.Playlist>()
 
-export async function getPlaylist(id: string): Promise<CollectionPage> {
+async function ytGetPlaylist(id: string): Promise<CollectionPage> {
   const yt = await innertube()
   const playlist = await yt.music.getPlaylist(id)
   playlistPages.set(id, playlist)
@@ -309,7 +305,7 @@ export async function getPlaylist(id: string): Promise<CollectionPage> {
   }
 }
 
-export async function loadMorePlaylist(id: string): Promise<{ songs: Song[]; hasMore: boolean }> {
+async function ytLoadMorePlaylist(id: string): Promise<{ songs: Song[]; hasMore: boolean }> {
   const page = playlistPages.get(id)
   if (!page?.has_continuation) return { songs: [], hasMore: false }
   const next = await page.getContinuation()
@@ -321,7 +317,7 @@ export async function loadMorePlaylist(id: string): Promise<{ songs: Song[]; has
  * Artists and generic browse pages
  * ------------------------------------------------------------------ */
 
-export async function getArtist(id: string): Promise<ArtistPage> {
+async function ytGetArtist(id: string): Promise<ArtistPage> {
   const yt = await innertube()
   const artist = await yt.music.getArtist(id)
   const header = artist.header
@@ -346,7 +342,7 @@ export async function getArtist(id: string): Promise<ArtistPage> {
   return page
 }
 
-export async function browse(target: BrowseTarget): Promise<{ title: string; sections: Section[] }> {
+async function ytBrowse(target: BrowseTarget): Promise<{ title: string; sections: Section[] }> {
   const yt = await innertube()
   const response = await yt.actions.execute('/browse', {
     browseId: target.browseId,
@@ -366,13 +362,7 @@ export async function browse(target: BrowseTarget): Promise<{ title: string; sec
  * Queues (watch next / radio)
  * ------------------------------------------------------------------ */
 
-export interface QueuePage {
-  songs: Song[]
-  continuation?: string
-  playlistId?: string
-}
-
-export async function getQueue(options: { videoId?: string; playlistId?: string; params?: string }): Promise<QueuePage> {
+async function ytGetQueue(options: { videoId?: string; playlistId?: string; params?: string }): Promise<QueuePage> {
   const yt = await innertube()
   const response = await yt.actions.execute('/next', {
     videoId: options.videoId,
@@ -393,7 +383,7 @@ export async function getQueue(options: { videoId?: string; playlistId?: string;
   }
 }
 
-export async function getQueueContinuation(continuation: string, playlistId?: string): Promise<QueuePage> {
+async function ytGetQueueContinuation(continuation: string, playlistId?: string): Promise<QueuePage> {
   const yt = await innertube()
   const response = await yt.actions.execute('/next', {
     continuation,
@@ -409,9 +399,17 @@ export async function getQueueContinuation(continuation: string, playlistId?: st
   return { songs: songsOf(contents.contents), continuation: contents.continuation || undefined, playlistId }
 }
 
-/** A radio seeded from a song: YouTube Music's "RDAMVM" playlists. */
-export function radioFor(videoId: string) {
-  return getQueue({ videoId, playlistId: `RDAMVM${videoId}` })
+/** Radios are YouTube Music's generated playlists: RDAMVM<video>, RDAMPL<playlist>. */
+function ytRadio(seed: RadioSeed): Promise<QueuePage> {
+  switch (seed.kind) {
+    case 'song':
+      return ytGetQueue({ videoId: seed.song.id, playlistId: `RDAMVM${seed.song.id}` })
+    case 'album':
+      if (!seed.playlistId) return Promise.resolve({ songs: [] })
+      return ytGetQueue({ playlistId: `RDAMPL${seed.playlistId}` })
+    case 'playlist':
+      return ytGetQueue({ playlistId: `RDAMPL${seed.playlist.id}` })
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -444,21 +442,83 @@ async function browseAllItems(browseId: string, maxPages = 6): Promise<Item[]> {
   return items
 }
 
-export async function getLibraryPlaylists() {
+async function ytGetLibraryPlaylists() {
   const items = await browseAllItems('FEmusic_liked_playlists')
   // The first tile is "New playlist"; liked music is shown separately.
   return items.filter((item) => item.type === 'playlist' && item.id !== 'LM' && !item.radio)
 }
 
-export async function getLibraryArtists() {
+async function ytGetLibraryArtists() {
   const items = await browseAllItems('FEmusic_library_corpus_track_artists')
   return items.filter((item) => item.type === 'artist')
 }
 
-export async function setLiked(videoId: string, liked: boolean) {
+async function ytSetLiked(videoId: string, liked: boolean) {
   const yt = await innertube()
   await yt.actions.execute(liked ? '/like/like' : '/like/removelike', {
     target: { videoId },
     client: 'YTMUSIC',
   })
 }
+
+/* ------------------------------------------------------------------ *
+ * The service
+ * ------------------------------------------------------------------ */
+
+function link(item: Item): string {
+  switch (item.type) {
+    case 'song':
+      return `https://music.youtube.com/watch?v=${item.id}`
+    case 'album':
+      return `https://music.youtube.com/browse/${item.id}`
+    case 'playlist':
+      return `https://music.youtube.com/playlist?list=${item.id}`
+    case 'artist':
+      return `https://music.youtube.com/channel/${item.id}`
+  }
+}
+
+/** Everything except streams, the account and thumbnails (see index.ts). */
+export const content = {
+  home: {
+    load: ({ filter }) => ytLoadHome(filter),
+    more: ({ filter }) => ytLoadMoreHome(filter),
+  },
+  search: {
+    filters: [
+      { id: 'song', label: 'Songs' },
+      { id: 'video', label: 'Videos' },
+      { id: 'album', label: 'Albums' },
+      { id: 'artist', label: 'Artists' },
+      { id: 'playlist', label: 'Playlists' },
+    ],
+    query: ({ query, type }) => ytSearch(query, type),
+    more: () => ytSearchMore(),
+    suggestions: ({ input }) => ytSearchSuggestions(input),
+  },
+  albums: { get: ({ id }) => ytGetAlbum(id) },
+  playlists: {
+    get: ({ id }) => ytGetPlaylist(id),
+    more: ({ id }) => ytLoadMorePlaylist(id),
+  },
+  artists: { get: ({ id }) => ytGetArtist(id) },
+  browse: { get: ({ target }) => ytBrowse(target) },
+  queue: {
+    start: (input) => ytGetQueue(input),
+    more: ({ continuation, playlistId }) => ytGetQueueContinuation(continuation, playlistId),
+    radio: (seed) => ytRadio(seed),
+  },
+  links: { share: link },
+} satisfies Partial<ServiceDefinition>
+
+/** Library endpoints; they need an account, so index.ts adds them only when signed in. */
+export const library = {
+  playlists: async () => (await ytGetLibraryPlaylists()) as Playlist[],
+  artists: async () => (await ytGetLibraryArtists()) as Artist[],
+  liked: async () => {
+    const page = await ytGetPlaylist('LM')
+    return { songs: page.songs, hasMore: page.hasMore }
+  },
+  likedMore: () => ytLoadMorePlaylist('LM'),
+  like: ({ song, liked }: { song: Song; liked: boolean }) => ytSetLiked(song.id, liked),
+} satisfies NonNullable<ServiceDefinition['library']>

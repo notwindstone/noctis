@@ -1,25 +1,25 @@
 <script setup lang="ts">
+import { C } from '../plugins/components'
 import { computed, onMounted, ref, watch } from 'vue'
 import { artworkHue } from '../artColor'
-import ItemRow from '../components/ItemRow.vue'
 import MIcon from '../components/MIcon.vue'
-import SectionView from '../components/SectionView.vue'
 import StateView from '../components/StateView.vue'
 import Thumb from '../components/Thumb.vue'
-import TopAppBar from '../components/TopAppBar.vue'
 import { useAsync } from '../composables'
 import { haptic } from '../haptics'
 import { useItemDelegation } from '../itemActions'
 import { openBrowse, type Route } from '../navigation'
 import { playFromQueueSource } from '../player'
 import { schemeStyle } from '../theme'
-import { getArtist } from '../ytm/api'
-import type { Song } from '../ytm/models'
+import { getArtist } from '../services/api'
+import type { Song } from '../models'
 
 const props = defineProps<{ route: Route; screenKey: number; isRoot: boolean }>()
 const id = computed(() => (props.route.name === 'artist' ? props.route.id : ''))
 
-const { data, loading, error, run } = useAsync(() => getArtist(id.value))
+const source = computed(() => (props.route.name === 'artist' ? props.route.source : undefined))
+
+const { data, loading, error, run } = useAsync(() => getArtist(id.value, source.value))
 onMounted(run)
 
 const hue = ref<number | null>(null)
@@ -44,20 +44,20 @@ function shuffle() {
   const page = data.value
   if (!page?.shuffle) return
   haptic('press')
-  void playFromQueueSource({ ...page.shuffle, title: page.name })
+  void playFromQueueSource({ ...page.shuffle, title: page.name, source: source.value })
 }
 
 function radio() {
   const page = data.value
   if (!page?.radio) return
   haptic('press')
-  void playFromQueueSource({ ...page.radio, title: `${page.name} radio` })
+  void playFromQueueSource({ ...page.radio, title: `${page.name} radio`, source: source.value })
 }
 </script>
 
 <template>
   <div class="screen artist-screen" :style="tint">
-    <TopAppBar :title="data?.name ?? ''" back overlay :reveal-at="260" />
+    <C.TopAppBar :title="data?.name ?? ''" back overlay :reveal-at="260" />
 
     <StateView v-if="loading && !data" kind="loading" />
     <StateView v-else-if="error && !data" kind="error" title="Couldn't load this artist" :message="error" action="Try again" @action="run" />
@@ -99,11 +99,11 @@ function radio() {
           </button>
         </header>
         <div class="section-list" @click="topSongActions.onClick" @contextmenu="topSongActions.onContextmenu">
-          <ItemRow v-for="(song, index) in topSongList" :key="song.id" :item="song" :index="index" />
+          <C.ItemRow v-for="(song, index) in topSongList" :key="song.id" :item="song" :index="index" />
         </div>
       </section>
 
-      <SectionView v-for="section in otherSections" :key="section.id" :section="section" />
+      <C.SectionView v-for="section in otherSections" :key="section.id" :section="section" />
     </template>
   </div>
 </template>

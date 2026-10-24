@@ -4,7 +4,6 @@ import { useBackTarget } from '../back'
 import { haptic, tap, thresholdTracker } from '../haptics'
 import { isLiked, toggleLike } from '../library'
 import { navigate } from '../navigation'
-import { download, offlineState, removeOffline, transfers } from '../offline'
 import {
   currentHue,
   currentSong,
@@ -24,8 +23,10 @@ import {
 } from '../player'
 import { playerArtworkColors, repeatMode, shuffleEnabled } from '../preferences'
 import { colorSource, schemeStyle } from '../theme'
-import { closePlayer, confirm, openPlayer, playerExpanded, playerExpansion, showItemMenu } from '../ui'
-import { artistNames } from '../ytm/models'
+import { closePlayer, openPlayer, playerExpanded, playerExpansion, queueOpen, showItemMenu } from '../ui'
+import { ActionCollections, executeAction, resolveEntry, visibleEntries, type ActionEntry } from '../plugins/actions'
+import { notify } from '../snackbar'
+import { artistNames, type Song } from '../models'
 import MIcon from './MIcon.vue'
 import QueuePanel from './QueuePanel.vue'
 import SeekBar from './SeekBar.vue'
@@ -33,7 +34,6 @@ import Thumb from './Thumb.vue'
 
 const sheet = ref<HTMLElement | null>(null)
 const frameEl = ref<HTMLElement | null>(null)
-const queueOpen = ref(false)
 
 /* ------------------------------------------------------------------ *
  * Expansion spring
@@ -377,8 +377,42 @@ const fullStyle = computed(() => ({
 }))
 
 const liked = computed(() => (currentSong.value ? isLiked(currentSong.value.id) : false))
-const offline = computed(() => (currentSong.value ? offlineState(currentSong.value.id) : 'none'))
-const downloadProgress = computed(() => (currentSong.value ? (transfers.get(currentSong.value.id)?.progress ?? 0) : 0))
+/* Chips under the controls come from the playerActions collection (src/plugins/actions.ts). */
+const chipStatus = ref<Record<string, 'pending' | 'success' | undefined>>({})
+
+const chips = computed(() => {
+  const song = currentSong.value
+  if (!song) return []
+  const context = { song }
+  return visibleEntries(ActionCollections.playerActions as ActionEntry<typeof context>[], context).map((entry) => ({
+    entry,
+    ...resolveEntry(entry, context),
+  }))
+})
+
+function runChip(entry: ActionEntry<{ song: Song }>) {
+  const song = currentSong.value
+  if (!song) return
+  tap()
+  const id = entry.id
+  const set = (state: 'pending' | 'success' | undefined) => (chipStatus.value = { ...chipStatus.value, [id]: state })
+  void executeAction(entry.action, { song }, {
+    pending: () => set('pending'),
+    success: (message) => {
+      if (message) notify(message)
+      set('success')
+      window.setTimeout(() => set(undefined), 1000)
+    },
+    error: (message) => {
+      notify(message)
+      set(undefined)
+    },
+    reset: () => set(undefined),
+  }).then(() => {
+    // An action that never reported back shouldn't leave its chip spinning.
+    if (chipStatus.value[id] === 'pending') set(undefined)
+  })
+}
 
 async function onToggle() {
   haptic('press')
@@ -401,22 +435,6 @@ function onLike() {
   void toggleLike(currentSong.value)
 }
 
-function onDownload() {
-  const song = currentSong.value
-  if (!song) return
-  tap()
-  if (offline.value === 'downloaded') {
-    confirm({
-      title: 'Remove download?',
-      message: `"${song.title}" will no longer be available offline.`,
-      confirmLabel: 'Remove',
-      destructive: true,
-      onConfirm: () => removeOffline(song.id),
-    })
-  } else if (offline.value !== 'downloading') {
-    void download(song, 'download')
-  }
-}
 
 function onShuffle() {
   haptic(shuffleEnabled.value ? 'toggleOff' : 'toggleOn')
@@ -433,10 +451,6 @@ function onCollapse() {
   closePlayer()
 }
 
-function openQueue() {
-  tap()
-  queueOpen.value = true
-}
 
 function openArtist() {
   const artist = currentSong.value?.artists.find((item) => item.id)
@@ -548,23 +562,25 @@ function openMenu() {
           </div>
 
           <div class="full-player-actions">
-            <button class="chip-button" type="button" @click="openQueue">
-              <MIcon name="queue" :size="20" />
-              Up next
-            </button>
             <button
+              v-for="chip in chips"
+              :key="chip.entry.id"
               class="chip-button"
-              :class="{ 'is-active': offline === 'downloaded' }"
+              :class="{ 'is-active': chip.filled }"
               type="button"
-              @click="onDownload"
+              :disabled="chip.disabled || chipStatus[chip.entry.id] === 'pending'"
+              @click="runChip(chip.entry)"
             >
-              <span v-if="offline === 'downloading'" class="progress-ring" :style="{ '--p': downloadProgress }" aria-hidden="true" />
-              <MIcon v-else :name="offline === 'downloaded' ? 'downloaded' : 'download'" :size="20" />
-              {{ offline === 'downloaded' ? 'Downloaded' : offline === 'downloading' ? 'Downloading' : 'Download' }}
+              <span v-if="chipStatus[chip.entry.id] === 'pending'" class="chip-spinner" aria-hidden="true" />
+              <span v-else-if="chip.progress !== undefined" class="progress-ring" :style="{ '--p': chip.progress }" aria-hidden="true" />
+              <MIcon v-else :name="chipStatus[chip.entry.id] === 'success' ? 'check' : chip.icon" :size="20" />
+              {{ chip.label }}
             </button>
           </div>
 
-          <QueuePanel v-if="queueOpen" @close="queueOpen = false" />
+          <Transition name="queue-panel">
+            <QueuePanel v-if="queueOpen" @close="queueOpen = false" />
+          </Transition>
         </div>
       </div>
     </div>

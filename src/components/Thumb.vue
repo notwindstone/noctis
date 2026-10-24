@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { IconName } from '../icons'
-import { thumbnailAt } from '../ytm/thumbnails'
+import { thumbnailAt } from '../thumbnails'
 import MIcon from './MIcon.vue'
 
 const props = withDefaults(
@@ -18,19 +18,28 @@ const props = withDefaults(
 
 const failed = ref(false)
 const loaded = ref(false)
+/** hq720 stills don't exist for every (older) video; fall back to mqdefault once. */
+const downgraded = ref(false)
 
 watch(
   () => props.src,
   () => {
     failed.value = false
     loaded.value = false
+    downgraded.value = false
   },
 )
 
 const url = computed(() => {
   const density = Math.min(window.devicePixelRatio || 1, 3)
-  return thumbnailAt(props.src, props.size * density)
+  const resolved = thumbnailAt(props.src, props.size * density)
+  return downgraded.value ? resolved?.replace('/hq720.jpg', '/mqdefault.jpg') : resolved
 })
+
+function onError() {
+  if (!downgraded.value && url.value?.includes('/hq720.jpg')) downgraded.value = true
+  else failed.value = true
+}
 </script>
 
 <template>
@@ -48,7 +57,7 @@ const url = computed(() => {
       referrerpolicy="no-referrer"
       :class="{ 'is-loaded': loaded }"
       @load="loaded = true"
-      @error="failed = true"
+      @error="onError"
     />
   </span>
 </template>

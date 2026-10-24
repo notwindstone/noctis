@@ -2,6 +2,19 @@
  * Material Symbols (Rounded, weight 400) used by the app. Each icon has an outlined and a
  * filled variant; the filled one is used for selected/active states, as in Material You.
  */
+import { shallowReactive } from 'vue'
+import i_plugin from '@material-symbols/svg-400/rounded/extension.svg?raw'
+import i_pluginFill from '@material-symbols/svg-400/rounded/extension-fill.svg?raw'
+import i_upload from '@material-symbols/svg-400/rounded/upload_file.svg?raw'
+import i_uploadFill from '@material-symbols/svg-400/rounded/upload_file-fill.svg?raw'
+import i_add_link from '@material-symbols/svg-400/rounded/add_link.svg?raw'
+import i_add_linkFill from '@material-symbols/svg-400/rounded/add_link-fill.svg?raw'
+import i_terminal from '@material-symbols/svg-400/rounded/terminal.svg?raw'
+import i_terminalFill from '@material-symbols/svg-400/rounded/terminal-fill.svg?raw'
+import i_fingerprint from '@material-symbols/svg-400/rounded/fingerprint.svg?raw'
+import i_fingerprintFill from '@material-symbols/svg-400/rounded/fingerprint-fill.svg?raw'
+import i_link from '@material-symbols/svg-400/rounded/link.svg?raw'
+import i_linkFill from '@material-symbols/svg-400/rounded/link-fill.svg?raw'
 import i_lockscreen from '@material-symbols/svg-400/rounded/lock.svg?raw'
 import i_lockscreenFill from '@material-symbols/svg-400/rounded/lock-fill.svg?raw'
 import i_home from '@material-symbols/svg-400/rounded/home.svg?raw'
@@ -143,6 +156,12 @@ import i_listFill from '@material-symbols/svg-400/rounded/format_list_bulleted-f
 
 const RAW = {
   'home': [i_home, i_homeFill],
+  'plugin': [i_plugin, i_pluginFill],
+  'upload': [i_upload, i_uploadFill],
+  'add-link': [i_add_link, i_add_linkFill],
+  'terminal': [i_terminal, i_terminalFill],
+  'fingerprint': [i_fingerprint, i_fingerprintFill],
+  'link': [i_link, i_linkFill],
   'lockscreen': [i_lockscreen, i_lockscreenFill],
   'library': [i_library, i_libraryFill],
   'settings': [i_settings, i_settingsFill],
@@ -222,6 +241,22 @@ function pathOf(svg: string): string {
 /** viewBox of every Material Symbols SVG. */
 export const ICON_VIEWBOX = '0 -960 960 960'
 
-export const ICONS = Object.fromEntries(
-  Object.entries(RAW).map(([name, [outlined, filled]]) => [name, { outlined: pathOf(outlined), filled: pathOf(filled) }]),
-) as Record<IconName, { outlined: string; filled: string }>
+export interface IconPaths {
+  outlined: string
+  filled: string
+}
+
+/** Reactive, so icons registered by plugins render as soon as they're added. */
+export const ICONS = shallowReactive(
+  Object.fromEntries(
+    Object.entries(RAW).map(([name, [outlined, filled]]) => [name, { outlined: pathOf(outlined), filled: pathOf(filled) }]),
+  ) as Record<string, IconPaths>,
+)
+
+/**
+ * Add an icon. Paths are SVG path data in the Material Symbols viewBox
+ * (`0 -960 960 960`); the filled variant defaults to the outlined one.
+ */
+export function registerIcon(name: string, outlined: string, filled = outlined) {
+  ICONS[name] = { outlined, filled }
+}

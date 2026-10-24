@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { currentSong, isPlaying } from '../player'
-import { artistNames, type Item } from '../ytm/models'
+import { artistNames, type Item } from '../models'
 import MIcon from './MIcon.vue'
 import Thumb from './Thumb.vue'
 
@@ -9,7 +9,6 @@ import Thumb from './Thumb.vue'
 const props = withDefaults(defineProps<{ item: Item; index: number; width?: number }>(), { width: 148 })
 
 const title = computed(() => (props.item.type === 'artist' ? props.item.name : props.item.title))
-const isWide = computed(() => props.item.type === 'song' && props.item.isVideo)
 const isCurrent = computed(() => props.item.type === 'song' && currentSong.value?.id === props.item.id)
 
 const subtitle = computed(() => {
@@ -32,8 +31,8 @@ const subtitle = computed(() => {
 <template>
   <button
     class="item-card"
-    :class="{ 'is-artist': item.type === 'artist', 'is-wide': isWide }"
-    :style="{ width: `${isWide ? Math.round(width * 1.6) : width}px` }"
+    :class="{ 'is-artist': item.type === 'artist' }"
+    :style="{ width: `${width}px` }"
     type="button"
     data-action="open"
     :data-item-index="index"
@@ -41,7 +40,7 @@ const subtitle = computed(() => {
     <span class="item-card-art">
       <Thumb
         :src="item.thumbnail"
-        :size="isWide ? width * 1.6 : width"
+        :size="width"
         :shape="item.type === 'artist' ? 'circle' : 'rounded'"
         :icon="item.type === 'artist' ? 'artist' : item.type === 'album' ? 'album' : item.type === 'playlist' ? 'playlist' : 'music'"
       />

@@ -1,159 +1,27 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { tap } from '../haptics'
-import type { IconName } from '../icons'
-import { isLiked, toggleLike } from '../library'
-import { navigate } from '../navigation'
-import { download, offlineState, removeOffline } from '../offline'
-import { addToQueue, playNext, playRadio, playSongs, removeFromQueue, shufflePlay, startRadio } from '../player'
-import { notify } from '../snackbar'
-import { choiceDialog, closePlayer, confirm, confirmDialog, itemMenu, textDialog } from '../ui'
-import { getAlbum, getPlaylist } from '../ytm/api'
-import { artistNames, type Item, type Song } from '../ytm/models'
+import { executeAction, resolveEntry, visibleEntries, type ActionEntry } from '../plugins/actions'
+import { menuCollection, notifyHandlers } from '../plugins/builtins'
+import { choiceDialog, confirmDialog, itemMenu, textDialog, type ItemMenuRequest } from '../ui'
+import { artistNames, type Item } from '../models'
 import BottomSheet from './BottomSheet.vue'
 import DialogShell from './DialogShell.vue'
 import MIcon from './MIcon.vue'
 import Thumb from './Thumb.vue'
 
-interface Action {
-  icon: IconName
-  label: string
-  filled?: boolean
-  run: () => void | Promise<void>
-}
-
-const request = computed(() => itemMenu.value)
-const item = computed<Item | null>(() => request.value?.item ?? null)
+const item = computed<Item | null>(() => itemMenu.value?.item ?? null)
 
 function close() {
   itemMenu.value = null
 }
 
-function go(route: Parameters<typeof navigate>[0]) {
-  close()
-  closePlayer()
-  void navigate(route)
-}
-
-async function songsOf(target: Item): Promise<Song[]> {
-  if (target.type === 'album') return (await getAlbum(target.id)).songs
-  if (target.type === 'playlist') return (await getPlaylist(target.id)).songs
-  return []
-}
-
-function linkFor(target: Item): string {
-  switch (target.type) {
-    case 'song':
-      return `https://music.youtube.com/watch?v=${target.id}`
-    case 'album':
-      return `https://music.youtube.com/browse/${target.id}`
-    case 'playlist':
-      return `https://music.youtube.com/playlist?list=${target.id}`
-    case 'artist':
-      return `https://music.youtube.com/channel/${target.id}`
-  }
-}
-
-const actions = computed<Action[]>(() => {
-  const target = item.value
-  if (!target) return []
-  const list: Action[] = []
-
-  if (target.type === 'song') {
-    const song = target
-    const state = offlineState(song.id)
-    const liked = isLiked(song.id)
-
-    if (request.value?.list) {
-      const { songs, index, title } = request.value.list
-      list.push({ icon: 'play', label: 'Play from here', run: () => playSongs(songs, index, title) })
-    }
-    list.push(
-      { icon: 'play-next', label: 'Play next', run: () => playNext(song) },
-      { icon: 'add-queue', label: 'Add to queue', run: () => addToQueue(song) },
-      { icon: 'radio', label: 'Start radio', run: () => startRadio(song) },
-      {
-        icon: 'favorite',
-        filled: liked,
-        label: liked ? 'Remove from liked songs' : 'Like',
-        run: () => toggleLike(song),
-      },
-    )
-
-    if (state === 'downloaded') {
-      list.push({
-        icon: 'delete',
-        label: 'Remove download',
-        run: () =>
-          confirm({
-            title: 'Remove download?',
-            message: `"${song.title}" will no longer be available offline.`,
-            confirmLabel: 'Remove',
-            destructive: true,
-            onConfirm: () => removeOffline(song.id),
-          }),
-      })
-    } else if (state !== 'downloading') {
-      list.push({ icon: 'download', label: state === 'cached' ? 'Keep offline' : 'Download', run: () => download(song) })
-    }
-
-    if (request.value?.queueIndex !== undefined) {
-      const index = request.value.queueIndex
-      list.push({ icon: 'close', label: 'Remove from queue', run: () => removeFromQueue(index) })
-    }
-    if (song.album) {
-      const album = song.album
-      list.push({ icon: 'album', label: 'Go to album', run: () => go({ name: 'album', id: album.id }) })
-    }
-    for (const artist of song.artists.filter((ref) => ref.id)) {
-      list.push({ icon: 'artist', label: `Go to ${artist.name}`, run: () => go({ name: 'artist', id: artist.id! }) })
-    }
-  } else if (target.type === 'album' || target.type === 'playlist') {
-    if (target.type === 'playlist' && target.radio) {
-      list.push({ icon: 'play', label: 'Play', run: () => playRadio(target) })
-    } else {
-      const title = target.title
-      list.push(
-        { icon: 'play', label: 'Play', run: async () => playSongs(await songsOf(target), 0, title) },
-        { icon: 'shuffle', label: 'Shuffle', run: async () => shufflePlay(await songsOf(target), title) },
-        {
-          icon: 'add-queue',
-          label: 'Add to queue',
-          run: async () => {
-            const songs = await songsOf(target)
-            songs.forEach((song) => addToQueue(song))
-          },
-        },
-        {
-          icon: target.type === 'album' ? 'album' : 'playlist',
-          label: target.type === 'album' ? 'Go to album' : 'Open playlist',
-          run: () => go(target.type === 'album' ? { name: 'album', id: target.id } : { name: 'playlist', id: target.id }),
-        },
-      )
-    }
-    if (target.type === 'album') {
-      for (const artist of target.artists.filter((ref) => ref.id)) {
-        list.push({ icon: 'artist', label: `Go to ${artist.name}`, run: () => go({ name: 'artist', id: artist.id! }) })
-      }
-    }
-  } else if (target.type === 'artist') {
-    list.push({ icon: 'artist', label: 'Open artist', run: () => go({ name: 'artist', id: target.id }) })
-  }
-
-  list.push({
-    icon: 'share',
-    label: 'Copy link',
-    run: async () => {
-      try {
-        await navigator.clipboard.writeText(linkFor(target))
-        notify('Link copied')
-      } catch {
-        notify(linkFor(target))
-      }
-    },
-  })
-
-  return list
+/** Menu entries come from the item type's action collection (src/plugins/actions.ts). */
+const entries = computed(() => {
+  const request = itemMenu.value
+  if (!request) return []
+  const collection = menuCollection(request.item) as ActionEntry<ItemMenuRequest>[]
+  return visibleEntries(collection, request).map((entry) => ({ entry, ...resolveEntry(entry, request) }))
 })
 
 const subtitle = computed(() => {
@@ -165,14 +33,12 @@ const subtitle = computed(() => {
   return target.subtitle ?? 'Artist'
 })
 
-async function run(action: Action) {
+function run(entry: ActionEntry<ItemMenuRequest>) {
+  const request = itemMenu.value
+  if (!request) return
   tap()
   close()
-  try {
-    await action.run()
-  } catch {
-    notify('Something went wrong. Check your connection.')
-  }
+  void executeAction(entry.action, request, notifyHandlers())
 }
 
 /* Choice dialog */
@@ -226,9 +92,16 @@ async function confirmAction() {
         </div>
       </div>
       <div class="sheet-scroll">
-        <button v-for="action in actions" :key="action.label" class="menu-item" type="button" @click="run(action)">
-          <MIcon :name="action.icon" :filled="action.filled" />
-          <span class="type-body-large">{{ action.label }}</span>
+        <button
+          v-for="{ entry, icon, label, filled, disabled } in entries"
+          :key="entry.id"
+          class="menu-item"
+          type="button"
+          :disabled="disabled"
+          @click="run(entry)"
+        >
+          <MIcon :name="icon" :filled="filled" />
+          <span class="type-body-large">{{ label }}</span>
         </button>
       </div>
     </template>

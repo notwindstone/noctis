@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { C } from '../plugins/components'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import ItemRow from '../components/ItemRow.vue'
 import MIcon from '../components/MIcon.vue'
 import StateView from '../components/StateView.vue'
 import { describeError, useInfiniteScroll } from '../composables'
@@ -8,18 +8,14 @@ import { haptic, tap } from '../haptics'
 import { useItemDelegation } from '../itemActions'
 import { recordSearch, removeSearch, searchHistory } from '../library'
 import { goBack, type Route } from '../navigation'
-import { search, searchMore, searchSuggestions, type SearchResult, type SearchType, type Suggestions } from '../ytm/api'
+import type { SearchResult, SearchType, Suggestions } from '../models'
+import { search, searchFilters, searchMore, searchSuggestions } from '../services/api'
+import { serviceName } from '../services/session'
 
 const props = defineProps<{ route: Route; screenKey: number; isRoot: boolean }>()
 
-const FILTERS: { id: SearchType; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'song', label: 'Songs' },
-  { id: 'video', label: 'Videos' },
-  { id: 'album', label: 'Albums' },
-  { id: 'artist', label: 'Artists' },
-  { id: 'playlist', label: 'Playlists' },
-]
+/** "All" plus the active service's filters. */
+const filters = computed(() => searchFilters())
 
 const input = ref<HTMLInputElement | null>(null)
 const sentinel = ref<HTMLElement | null>(null)
@@ -163,8 +159,8 @@ onMounted(() => {
           autocomplete="off"
           autocapitalize="off"
           spellcheck="false"
-          placeholder="Search YouTube Music"
-          aria-label="Search YouTube Music"
+          :placeholder="`Search ${serviceName}`"
+          :aria-label="`Search ${serviceName}`"
           @focus="editing = true"
           @keydown.enter.prevent="run()"
         />
@@ -175,7 +171,7 @@ onMounted(() => {
 
       <div v-if="!editing && submitted" class="chip-row" role="group" aria-label="Filter results">
         <button
-          v-for="option in FILTERS"
+          v-for="option in filters"
           :key="option.id"
           class="chip"
           type="button"
@@ -218,7 +214,7 @@ onMounted(() => {
         @click="suggestionActions.onClick"
         @contextmenu="suggestionActions.onContextmenu"
       >
-        <ItemRow v-for="(item, index) in suggestions.items" :key="`${item.type}:${item.id}`" :item="item" :index="index" />
+        <C.ItemRow v-for="(item, index) in suggestions.items" :key="`${item.type}:${item.id}`" :item="item" :index="index" />
       </div>
     </div>
 
@@ -235,7 +231,7 @@ onMounted(() => {
         <div v-if="filter === 'all'" @click="resultActions.onClick" @contextmenu="resultActions.onContextmenu">
           <section v-for="(section, sectionIndex) in result.sections" :key="section.id" class="result-section">
             <h2 class="type-title-medium result-title">{{ section.title }}</h2>
-            <ItemRow
+            <C.ItemRow
               v-for="(item, index) in section.items"
               :key="`${item.type}:${item.id}`"
               :item="item"
@@ -246,12 +242,12 @@ onMounted(() => {
             v-if="result.sections.length === 0"
             icon="search"
             title="No results"
-            :message="`Nothing on YouTube Music matches “${submitted}”.`"
+            :message="`Nothing on ${serviceName} matches “${submitted}”.`"
           />
         </div>
 
         <div v-else @click="resultActions.onClick" @contextmenu="resultActions.onContextmenu">
-          <ItemRow
+          <C.ItemRow
             v-for="(item, index) in result.items"
             :key="`${item.type}:${item.id}`"
             :item="item"
@@ -261,7 +257,7 @@ onMounted(() => {
             v-if="result.items.length === 0"
             icon="search"
             title="No results"
-            :message="`Nothing on YouTube Music matches “${submitted}”.`"
+            :message="`Nothing on ${serviceName} matches “${submitted}”.`"
           />
         </div>
       </template>

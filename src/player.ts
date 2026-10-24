@@ -1,16 +1,18 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import { artworkHue } from './artColor'
 import { haptic } from './haptics'
+import { runAfterHooks, runBeforeHooks } from './plugins/hooks'
 import { recordPlay } from './library'
 import { download, localSource, offline } from './offline'
 import { autoplayRelated, cacheEnabled, persistentQueue, repeatMode, shuffleEnabled } from './preferences'
 import { notify } from './snackbar'
 import { readJson, writeJson } from './storage'
 import { artworkHue as themeArtworkHue } from './theme'
-import { getQueue, getQueueContinuation, radioFor } from './ytm/api'
-import { artistNames, type Playlist, type Song } from './ytm/models'
-import { forgetStream, resolveStream } from './ytm/stream'
-import { thumbnailAt } from './ytm/thumbnails'
+import { queueMore, radio, radioFor, startQueue } from './services/api'
+import type { RadioSeed } from './services/types'
+import { artistNames, type Playlist, type Song } from './models'
+import { forgetStream, resolveStream } from './services/stream'
+import { thumbnailAt } from './thumbnails'
 
 const audio = new Audio()
 audio.preload = 'auto'
@@ -35,7 +37,7 @@ export const upNext = computed(() => queue.value.slice(currentIndex.value + 1))
 
 /** The order before shuffling, so turning shuffle off restores it. */
 let unshuffled: Song[] | null = null
-let continuation: { token?: string; playlistId?: string } = {}
+let continuation: { token?: string; playlistId?: string; source?: string } = {}
 let fetchingMore = false
 let loadToken = 0
 let pendingSeek: number | null = null
@@ -59,6 +61,15 @@ function updateMediaSession(song: Song) {
 async function load(index: number, autoplay = true) {
   const song = queue.value[index]
   if (!song) return
+
+  if (autoplay) {
+    // Plugins can skip songs (e.g. a filter): "stop" moves on to the next one.
+    const outcome = await runBeforeHooks('onPlay', { song, index })
+    if (outcome.stopped) {
+      if (index < queue.value.length - 1) void load(index + 1, autoplay)
+      return
+    }
+  }
 
   const token = ++loadToken
   currentIndex.value = index
@@ -85,7 +96,7 @@ async function load(index: number, autoplay = true) {
 
   if (!source) {
     try {
-      source = (await resolveStream(song.id)).url
+      source = (await resolveStream(song)).url
       streamed = true
     } catch (error) {
       if (token !== loadToken) return
@@ -103,6 +114,7 @@ async function load(index: number, autoplay = true) {
   if (autoplay) {
     try {
       await audio.play()
+      runAfterHooks('onPlay', { song, index })
     } catch (error) {
       if (token === loadToken && (error as DOMException).name !== 'AbortError') {
         isLoading.value = false
@@ -131,12 +143,12 @@ async function maybeFetchMore() {
   try {
     let songs: Song[] = []
     if (continuation.token) {
-      const page = await getQueueContinuation(continuation.token, continuation.playlistId)
-      continuation = { token: page.continuation, playlistId: page.playlistId }
+      const page = await queueMore(continuation.token, continuation.playlistId, continuation.source)
+      continuation = { token: page.continuation, playlistId: page.playlistId, source: continuation.source }
       songs = page.songs
     } else if (autoplayRelated.value && repeatMode.value !== 'all') {
-      const page = await radioFor(last.id)
-      continuation = { token: page.continuation, playlistId: page.playlistId }
+      const page = await radioFor(last)
+      continuation = { token: page.continuation, playlistId: page.playlistId, source: last.source }
       songs = page.songs
     }
 
@@ -158,7 +170,12 @@ async function maybeFetchMore() {
  * Public controls
  * ------------------------------------------------------------------ */
 
-function setQueue(songs: Song[], startIndex: number, title: string, next: { token?: string; playlistId?: string } = {}) {
+function setQueue(
+  songs: Song[],
+  startIndex: number,
+  title: string,
+  next: { token?: string; playlistId?: string; source?: string } = {},
+) {
   unshuffled = null
   continuation = next
   queueTitle.value = title
@@ -186,11 +203,11 @@ export async function playSong(song: Song) {
   setQueue([song], 0, `Radio · ${song.title}`)
   const token = loadToken
   try {
-    const page = await radioFor(song.id)
+    const page = await radioFor(song)
     if (token !== loadToken && currentSong.value?.id !== song.id) return
     const rest = page.songs.filter((item) => item.id !== song.id)
     queue.value = [...queue.value, ...rest]
-    continuation = { token: page.continuation, playlistId: page.playlistId }
+    continuation = { token: page.continuation, playlistId: page.playlistId, source: song.source }
     savePlaybackState()
   } catch {
     /* the song still plays on its own */
@@ -203,28 +220,41 @@ export const startRadio = playSong
 export async function playRadio(playlist: Playlist) {
   try {
     isLoading.value = true
-    const page = await getQueue({
-      playlistId: playlist.id,
-      videoId: playlist.radio?.videoId,
-      params: playlist.radio?.params,
-    })
+    const page = await startQueue(
+      { playlistId: playlist.id, videoId: playlist.radio?.videoId, params: playlist.radio?.params },
+      playlist.source,
+    )
     if (page.songs.length === 0) throw new Error('empty')
-    setQueue(page.songs, 0, playlist.title, { token: page.continuation, playlistId: page.playlistId })
+    setQueue(page.songs, 0, playlist.title, { token: page.continuation, playlistId: page.playlistId, source: playlist.source })
   } catch {
     isLoading.value = false
     notify(`Couldn't start "${playlist.title}"`)
   }
 }
 
-export async function playFromQueueSource(options: { playlistId: string; params?: string; title: string; shuffle?: boolean }) {
+/** An opaque queue from a page, e.g. an artist's shuffle or radio. */
+export async function playFromQueueSource(options: { playlistId: string; params?: string; title: string; source?: string }) {
   try {
     isLoading.value = true
-    const page = await getQueue({ playlistId: options.playlistId, params: options.params })
+    const page = await startQueue({ playlistId: options.playlistId, params: options.params }, options.source)
     if (page.songs.length === 0) throw new Error('empty')
-    setQueue(page.songs, 0, options.title, { token: page.continuation, playlistId: page.playlistId })
+    setQueue(page.songs, 0, options.title, { token: page.continuation, playlistId: page.playlistId, source: options.source })
   } catch {
     isLoading.value = false
     notify(`Couldn't play "${options.title}"`)
+  }
+}
+
+/** A radio from an album or playlist page. */
+export async function playRadioFrom(seed: RadioSeed, title: string, source?: string) {
+  try {
+    isLoading.value = true
+    const page = await radio(seed, source)
+    if (page.songs.length === 0) throw new Error('empty')
+    setQueue(page.songs, 0, title, { token: page.continuation, playlistId: page.playlistId, source })
+  } catch {
+    isLoading.value = false
+    notify(`Couldn't start "${title}"`)
   }
 }
 
@@ -450,7 +480,7 @@ audio.addEventListener('error', () => {
     retriedExpired = true
     forgetStream(song.id)
     const resumeAt = audio.currentTime
-    void resolveStream(song.id)
+    void resolveStream(song)
       .then((stream) => {
         if (currentSong.value?.id !== song.id) return
         pendingSeek = resumeAt

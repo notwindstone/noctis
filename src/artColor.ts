@@ -1,5 +1,5 @@
 import { rgbToOklch } from './theme'
-import { thumbnailAt } from './ytm/thumbnails'
+import { thumbnailAt } from './thumbnails'
 
 const hues = new Map<string, number | null>()
 

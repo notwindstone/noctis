@@ -2,7 +2,7 @@ import { haptic } from './haptics'
 import { openItem } from './navigation'
 import { playRadio, playSong, playSongs } from './player'
 import { showItemMenu } from './ui'
-import type { Item, Song } from './ytm/models'
+import type { Item, Song } from './models'
 
 /**
  * Event delegation for lists of songs, albums, playlists and artists.

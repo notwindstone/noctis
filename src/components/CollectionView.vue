@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { C } from '../plugins/components'
 import { computed, ref, watch } from 'vue'
 import { artworkHue } from '../artColor'
 import { formatTotal, songCount } from '../format'
@@ -9,15 +10,12 @@ import { download, offlineState } from '../offline'
 import { playSongs, shufflePlay } from '../player'
 import { notify } from '../snackbar'
 import { schemeStyle } from '../theme'
-import type { ArtistRef, Section, Song } from '../ytm/models'
+import type { ArtistRef, Section, Song } from '../models'
 import { useInfiniteScroll } from '../composables'
 import { useItemDelegation } from '../itemActions'
-import ItemRow from './ItemRow.vue'
 import MIcon from './MIcon.vue'
-import SectionView from './SectionView.vue'
 import StateView from './StateView.vue'
 import Thumb from './Thumb.vue'
-import TopAppBar from './TopAppBar.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -119,11 +117,11 @@ useInfiniteScroll(sentinel, () => {
 <template>
   <div class="screen collection-screen" :style="tint">
     <div class="collection-tint" aria-hidden="true" />
-    <TopAppBar :title="title" back :reveal-at="300">
+    <C.TopAppBar :title="title" back :reveal-at="300">
       <template #actions>
         <slot name="actions" />
       </template>
-    </TopAppBar>
+    </C.TopAppBar>
 
     <StateView v-if="loading && songs.length === 0 && !title" kind="loading" />
     <StateView v-else-if="error && songs.length === 0" kind="error" title="Couldn't load this page" :message="error" action="Try again" @action="emit('retry')" />
@@ -178,7 +176,7 @@ useInfiniteScroll(sentinel, () => {
       </header>
 
       <div class="collection-songs" @click="songActions.onClick" @contextmenu="songActions.onContextmenu">
-        <ItemRow
+        <C.ItemRow
           v-for="(song, index) in songs"
           :key="`${song.id}:${index}`"
           :item="song"
@@ -193,7 +191,7 @@ useInfiniteScroll(sentinel, () => {
         <span v-if="loading && songs.length > 0" class="loading-indicator small" aria-label="Loading more" />
       </div>
 
-      <SectionView v-for="section in sections" :key="section.id" :section="section" />
+      <C.SectionView v-for="section in sections" :key="section.id" :section="section" />
       <slot />
     </template>
   </div>

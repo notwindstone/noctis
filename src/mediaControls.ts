@@ -16,8 +16,8 @@ import {
   stopPlayback,
 } from './player'
 import { mediaControls } from './preferences'
-import { artistNames } from './ytm/models'
-import { thumbnailAt } from './ytm/thumbnails'
+import { artistNames } from './models'
+import { thumbnailAt } from './thumbnails'
 
 /**
  * Mirrors the player into Android's media session: the notification and the lock screen

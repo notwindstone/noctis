@@ -3,19 +3,23 @@ import { computed, onMounted } from 'vue'
 import CollectionView from '../components/CollectionView.vue'
 import { useAsync } from '../composables'
 import type { Route } from '../navigation'
-import { playFromQueueSource, startRadio } from '../player'
-import { getAlbum } from '../ytm/api'
+import { playRadioFrom, startRadio } from '../player'
+import { getAlbum } from '../services/api'
 
 const props = defineProps<{ route: Route; screenKey: number; isRoot: boolean }>()
 const id = computed(() => (props.route.name === 'album' ? props.route.id : ''))
 
-const { data, loading, error, run } = useAsync(() => getAlbum(id.value))
+const source = computed(() => (props.route.name === 'album' ? props.route.source : undefined))
+
+const { data, loading, error, run } = useAsync(() => getAlbum(id.value, source.value))
 onMounted(run)
 
 function radio() {
   const album = data.value
   if (!album) return
-  if (album.playlistId) void playFromQueueSource({ playlistId: `RDAMPL${album.playlistId}`, title: `Radio · ${album.title}` })
+  if (album.playlistId) {
+    void playRadioFrom({ kind: 'album', album: { id: album.id, title: album.title }, playlistId: album.playlistId }, `Radio · ${album.title}`, source.value)
+  }
   else if (album.songs[0]) void startRadio(album.songs[0])
 }
 </script>

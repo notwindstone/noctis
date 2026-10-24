@@ -2,21 +2,22 @@ import { computed, nextTick, reactive, ref } from 'vue'
 import { registerBackTarget } from './back'
 import { App as NativeApp } from '@capacitor/app'
 import { isNative, type BackEventData } from './native'
-import type { BrowseTarget, Item } from './ytm/models'
+import type { BrowseTarget, Item } from './models'
 
 export type TabId = 'home' | 'library' | 'settings'
 
 export type CollectionId = 'liked' | 'downloads' | 'cached' | 'history'
-export type SettingsPage = 'account' | 'appearance' | 'playback' | 'content' | 'storage' | 'about'
+/** Settings section id: built-in ('account', 'appearance', …) or added by a plugin. */
+export type SettingsPage = string
 
 export type Route =
   | { name: 'home' }
   | { name: 'library' }
   | { name: 'settings' }
   | { name: 'search'; query?: string }
-  | { name: 'album'; id: string }
-  | { name: 'playlist'; id: string }
-  | { name: 'artist'; id: string }
+  | { name: 'album'; id: string; source?: string }
+  | { name: 'playlist'; id: string; source?: string }
+  | { name: 'artist'; id: string; source?: string }
   | { name: 'browse'; target: BrowseTarget; title?: string }
   | { name: 'collection'; id: CollectionId }
   | { name: 'library-playlists' }
@@ -130,11 +131,11 @@ export function navigate(route: Route) {
 export function openItem(item: Item) {
   switch (item.type) {
     case 'album':
-      return navigate({ name: 'album', id: item.id })
+      return navigate({ name: 'album', id: item.id, source: item.source })
     case 'artist':
-      return navigate({ name: 'artist', id: item.id })
+      return navigate({ name: 'artist', id: item.id, source: item.source })
     case 'playlist':
-      return navigate({ name: 'playlist', id: item.id })
+      return navigate({ name: 'playlist', id: item.id, source: item.source })
     default:
       return undefined
   }

@@ -1,5 +1,5 @@
 import { ref, shallowRef } from 'vue'
-import type { Item, Song } from './ytm/models'
+import type { Item, Song } from './models'
 
 /** Full player: true when expanded (or expanding), false when collapsed to the mini player. */
 export const playerExpanded = ref(false)
@@ -13,6 +13,9 @@ export function openPlayer() {
 export function closePlayer() {
   playerExpanded.value = false
 }
+
+/** The "Up next" panel inside the full player. */
+export const queueOpen = ref(false)
 
 export interface ItemMenuRequest {
   item: Item

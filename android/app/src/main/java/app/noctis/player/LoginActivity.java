@@ -21,14 +21,22 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 /**
- * Google sign-in for YouTube Music, the same way InnerTune-style clients do it: load the
- * YouTube ServiceLogin page, wait until it redirects to music.youtube.com, then return the
- * cookies for that origin. The web layer signs InnerTune requests with SAPISIDHASH.
+ * Two kinds of sign-in in a WebView:
+ *
+ * - Google sign-in for YouTube Music (no extras), the way InnerTune-style clients do it:
+ *   load the YouTube ServiceLogin page, wait until it redirects to music.youtube.com,
+ *   then return the cookies for that origin.
+ * - OAuth for plugins (EXTRA_URL + EXTRA_REDIRECT): load the authorization page and
+ *   return the first URL that starts with the redirect URI, without loading it. Any
+ *   redirect URI works, since it never has to resolve.
  */
 public class LoginActivity extends AppCompatActivity {
 
     public static final String EXTRA_COOKIE = "cookie";
     public static final String EXTRA_VISITOR_DATA = "visitorData";
+    public static final String EXTRA_URL = "url";
+    public static final String EXTRA_REDIRECT = "redirect";
+    public static final String EXTRA_TITLE = "title";
 
     private static final String LOGIN_URL =
         "https://accounts.google.com/ServiceLogin?ytbTemplate=1&service=youtube&continue=https%3A%2F%2Fmusic.youtube.com";
@@ -36,11 +44,16 @@ public class LoginActivity extends AppCompatActivity {
 
     private WebView webView;
     private boolean finished = false;
+    /** OAuth mode when set. */
+    private String redirect;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        redirect = getIntent().getStringExtra(EXTRA_REDIRECT);
+        String startUrl = redirect != null ? getIntent().getStringExtra(EXTRA_URL) : LOGIN_URL;
+        String heading = getIntent().getStringExtra(EXTRA_TITLE);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -60,7 +73,7 @@ public class LoginActivity extends AppCompatActivity {
         bar.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         TextView title = new TextView(this);
-        title.setText("Sign in to YouTube Music");
+        title.setText(heading != null ? heading : "Sign in to YouTube Music");
         title.setTextSize(18);
         title.setTextColor(Color.rgb(28, 27, 31));
         title.setPadding(dp(8), 0, 0, 0);
@@ -85,19 +98,29 @@ public class LoginActivity extends AppCompatActivity {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        // Google refuses sign-in from user agents that advertise an embedded WebView.
+        // Google (and "Continue with Google" on other sites) refuses user agents that
+        // advertise an embedded WebView.
         settings.setUserAgentString(settings.getUserAgentString().replace("; wv", ""));
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return false;
+                return catchRedirect(request.getUrl().toString());
+            }
+
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                if (catchRedirect(url)) {
+                    view.stopLoading();
+                    return;
+                }
+                super.onPageStarted(view, url, favicon);
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (url != null && url.startsWith(MUSIC_ORIGIN)) {
+                if (redirect == null && url != null && url.startsWith(MUSIC_ORIGIN)) {
                     tryFinish(view);
                 }
             }
@@ -114,7 +137,24 @@ public class LoginActivity extends AppCompatActivity {
             }
         });
 
-        webView.loadUrl(LOGIN_URL);
+        if (startUrl == null) {
+            cancel();
+            return;
+        }
+        webView.loadUrl(startUrl);
+    }
+
+    /** OAuth mode: hand the redirect back instead of loading it. */
+    private boolean catchRedirect(String url) {
+        if (redirect == null || url == null || !url.startsWith(redirect)) return false;
+        if (!finished) {
+            finished = true;
+            Intent result = new Intent();
+            result.putExtra(EXTRA_URL, url);
+            setResult(RESULT_OK, result);
+            finish();
+        }
+        return true;
     }
 
     private void tryFinish(WebView view) {

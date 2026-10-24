@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Signed in</title>
+<p style="font: 16px system-ui; padding: 24px">Signed in. You can close this window.</p>
+<script>
+  // Development only: hand the redirect URL to the app (src/auth.ts). On a device the
+  // WebView catches the redirect before this page would load.
+  new BroadcastChannel('noctis-auth').postMessage({ url: location.href })
+  setTimeout(() => window.close(), 300)
+</script>

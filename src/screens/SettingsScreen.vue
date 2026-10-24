@@ -1,60 +1,54 @@
 <script setup lang="ts">
 import MIcon from '../components/MIcon.vue'
-import SettingsRow from '../components/SettingsRow.vue'
 import Thumb from '../components/Thumb.vue'
-import TopAppBar from '../components/TopAppBar.vue'
 import { tap } from '../haptics'
-import type { IconName } from '../icons'
-import { navigate, type Route, type SettingsPage } from '../navigation'
-import { account, signedIn } from '../ytm/client'
+import { navigate, type Route } from '../navigation'
+import { C } from '../plugins/components'
+import { Sections } from '../plugins/rows'
+import { account, hasAccounts, openAccountSettings, signedIn, signInDescription, signInTitle } from '../services/session'
 
 defineProps<{ route: Route; screenKey: number; isRoot: boolean }>()
 
-const rows: { page: SettingsPage; icon: IconName; title: string; description: string }[] = [
-  { page: 'appearance', icon: 'palette', title: 'Appearance', description: 'Theme, dynamic colour, player' },
-  { page: 'playback', icon: 'equalizer', title: 'Playback', description: 'Audio quality, queue, autoplay' },
-  { page: 'content', icon: 'language', title: 'Content', description: 'Language and region' },
-  { page: 'storage', icon: 'storage', title: 'Storage', description: 'Downloads, cache and history' },
-  { page: 'about', icon: 'info', title: 'About', description: 'Version and credits' },
-]
-
-function open(page: SettingsPage) {
+/** Settings home: the account card, then every visible section (built-in and plugin). */
+function open(page: string) {
   void navigate({ name: 'settings-page', page })
 }
 
 function openAccount() {
   tap()
-  open('account')
+  openAccountSettings()
 }
 </script>
 
 <template>
   <div class="screen settings-screen">
-    <TopAppBar title="Settings" :reveal-at="56" />
+    <C.TopAppBar title="Settings" :reveal-at="56" />
     <h1 class="screen-headline type-headline-large">Settings</h1>
 
-    <button class="account-card" type="button" @click="openAccount">
+    <button v-if="hasAccounts" class="account-card" type="button" @click="openAccount">
       <Thumb v-if="account?.photo" :src="account.photo" :size="56" shape="circle" icon="account" />
       <span v-else class="account-card-icon"><MIcon name="account" :size="32" /></span>
       <span class="account-card-text">
-        <strong class="type-title-medium">{{ signedIn ? (account?.name ?? 'Signed in') : 'Sign in to YouTube Music' }}</strong>
+        <strong class="type-title-medium">{{ signedIn ? (account?.name ?? 'Signed in') : signInTitle }}</strong>
         <span class="type-body-medium muted">
-          {{ signedIn ? (account?.handle ?? 'Your library and recommendations') : 'Get your playlists, likes and personal mixes' }}
+          {{ signedIn ? (account?.handle ?? 'Your library and recommendations') : signInDescription }}
         </span>
       </span>
       <MIcon name="chevron-right" class="settings-row-chevron" />
     </button>
 
     <div class="settings-group">
-      <SettingsRow
-        v-for="row in rows"
-        :key="row.page"
-        :icon="row.icon"
-        :title="row.title"
-        :description="row.description"
-        chevron
-        @click="open(row.page)"
-      />
+      <template v-for="section in Sections" :key="section.id">
+        <component
+          :is="C.SettingsRow"
+          v-if="!section.hidden"
+          :icon="section.icon"
+          :title="section.title"
+          :description="section.description"
+          chevron
+          @click="open(section.id)"
+        />
+      </template>
     </div>
   </div>
 </template>

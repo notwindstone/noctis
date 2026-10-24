@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import CollectionView from '../components/CollectionView.vue'
 import MIcon from '../components/MIcon.vue'
 import { describeError } from '../composables'
@@ -9,9 +9,10 @@ import { clearHistory, history, likedSongs } from '../library'
 import type { CollectionId, Route } from '../navigation'
 import { cached, clearCache, downloads, formatBytes, usage } from '../offline'
 import { confirm } from '../ui'
-import { getPlaylist, loadMorePlaylist } from '../ytm/api'
-import { sessionVersion, signedIn } from '../ytm/client'
-import { artistNames, type Song } from '../ytm/models'
+import { getLikedSongs, loadMoreLikedSongs } from '../services/api'
+import { servicesReady } from '../services/registry'
+import { onSessionChange, serviceName, syncsLikes } from '../services/session'
+import { artistNames, type Song } from '../models'
 
 const props = defineProps<{ route: Route; screenKey: number; isRoot: boolean }>()
 const id = computed<CollectionId>(() => (props.route.name === 'collection' ? props.route.id : 'liked'))
@@ -25,22 +26,24 @@ const META: Record<CollectionId, { title: string; icon: IconName; empty: string 
 
 const meta = computed(() => META[id.value])
 
-/* Liked songs come from YouTube Music when signed in, from the device otherwise. */
+/* Liked songs come from the service when it keeps them (YouTube Music, signed in), from the device otherwise. */
 const remoteLiked = ref<Song[] | null>(null)
 const remoteHasMore = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
 async function loadRemote() {
-  if (id.value !== 'liked' || !signedIn.value) {
+  await servicesReady()
+  if (id.value !== 'liked' || !syncsLikes.value) {
     remoteLiked.value = null
     return
   }
   loading.value = true
   error.value = null
   try {
-    const page = await getPlaylist('LM')
-    remoteLiked.value = page.songs
+    const page = await getLikedSongs()
+    remoteLiked.value = page?.songs ?? null
+    if (!page) return
     remoteHasMore.value = page.hasMore
   } catch (cause) {
     error.value = describeError(cause)
@@ -53,7 +56,7 @@ async function loadMore() {
   if (!remoteHasMore.value || loading.value) return
   loading.value = true
   try {
-    const page = await loadMorePlaylist('LM')
+    const page = await loadMoreLikedSongs()
     remoteLiked.value = [...(remoteLiked.value ?? []), ...page.songs]
     remoteHasMore.value = page.hasMore
   } catch {
@@ -64,13 +67,13 @@ async function loadMore() {
 }
 
 onMounted(loadRemote)
-watch(sessionVersion, loadRemote)
+onSessionChange(loadRemote)
 
 const songs = computed<Song[]>(() => {
   switch (id.value) {
     case 'liked': {
       if (!remoteLiked.value) return likedSongs.value
-      // Show local likes that haven't reached YouTube yet first.
+      // Show local likes that haven't reached the service yet first.
       const remoteIds = new Set(remoteLiked.value.map((song) => song.id))
       return [...likedSongs.value.filter((song) => !remoteIds.has(song.id)), ...remoteLiked.value]
     }
@@ -87,7 +90,7 @@ const songs = computed<Song[]>(() => {
 const subtitle = computed(() => {
   switch (id.value) {
     case 'liked':
-      return signedIn.value ? 'Synced with YouTube Music' : 'On this device'
+      return syncsLikes.value ? `Synced with ${serviceName.value}` : 'On this device'
     case 'downloads':
       return `${formatBytes(usage.value.download)} on this device`
     case 'cached':
@@ -113,7 +116,7 @@ function clearAll() {
   if (id.value === 'history') {
     confirm({
       title: 'Clear listening history?',
-      message: 'This removes your on-device history. YouTube Music history is not affected.',
+      message: 'This removes your on-device history. History kept by streaming services is not affected.',
       confirmLabel: 'Clear',
       destructive: true,
       onConfirm: clearHistory,

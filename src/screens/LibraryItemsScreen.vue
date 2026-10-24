@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import ItemCard from '../components/ItemCard.vue'
+import { C } from '../plugins/components'
+import { computed, onMounted, ref } from 'vue'
 import StateView from '../components/StateView.vue'
-import TopAppBar from '../components/TopAppBar.vue'
 import { describeError } from '../composables'
 import { useItemDelegation } from '../itemActions'
 import { listenedArtists } from '../library'
 import type { Route } from '../navigation'
-import { getLibraryArtists, getLibraryPlaylists } from '../ytm/api'
-import { sessionVersion, signedIn } from '../ytm/client'
-import type { Item } from '../ytm/models'
+import { getLibraryArtists, getLibraryPlaylists } from '../services/api'
+import { servicesReady } from '../services/registry'
+import { hasLibrary, onSessionChange, serviceName } from '../services/session'
+import type { Item } from '../models'
 
 const props = defineProps<{ route: Route; screenKey: number; isRoot: boolean }>()
 
@@ -23,7 +23,8 @@ const error = ref<string | null>(null)
 const actions = useItemDelegation(() => ({ items: items.value }))
 
 async function load() {
-  if (!signedIn.value) {
+  await servicesReady()
+  if (!hasLibrary.value) {
     items.value = isArtists.value ? listenedArtists.value : []
     return
   }
@@ -40,12 +41,12 @@ async function load() {
 }
 
 onMounted(load)
-watch(sessionVersion, load)
+onSessionChange(load)
 </script>
 
 <template>
   <div class="screen">
-    <TopAppBar :title="title" back :reveal-at="48" />
+    <C.TopAppBar :title="title" back :reveal-at="48" />
     <h1 class="screen-headline type-headline-medium">{{ title }}</h1>
     <StateView v-if="loading && items.length === 0" kind="loading" />
     <StateView v-else-if="error" kind="error" :message="error" action="Try again" @action="load" />
@@ -56,13 +57,13 @@ watch(sessionVersion, load)
       @click="actions.onClick"
       @contextmenu="actions.onContextmenu"
     >
-      <ItemCard v-for="(item, index) in items" :key="`${item.type}:${item.id}`" :item="item" :index="index" :width="isArtists ? 120 : 156" />
+      <C.ItemCard v-for="(item, index) in items" :key="`${item.type}:${item.id}`" :item="item" :index="index" :width="isArtists ? 120 : 156" />
     </div>
     <StateView
       v-else
       :icon="isArtists ? 'artist' : 'playlist'"
       :title="isArtists ? 'No artists yet' : 'No playlists yet'"
-      :message="signedIn ? '' : 'Sign in to YouTube Music to see your library.'"
+      :message="hasLibrary ? '' : `Sign in to ${serviceName} to see your library.`"
     />
   </div>
 </template>

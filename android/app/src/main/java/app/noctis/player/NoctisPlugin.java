@@ -398,14 +398,95 @@ public class NoctisPlugin extends Plugin {
         }
     }
 
+    /** OAuth for plugins: opens `url`, resolves with the URL it redirected to (starting with `redirect`). */
+    @PluginMethod
+    public void openAuth(PluginCall call) {
+        String url = call.getString("url");
+        String redirect = call.getString("redirect");
+        if (url == null || redirect == null || !(url.startsWith("https://") || url.startsWith("http://"))) {
+            call.reject("url and redirect are required");
+            return;
+        }
+        Intent intent = new Intent(getContext(), LoginActivity.class);
+        intent.putExtra(LoginActivity.EXTRA_URL, url);
+        intent.putExtra(LoginActivity.EXTRA_REDIRECT, redirect);
+        intent.putExtra(LoginActivity.EXTRA_TITLE, call.getString("title", "Sign in"));
+        startActivityForResult(call, intent, "onAuthResult");
+    }
+
+    @ActivityCallback
+    private void onAuthResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        Intent data = result.getData();
+        if (result.getResultCode() == Activity.RESULT_OK && data != null) {
+            JSObject response = new JSObject();
+            response.put("url", data.getStringExtra(LoginActivity.EXTRA_URL));
+            call.resolve(response);
+        } else {
+            call.reject("Sign-in was cancelled", "CANCELLED");
+        }
+    }
+
+    /**
+     * Load `url` in a hidden WebView and resolve with the first response whose URL
+     * contains `match` ({ url, body }). See WebCapture.
+     */
+    @PluginMethod
+    public void captureResponse(PluginCall call) {
+        String url = call.getString("url");
+        String match = call.getString("match");
+        if (url == null || match == null || !url.startsWith("https://")) {
+            call.reject("An https url and a match are required");
+            return;
+        }
+        long timeout = call.getLong("timeoutMs", 30000L);
+        new WebCapture(getActivity()).start(url, match, call.getString("userAgent"), timeout, new WebCapture.Callback() {
+            @Override
+            public void onResult(String responseUrl, String body) {
+                JSObject result = new JSObject();
+                result.put("url", responseUrl);
+                result.put("body", body);
+                call.resolve(result);
+            }
+
+            @Override
+            public void onError(String message) {
+                call.reject(message, "TIMEOUT");
+            }
+        });
+    }
+
+    /** Remove every cookie, or with `url`, only the cookies visible to that URL (one site's session). */
     @PluginMethod
     public void clearCookies(PluginCall call) {
+        String url = call.getString("url");
         getActivity().runOnUiThread(() -> {
             CookieManager manager = CookieManager.getInstance();
-            manager.removeAllCookies(removed -> {
-                manager.flush();
-                call.resolve();
-            });
+            if (url == null) {
+                manager.removeAllCookies(removed -> {
+                    manager.flush();
+                    call.resolve();
+                });
+                return;
+            }
+            String host = android.net.Uri.parse(url).getHost();
+            String cookies = manager.getCookie(url);
+            if (cookies != null && host != null) {
+                // Cookies may be set on the host or any parent domain; expire the name on each.
+                String[] parts = host.split("\\.");
+                for (String cookie : cookies.split(";")) {
+                    String name = cookie.split("=", 2)[0].trim();
+                    if (name.isEmpty()) continue;
+                    manager.setCookie(url, name + "=; Max-Age=0; Path=/");
+                    for (int i = 0; i < parts.length - 1; i++) {
+                        StringBuilder domain = new StringBuilder();
+                        for (int j = i; j < parts.length; j++) domain.append('.').append(parts[j]);
+                        manager.setCookie(url, name + "=; Max-Age=0; Path=/; Domain=" + domain);
+                    }
+                }
+            }
+            manager.flush();
+            call.resolve();
         });
     }
 }
