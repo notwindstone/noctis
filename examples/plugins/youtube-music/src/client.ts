@@ -1,10 +1,11 @@
 import { computed, ref, watch } from 'vue'
 import { Innertube, Log, Platform, UniversalCache } from 'youtubei.js'
-import { hasNoctisPlugin, Noctis } from '../../native'
-import { contentCountry, contentLanguage } from '../../preferences'
-import { isBoolean, persisted } from '../../storage'
+import { Noctis, type AccountInfo } from './host'
 import { ytFetch } from './http'
-import type { AccountInfo } from '../../models'
+
+const { hasNoctisPlugin, Noctis: native } = Noctis.libs.native
+const { contentCountry, contentLanguage } = Noctis.libs.preferences
+const { isBoolean, persisted } = Noctis.libs.storage
 
 Log.setLevel(Log.Level.NONE)
 
@@ -95,7 +96,7 @@ export const canSignInNatively = hasNoctisPlugin
 /** Opens the native Google sign-in page. Resolves to true when signed in. */
 export async function signInWithGoogle(): Promise<boolean> {
   if (!hasNoctisPlugin) return false
-  const result = await Noctis.openLogin()
+  const result = await native.openLogin()
   return signInWithCookie(result.cookie, result.visitorData)
 }
 
@@ -114,7 +115,7 @@ export async function signOut() {
   auth.value = null
   account.value = null
   if (hasNoctisPlugin) {
-    await Noctis.clearCookies().catch(() => {})
+    await native.clearCookies().catch(() => {})
   }
 }
 

@@ -5,8 +5,8 @@ import { persisted } from '../storage'
 import type { ServiceDefinition } from './types'
 
 /**
- * Defined services, by id. Each comes from a plugin — YouTube Music included, which is
- * bundled with the app (src/services/youtube-music).
+ * Defined services, by id. Each comes from a plugin (YouTube Music's is
+ * examples/plugins/youtube-music); the app itself defines none.
  */
 export const services = shallowReactive<Record<string, ServiceDefinition>>({})
 const owners = new Map<string, string>()

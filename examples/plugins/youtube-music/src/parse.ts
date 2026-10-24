@@ -1,5 +1,5 @@
 import { YTNodes, type Helpers } from 'youtubei.js'
-import type { Album, Artist, ArtistRef, Item, Playlist, Section, Song } from '../../models'
+import type { Album, Artist, ArtistRef, Item, Playlist, Section, Song } from './host'
 import { largest } from './thumbnails'
 
 type YTNode = Helpers.YTNode

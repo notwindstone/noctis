@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { notify } from '../../snackbar'
-import MIcon from '../../components/MIcon.vue'
-import Thumb from '../../components/Thumb.vue'
 import { account, canSignInNatively, signedIn, signInWithGoogle } from './client'
+import { Noctis } from './host'
+
+const { notify } = Noctis.libs.snackbar
+const { MIcon, Thumb } = Noctis.components
 
 const signingIn = ref(false)
 

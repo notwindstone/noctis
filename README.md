@@ -1,7 +1,8 @@
 # Noctis
 
-A Material You client for YouTube Music, in the spirit of InnerTune / ArchiveTune, built
-with **Vue 3.5** and **Capacitor 8**.
+A Material You music client, in the spirit of InnerTune / ArchiveTune, built with
+**Vue 3.5** and **Capacitor 8**. Music comes from plugins: the app ships with none, and
+YouTube Music is one you install (see [Quick start](#quick-start)).
 
 - **Home**: search bar on top, mood chips, and YouTube Music's own home rows (Quick picks,
   "Similar to …", mixes, your playlists when signed in) with infinite scroll. Signed out,
@@ -23,7 +24,11 @@ with **Vue 3.5** and **Capacitor 8**.
 nix develop
 npm install
 npm run dev          # http://localhost:5173
+npm run pack-plugin -- examples/plugins/youtube-music
 ```
+
+Then install `dist-plugins/youtube-music.noctis` from **Settings → Plugins → Install from
+file**.
 
 In the browser, InnerTune requests go through a small proxy in `vite.config.ts` (CORS,
 and Cookie/Origin headers browsers refuse to send). Dragging in from the left or right
@@ -44,7 +49,7 @@ steam-run ./gradlew assembleDebug              # NixOS: gradle's binaries need a
 | --- | --- |
 | `src/models.ts` | plain models every screen uses (songs, albums, sections, pages…) |
 | `src/services/` | the service layer: `types.ts` (what a service provides), `registry.ts`, `api.ts` (routes every call to the item's or the active service, through the `onRequest` hook) |
-| `src/services/youtube-music/` | YouTube Music, as a bundled plugin: youtubei.js sessions and sign-in (`client.ts`), native/proxied fetch (`http.ts`), endpoints (`api.ts`, `parse.ts`), streams with BotGuard tokens (`stream.ts`, `potoken.ts`) |
+| `examples/plugins/youtube-music/` | YouTube Music, as a plugin built from TypeScript: youtubei.js sessions and sign-in (`client.ts`), native/proxied fetch (`http.ts`), endpoints (`api.ts`, `parse.ts`), streams with BotGuard tokens (`stream.ts`, `potoken.ts`) |
 | `src/plugins/` | the plugin system: runtime, hooks, component/action registries, settings rows (see [docs/PLUGINS.md](docs/PLUGINS.md)) |
 | `src/player.ts` | queue, shuffle/repeat, radio autoplay, offline-first sources, persisted queue |
 | `src/offline.ts` | downloads and the auto-trimmed cache (1 MB ranged chunks → app storage / Cache Storage) |
@@ -58,11 +63,11 @@ steam-run ./gradlew assembleDebug              # NixOS: gradle's binaries need a
 ## Streaming
 
 googlevideo serves only the first ~1 MB of a stream unless the URL carries a
-proof-of-origin (`pot`) token. `src/services/youtube-music/potoken.ts` mints one per video the way
+proof-of-origin (`pot`) token. `examples/plugins/youtube-music/src/potoken.ts` mints one per video the way
 InnerTune-style clients do: it loads Google's BotGuard challenge (from
 `jnn-pa.googleapis.com`), runs it in the page (the app is a real Chromium WebView), and
 exchanges the snapshot for an integrity token at `youtube.com/api/jnn/v1/GenerateIT`.
-`src/services/youtube-music/stream.ts` then uses the YouTube Music web client, deciphers the URL with the
+`examples/plugins/youtube-music/src/stream.ts` then uses the YouTube Music web client, deciphers the URL with the
 player script, and appends `&pot=`. BotGuard and the player script are pre-warmed shortly
 after launch.
 

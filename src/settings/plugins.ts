@@ -6,7 +6,6 @@ import { writeLog } from '../plugins/log'
 import { defineSection, findSection, group, removeSection, Rows, type SettingsBlock, type SettingsRowDef } from '../plugins/rows'
 import { disablePlugin, enablePlugin, removePlugin, runStates, setPluginsActive } from '../plugins/runtime'
 import {
-  allPlugins,
   approvedHashes,
   describeAuthors,
   findPlugin,
@@ -28,7 +27,7 @@ const sectionId = (plugin: InstalledPlugin) => `plugin:${plugin.id}`
 function stateLabel(plugin: InstalledPlugin): string {
   const state = runStates[plugin.sha256]
   if (!isEnabled(plugin)) return state === 'failed' ? 'Failed to start' : 'Off'
-  if (!pluginsActive.value && !plugin.builtIn) return 'On (plugins are switched off)'
+  if (!pluginsActive.value) return 'On (plugins are switched off)'
   if (state === 'running') return 'Running'
   if (state === 'failed') return 'Failed to start'
   return 'On'
@@ -42,7 +41,7 @@ function requestEnable(plugin: InstalledPlugin) {
     if (!ok) notify(`${plugin.metadata.name} failed to start. Its log has details.`)
   }
 
-  if (plugin.builtIn || approvedHashes.value[plugin.sha256]) {
+  if (approvedHashes.value[plugin.sha256]) {
     void run()
     return
   }
@@ -171,9 +170,6 @@ function pluginBlocks(id: string): SettingsBlock[] {
         get value() {
           return current()?.sha256.slice(0, 16) ?? ''
         },
-        get hidden() {
-          return current()?.builtIn === true
-        },
       },
     ]),
     { id: 'log-header', type: 'header', title: 'Log' },
@@ -200,11 +196,7 @@ function pluginBlocks(id: string): SettingsBlock[] {
           })
         },
       },
-    ], {
-      get hidden() {
-        return current()?.builtIn === true
-      },
-    }),
+    ]),
   ]
 }
 
@@ -233,7 +225,7 @@ export function definePluginSettings() {
           id: 'active',
           icon: 'plugin',
           title: 'Run plugins',
-          description: 'Turn off to stop every installed plugin without removing them (safe mode). Built-in plugins keep running.',
+          description: 'Turn off to stop every installed plugin without removing them (safe mode).',
           toggle: {
             get value() {
               return pluginsActive.value
@@ -269,7 +261,7 @@ export function definePluginSettings() {
 
   // Keep the installed list and the per-plugin sections in step with what's installed.
   watch(
-    allPlugins,
+    installedPlugins,
     (plugins) => {
       const rows = (installedGroup as { rows: SettingsRowDef[] }).rows
       rows.splice(
@@ -287,8 +279,7 @@ export function definePluginSettings() {
               const current = findPlugin(id)
               if (!current) return ''
               const version = current.metadata.version ? `v${current.metadata.version} · ` : ''
-              const by = current.builtIn ? 'Built-in' : describeAuthors(current.metadata)
-              return `${version}${by} · ${stateLabel(current)}`
+              return `${version}${describeAuthors(current.metadata)} · ${stateLabel(current)}`
             },
             chevron: true,
             onClick: () => void navigate({ name: 'settings-page', page: sectionId(plugin) }),

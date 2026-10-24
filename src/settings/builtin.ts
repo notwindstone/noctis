@@ -400,14 +400,8 @@ const aboutBlocks: SettingsBlock[] = [
   { id: 'hero', type: 'component', component: AboutHero },
   group('about', [
     { id: 'version', icon: 'info', title: 'Version', value: '0.2.0' },
-    { id: 'built-with', icon: 'code', title: 'Built with', value: `Vue ${vueVersion} · Capacitor 8 · youtubei.js` },
+    { id: 'built-with', icon: 'code', title: 'Built with', value: `Vue ${vueVersion} · Capacitor 8` },
     { id: 'platform', icon: 'tune', title: 'Platform', value: platformLabel },
-    {
-      id: 'streams',
-      icon: 'warning',
-      title: 'Stream access',
-      value: 'YouTube Music web client · BotGuard proof-of-origin tokens',
-    },
   ]),
   { id: 'note', type: 'note', text: 'Noctis is not affiliated with YouTube or Google. Inspired by InnerTune and ArchiveTune.' },
 ]

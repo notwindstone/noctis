@@ -1,14 +1,19 @@
+import * as Capacitor from '@capacitor/core'
 import * as Vue from 'vue'
 import * as auth from '../auth'
 import * as back from '../back'
 import * as haptics from '../haptics'
 import { registerIcon, ICONS } from '../icons'
 import * as library from '../library'
+import MIcon from '../components/MIcon.vue'
+import Thumb from '../components/Thumb.vue'
+import * as native from '../native'
 import * as navigation from '../navigation'
 import * as offline from '../offline'
 import * as player from '../player'
 import * as preferences from '../preferences'
 import * as snackbar from '../snackbar'
+import * as storage from '../storage'
 import * as theme from '../theme'
 import * as ui from '../ui'
 import * as http from '../http'
@@ -41,13 +46,18 @@ import { defineSection, group, removeSection, Rows, Sections } from './rows'
 function build() {
   return {
     version: '0.2.0',
-    /** The app's own Vue, so plugin components share its reactivity. */
-    packages: { vue: Vue },
+    /**
+     * The app's own Vue (so plugin components share its reactivity) and Capacitor (so
+     * native plugins like CapacitorHttp are the app's instances).
+     */
+    packages: { vue: Vue, capacitor: Capacitor },
 
     /* Component registry */
     C,
     registerComponent,
     restoreComponent,
+    /** Small building blocks for plugin UIs; the app imports these directly, so they can't be replaced. */
+    components: { MIcon, Thumb },
 
     /* Actions and action collections */
     Actions,
@@ -66,7 +76,7 @@ function build() {
     removeSection,
     group,
 
-    /* Services: streaming backends (YouTube Music is one, from a bundled plugin) */
+    /* Services: streaming backends, each defined by a plugin */
     services,
     defineService,
     removeService,
@@ -96,12 +106,14 @@ function build() {
       http,
       library,
       models,
+      native,
       navigation,
       offline,
       player,
       preferences,
       session,
       snackbar,
+      storage,
       stream,
       theme,
       thumbnails,

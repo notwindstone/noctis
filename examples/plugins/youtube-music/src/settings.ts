@@ -1,8 +1,10 @@
-import { group, type SettingsBlock } from '../../plugins/rows'
-import { notify } from '../../snackbar'
-import { confirm, showTextDialog } from '../../ui'
 import AccountHero from './AccountHero.vue'
 import { account, refreshAccount, signedIn, signInWithCookie, signOut, useAccountForContent } from './client'
+import { Noctis, type SettingsBlock } from './host'
+
+const { group } = Noctis
+const { notify } = Noctis.libs.snackbar
+const { confirm, showTextDialog } = Noctis.libs.ui
 
 /** Settings → YouTube Music: the account. Getter-based rows, like the app's own. */
 

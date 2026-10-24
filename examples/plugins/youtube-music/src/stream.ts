@@ -1,8 +1,9 @@
-import type { Song, StreamInfo } from '../../models'
-import { StreamError } from '../stream'
+import { Noctis, type Song, type StreamInfo } from './host'
 import { playerInnertube } from './client'
 import { DESKTOP_UA, proxiedUrl } from './http'
 import { poTokenFor } from './potoken'
+
+const { StreamError } = Noctis.libs.stream
 
 export async function resolveStream({ song, efficient }: { song: Song; efficient: boolean }): Promise<StreamInfo> {
   const yt = await playerInnertube()

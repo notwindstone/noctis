@@ -1,5 +1,5 @@
 import { CapacitorHttp } from '@capacitor/core'
-import { isNative } from '../../native'
+import { Noctis } from './host'
 
 /**
  * Network access for InnerTube.
@@ -13,6 +13,8 @@ import { isNative } from '../../native'
 
 export const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+
+const { isNative } = Noctis.libs.native
 
 const FORBIDDEN_HEADERS = ['cookie', 'origin', 'referer', 'user-agent']
 

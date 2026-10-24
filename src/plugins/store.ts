@@ -1,6 +1,4 @@
-import { computed } from 'vue'
 import { isBoolean, persisted } from '../storage'
-import { BUNDLED_PLUGINS } from './bundled'
 
 /**
  * Installed plugins, kept on the device.
@@ -33,8 +31,6 @@ export interface InstalledPlugin {
   sha256: string
   metadata: PluginMetadata
   installedAt: number
-  /** Ships with the app (src/plugins/bundled.ts); `code` is empty. */
-  builtIn?: boolean
 }
 
 const isArray = (value: unknown) => Array.isArray(value)
@@ -51,13 +47,9 @@ export const approvedHashes = persisted<Record<string, true>>('noctis:plugins:ap
 /** Master switch; off starts the app without running any plugin ("safe mode"). */
 export const pluginsActive = persisted('noctis:plugins:active', true, isBoolean)
 
-/** Bundled plugins first, then installed ones in install order. */
-export const allPlugins = computed(() => [...BUNDLED_PLUGINS, ...installedPlugins.value])
-
-/** Bundled plugins are on unless turned off; installed ones are off unless turned on. */
+/** Off unless turned on. */
 export function isEnabled(plugin: InstalledPlugin): boolean {
-  const flag = enabledHashes.value[plugin.sha256]
-  return plugin.builtIn ? flag !== false : flag === true
+  return enabledHashes.value[plugin.sha256] === true
 }
 
 export function setEnabledFlag(plugin: InstalledPlugin, enabled: boolean) {
@@ -65,7 +57,7 @@ export function setEnabledFlag(plugin: InstalledPlugin, enabled: boolean) {
 }
 
 export function findPlugin(id: string): InstalledPlugin | undefined {
-  return allPlugins.value.find((plugin) => plugin.id === id)
+  return installedPlugins.value.find((plugin) => plugin.id === id)
 }
 
 export function describeAuthors(metadata: PluginMetadata): string {

@@ -10,16 +10,19 @@ extension system.
 > screen, read your library and your signed-in accounts, and make network requests.
 > Noctis asks before running new code, but only install plugins you trust.
 
-Examples:
+The app ships with no plugins, and so with no services: everything it plays comes from
+a plugin you install. Examples:
 
+- [`examples/plugins/youtube-music`](../examples/plugins/youtube-music) — YouTube Music:
+  home, search, library, sign-in and playback. Written in TypeScript with npm packages
+  (youtubei.js, BotGuard); see [Building from source](#building-from-source);
 - [`examples/plugins/spotify`](../examples/plugins/spotify) — a real service plugin:
   Spotify through the same GraphQL API its web player uses (session from a hidden web
   player, operation hashes read from its scripts), with audio matched on YouTube Music
   through `Noctis.api.request('youtube-music', …)`;
 - [`examples/plugins/demo-source`](../examples/plugins/demo-source):
 a fake "demo" streaming service with a hook, a song-menu action, a settings page and a
-screen. **YouTube Music itself is a plugin**: [`src/services/youtube-music`](../src/services/youtube-music)
-ships with the app and plugs in the same way (see [Bundled plugins](#bundled-plugins)).
+screen.
 
 ## Format
 
@@ -58,15 +61,20 @@ off until it's enabled (and approved) again.
 **Settings → Plugins → Run plugins** switches every installed plugin off without
 uninstalling them (safe mode).
 
-### Bundled plugins
+### Building from source
 
-Plugins listed in [`src/plugins/bundled.ts`](../src/plugins/bundled.ts) ship with the
-app: YouTube Music, for now. They're built with the app (so they can import npm
-packages — YouTube Music uses youtubei.js and BotGuard — and load as their own chunk),
-then run through the same runtime and lifecycle as installed plugins, receiving the
-same `scopedThis`. Differences: they're on by default, need no consent, can't be
-removed, and keep running when **Run plugins** is off. Turn one off on its page in
-Settings → Plugins.
+A folder with `src/index.ts` instead of `index.js` is built by `pack-plugin` first: Vite
+bundles its TypeScript, `.vue` files and npm packages into a single `index.js` that
+calls the default export of `src/index.ts` with `scopedThis`. `vue` and
+`@capacitor/core` aren't bundled; imports of them resolve to the app's own copies
+(`Noctis.packages.vue` and `Noctis.packages.capacitor`). Reach the app itself through
+`window.__NOCTIS__` (the same object as `scopedThis.Noctis`); `import type` from the
+app's `src/` is fine, since types are erased. See
+[`examples/plugins/youtube-music/src/host.ts`](../examples/plugins/youtube-music/src/host.ts).
+
+```sh
+npm run pack-plugin -- examples/plugins/youtube-music   # dist-plugins/youtube-music.noctis
+```
 
 ## How code runs
 

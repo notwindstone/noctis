@@ -22,10 +22,10 @@ import type {
   Section,
   Song,
   Suggestions,
-} from '../../models'
+} from './host'
 import { fromNode, itemsOf, payloadOf, sectionsOf, songsOf, stripBrowsePrefix } from './parse'
 import { largest } from './thumbnails'
-import type { RadioSeed, ServiceDefinition } from '../types'
+import type { RadioSeed, ServiceDefinition } from './host'
 
 type YTNode = Helpers.YTNode
 type YTSearchType = 'all' | 'song' | 'video' | 'album' | 'playlist' | 'artist'

@@ -1,10 +1,9 @@
 import { shallowReactive } from 'vue'
 import { writeLog } from './log'
 import { setServicesReady } from '../services/registry'
-import { loadBundled } from './bundled'
 import { noctisNamespace, type NoctisNamespace } from './namespace'
 import { PluginAPI } from './plugin-api'
-import { allPlugins, installedPlugins, isEnabled, pluginsActive, setEnabledFlag, type InstalledPlugin } from './store'
+import { installedPlugins, isEnabled, pluginsActive, setEnabledFlag, type InstalledPlugin } from './store'
 
 /**
  * Runs plugins. There's no sandbox: a plugin's `index.js` is the body of an async
@@ -41,11 +40,7 @@ async function cleanRun(plugin: InstalledPlugin): Promise<boolean> {
   const started = performance.now()
   try {
     const scope: PluginScope = { Plugin: api, Noctis: noctisNamespace() }
-    if (plugin.builtIn) {
-      await (await loadBundled(plugin.id)).default(scope)
-    } else {
-      await new AsyncFunction('scopedThis', plugin.code)(scope)
-    }
+    await new AsyncFunction('scopedThis', plugin.code)(scope)
   } catch (error) {
     writeLog(plugin.id, 'error', 'Failed to start:', error)
     runStates[plugin.sha256] = 'failed'
@@ -72,7 +67,7 @@ export async function enablePlugin(plugin: InstalledPlugin): Promise<boolean> {
   }
 
   // With plugins switched off globally, only remember the choice.
-  if (!pluginsActive.value && !plugin.builtIn) {
+  if (!pluginsActive.value) {
     setEnabledFlag(plugin, true)
     return true
   }
@@ -96,23 +91,23 @@ export async function disablePlugin(plugin: InstalledPlugin) {
 }
 
 export async function removePlugin(plugin: InstalledPlugin) {
-  if (plugin.builtIn) return
   await disablePlugin(plugin)
   installedPlugins.value = installedPlugins.value.filter((item) => item.id !== plugin.id)
 }
 
 /**
- * Run every enabled plugin, bundled ones first, then in install order. Called once at
- * startup; content requests wait for it (see servicesReady).
+ * Run every enabled plugin in install order. Called once at startup; content requests
+ * wait for it (see servicesReady).
  */
 export async function startPlugins() {
   try {
-    if (!pluginsActive.value) writeLog('noctis', 'info', 'Plugins are switched off; only bundled ones were started')
-    for (const plugin of allPlugins.value) {
-      if (!isEnabled(plugin) || (!plugin.builtIn && !pluginsActive.value)) continue
-      const ok = await cleanRun(plugin)
-      // A bundled plugin that failed stays enabled: it's likely the network, not the code.
-      if (!ok && !plugin.builtIn) setEnabledFlag(plugin, false)
+    if (!pluginsActive.value) {
+      writeLog('noctis', 'info', 'Plugins are switched off; none were started')
+      return
+    }
+    for (const plugin of installedPlugins.value) {
+      if (!isEnabled(plugin)) continue
+      if (!(await cleanRun(plugin))) setEnabledFlag(plugin, false)
     }
   } finally {
     setServicesReady()

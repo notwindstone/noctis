@@ -1,5 +1,4 @@
-import type { PluginScope } from '../../plugins/runtime'
-import type { ServiceDefinition } from '../types'
+import type { PluginScope, ServiceDefinition } from './host'
 import { content, library } from './api'
 import { account, playerInnertube, refreshAccount, sessionVersion, signedIn, useAccountForContent } from './client'
 import { prewarmPoToken } from './potoken'
@@ -8,13 +7,12 @@ import { resolveStream } from './stream'
 import { resizeThumbnail } from './thumbnails'
 
 /**
- * YouTube Music, as a plugin. It ships with the app (so it can use youtubei.js and
- * BotGuard from the bundle, and is loaded as its own chunk), but it plugs in exactly
- * like an installed plugin would: one `defineService` plus a settings section, both
- * undone when it's disabled in Settings → Plugins.
+ * YouTube Music, as a plugin: one `defineService` plus a settings section, both undone
+ * when it's disabled in Settings → Plugins. Written in TypeScript with npm packages
+ * (youtubei.js, BotGuard), so `npm run pack-plugin` builds it into a single index.js.
  */
 
-export const ID = 'youtube-music'
+const ID = 'youtube-music'
 
 const service: ServiceDefinition = {
   name: 'YouTube Music',
