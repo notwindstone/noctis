@@ -9,19 +9,41 @@ Why any of this exists: to combine many sources (YouTube Music, SoundCloud, loca
 into **one stream**, with recommendations and tags that work across all of them, and
 without every user hitting every service's rate limits.
 
+## Glossary
+
+- **Embedding:** a list of numbers (say, 128) that a model produces for a song, trained
+  so that songs that sound alike get similar lists. Think of coordinates on a map of
+  music: calm piano pieces sit near each other, metal far away.
+- **Embedding space:** whose map the coordinates are on. Vectors from different models
+  can't be compared, any more than GPS coordinates can be compared with street
+  addresses.
+- **Making vs storing embeddings:** making them needs the model (heavy, often a GPU):
+  that's an AI provider's job. Storing and searching them ("the 50 songs closest to
+  this one") is ordinary database work for the core, with pgvector, and needs no model.
+  Already-stored vectors keep working while the GPU box is off.
+- **Job queue:** the server's to-do list of background work ("analyse song X", "tag
+  song Y"). It isn't the song queue. Jobs wait in the database until a worker takes
+  them, and are retried if they fail.
+- **AI provider / worker:** something that does AI tasks: a container (any language)
+  or a Noctis server plugin.
+- **Publisher:** whoever publishes a shared dataset, such as the official Noctis
+  dataset or a community dataset of anime-music tags.
+
 ## Principles
 
-1. **The core owns the data and the contract; the AI is replaceable.** Recommendations,
-   tags and embeddings are native parts of the server (schema, API, job queue), but the
-   models run in separate, swappable **AI providers**.
+1. **The core owns the data and the contract; the AI is replaceable.** The core stores
+   and searches tags and embeddings, keeps the job queue, and serves the
+   recommendation API. The models that *produce* tags and embeddings run in separate,
+   swappable **AI providers**.
 2. **Plugins feed the catalog; they don't own databases.** A service plugin resolves
    songs and streams. It never keeps its own million-row index.
 3. **Index lazily.** The catalog is a cache of what's searched, played or adjacent, plus
    the small, permanent parts: identities, tags and embeddings.
 4. **Share derived data, never listening history.** Instances can share identities, tags
    and embeddings. What people listen to stays on their instance.
-5. **Degrade gracefully.** A Raspberry Pi with no AI provider still recommends; a GPU box
-   recommends better.
+5. **Admins decide what runs.** Every part can be switched on or off in the config (see
+   [Configuration](#configuration)). Without AI providers, recommendations still work
+   from metadata and shared data.
 
 ## Architecture
 
@@ -75,6 +97,11 @@ The core defines tasks; a provider says which it handles.
 
 ### Manifest
 
+The provider announces what it can do and what it outputs. It doesn't define
+embeddings; it says which **space** its vectors are in and how many **dimensions** they
+have, so the core never compares vectors across spaces, and stores and indexes them
+correctly.
+
 ```json
 {
   "name": "discogs-effnet",
@@ -91,21 +118,38 @@ The core defines tasks; a provider says which it handles.
   - `GET /manifest`;
   - `POST /tasks/<task>` with a job, answering with the result.
 
-  Swapping models means changing one image in `docker-compose.yml`, or one URL in
-  `NOCTIS_AI_WORKERS`. Noctis will ship a minimal reference worker in Python as a
+  Noctis will ship a minimal reference worker in Python as a
   template: replace the model function, keep the protocol.
 - **A Noctis server plugin**, for light logic or a hosted model API:
   `Plugin.defineAiProvider(id, { manifest, tasks: { tag, embed, … } })`, the way
   `defineProvider` works for audio.
+- **Swapping models:** change one image in `docker-compose.yml`, or connect a different
+  worker with its token.
 
 The rest of Noctis doesn't know which kind is answering. Admins choose which provider
 handles each task, and several can run at once (for example, one container for tagging
 and another for embeddings).
 
+### Remote workers: Noctis on a VPS, AI at home
+
+A worker doesn't have to run on the same machine as Noctis. For example, Noctis can run
+on a VPS for availability and storage, while a GPU box at home does the AI.
+
+- **Main model: the worker connects to the server.** It asks for jobs over HTTPS (polling
+  or a long-lived connection), receives each job with its audio clip, and sends the
+  result back. This needs no port forwarding at home, and the box can sleep: jobs wait
+  in the queue until it's back.
+- **Option: the server pushes to a worker URL**, for workers the server can reach, like a
+  GPU box on the same network.
+- **Authentication:** each worker has a token the admin creates, scoped to the tasks it
+  may do.
+- **Bandwidth:** a 30-second clip is around half a megabyte, so a home connection is
+  plenty.
+
 ### Jobs
 
-- **Queue:** the core keeps a job queue in PostgreSQL or Redis and sends each job to a
-  provider that handles its task.
+- **Queue:** the core keeps a job queue in PostgreSQL or Redis. Workers take the jobs
+  for their tasks; jobs wait while no worker is available.
 - **Retries and backpressure:** failed jobs are retried, and slow providers are throttled.
 - **Audio:** analysis works on short clips (around 30 seconds), fetched through a provider
   and discarded afterwards (see the copyright notes in [VISION.md](VISION.md)).
@@ -145,31 +189,45 @@ Signals:
 - **collaborative:** co-listening on the instance;
 - **open data:** ListenBrainz similarities.
 
-## Hardware tiers
+## Configuration
 
-| Tier | What runs | Good for |
-| --- | --- | --- |
-| **No AI** | Metadata similarity and shared open data | Raspberry Pi, old laptops |
-| **Precomputed** | Tags and embeddings pulled from a shared dataset; nothing computed locally | Small home servers |
-| **Full** | Local or remote AI providers, on a CPU or GPU | Big or public instances |
+There are no fixed tiers: admins switch each part on or off and tune it for their
+hardware. Defaults are sensible for a small server. For example:
 
-The core checks what's available and uses the best tier it can.
+| Setting | What it controls |
+| --- | --- |
+| Recommendations | On or off; whether to use embeddings, co-listening and open data |
+| AI workers | Which workers are allowed (tokens), and which handles each task |
+| Audio analysis | On or off; clip length; analyse only played songs, or the whole catalog when idle |
+| Shared datasets | Which publishers to import from, and how often |
+| Indexing | How far to resolve around what's played; how long service metadata is kept |
+| Embeddings index | IVFFlat (less memory) or HNSW (faster); dimensions to keep |
+| Rate limits | Budgets per service plugin |
+
+A Raspberry Pi might turn off audio analysis and import shared tags instead. A big
+instance might run several GPU workers and index widely.
 
 ## Many public instances
 
 The model sits between SearXNG (everyone independent) and full federation:
 
-- **Shared: an open dataset** of identity mappings, tags and embeddings. None of it is
-  copyrighted audio, and it's what's expensive to compute. It's published as versioned
-  dumps or a feed, **signed** by publishers each admin chooses to trust, much like
-  MusicBrainz dumps.
+- **Shared: open datasets** of identity mappings, tags and embeddings. None of it is
+  copyrighted audio, and it's what's expensive to compute. They're published as
+  versioned dumps or feeds, **signed** by their publishers, much like MusicBrainz dumps
+  or signed Linux package repositories.
+- **Importing is a merge that keeps its source.** An admin merges datasets into their own
+  database, and every imported row records which publisher and dataset version it came
+  from. That makes updates incremental, and makes a bad dataset removable.
 - **Private: listening history.** It's personal, and it's the easiest signal to poison.
   Collaborative recommendations stay per instance. Sharing anonymised aggregates may come
   later, opt-in, if at all.
 - **No central server** the network depends on. If a publisher disappears, instances keep
   what they have.
-- **Poisoning:** signatures say who published what, embeddings can be recomputed to check
-  suspicious entries, and admins can drop a publisher.
+- **Poisoning:** the signature proves a dataset really comes from its publisher and
+  wasn't altered. Embeddings can be recomputed to check suspicious entries. If a
+  publisher turns out to be bad, the admin stops importing from it and removes
+  everything it contributed, which works because each row keeps its source. A blind
+  merge couldn't be untangled.
 
 ## Storage at scale
 
@@ -218,9 +276,12 @@ embeddings need.
 3. **AI providers:**
    - the task contract and manifest, in `packages/plugin-core`;
    - the job queue;
-   - the provider registry, with `Plugin.defineAiProvider` and `NOCTIS_AI_WORKERS`.
+   - the provider registry, with `Plugin.defineAiProvider`;
+   - worker tokens, with workers that connect to the server.
 4. **Model-tagged storage:** integer keys, lookup tables, and pgvector embeddings tagged by
    model.
 5. **A reference Python worker:** a template with a toy model.
-6. **The shared-dataset format:** signed dumps and a feed.
-7. **The models and recommenders themselves:** for the author and contributors.
+6. **The shared-dataset format:** signed dumps and a feed, and imports that keep each
+   row's source.
+7. **The feature configuration** (see Configuration).
+8. **The models and recommenders themselves:** for the author and contributors.

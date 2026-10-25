@@ -106,10 +106,12 @@ The agreed design is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md). In short:
   that made them, so models can be swapped safely.
 - **Plugins feed the catalog** and don't keep their own big indexes. The catalog is a lazy
   cache of what's searched or played, built on MusicBrainz IDs and ISRCs.
-- **Instances share derived data** (identities, tags and embeddings, as signed datasets),
-  never listening history.
-- **Hardware tiers:** no AI, precomputed data, or full local or remote providers, so old
-  hardware still gets recommendations.
+- **Instances share derived data** (identities, tags and embeddings, as signed datasets
+  merged in with a record of their source), never listening history.
+- **Admins configure what runs:** every part can be switched on or off, and AI workers
+  can run on other machines. For example, Noctis on a VPS and a GPU box at home that
+  connects to it for jobs. Without AI, recommendations still work from metadata and
+  shared data.
 
 **The models and recommendation logic are for the project's author and other
 contributors to build**, on that design. What's there now is the plumbing:
