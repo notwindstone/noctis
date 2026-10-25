@@ -1,7 +1,11 @@
 import { isLiked, toggleLike } from '../library'
 import { navigate } from '../navigation'
 import { download, offlineState, removeOffline, transfers } from '../offline'
-import { addToQueue, playNext, playRadio, playSongs, removeFromQueue, shufflePlay, startRadio } from '../player'
+import { chooseOption, effectiveOption, playbackOptions, type PlaybackOption } from '../playFrom'
+import { addToQueue, currentSong, playNext, playRadio, playSongs, reloadCurrent, removeFromQueue, shufflePlay, startRadio } from '../player'
+import { handshake, installFromServer } from '../server'
+import { enablePlugin } from './runtime'
+import { approvedHashes } from './store'
 import { notify } from '../snackbar'
 import { closePlayer, confirm, openPlayer, queueOpen, showChoice, type ItemMenuRequest } from '../ui'
 import { getAlbum, getPlaylist, shareLink } from '../services/api'
@@ -43,7 +47,67 @@ export function linkFor(item: Item): string {
   return shareLink(item)
 }
 
+/** Play `song` from another option; the current song switches right away, where it is. */
+function playFrom(song: Song, option: PlaybackOption) {
+  chooseOption(song, option.id)
+  const current = currentSong.value
+  if (current && current.id === song.id && current.source === song.source) void reloadCurrent()
+  notify(`Playing from ${option.label}`)
+}
+
+/** An option needs a client plugin the server offers: install it (after asking), then play. */
+function installAndPlayFrom(song: Song, option: PlaybackOption) {
+  const requirement = handshake.value?.plugins.find((item) => item.id === option.install?.plugin)
+  if (!requirement) {
+    notify(option.description ?? 'Not available')
+    return
+  }
+  confirm({
+    title: `Install ${requirement.name}?`,
+    message: `${requirement.name} ${requirement.version} plays this song with your own account. Plugins run with full access to Noctis; only install ones you trust.`,
+    confirmLabel: 'Install',
+    destructive: true,
+    async onConfirm() {
+      try {
+        const { plugin } = await installFromServer(requirement)
+        approvedHashes.value = { ...approvedHashes.value, [plugin.sha256]: true }
+        if (!(await enablePlugin(plugin))) throw new Error(`${plugin.metadata.name} failed to start`)
+        const fresh = (await playbackOptions(song)).find((item) => item.id === option.id)
+        if (fresh?.available) playFrom(song, fresh)
+        else notify(`Installed ${plugin.metadata.name}; sign in to it to play from there`)
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error))
+      }
+    },
+  })
+}
+
 function registerBuiltInActions() {
+  /* Play from */
+  registerAction<MenuContext<Song>>('song.playFrom', async ({ item }) => {
+    const options = await playbackOptions(item)
+    if (options.length < 2) {
+      notify('This song can only be played from one place')
+      return
+    }
+    showChoice({
+      title: 'Play from',
+      options: options.map((option) => ({
+        value: option.id,
+        label: option.label,
+        description: option.available ? option.description : `Unavailable · ${option.description ?? ''}`,
+      })),
+      value: effectiveOption(item),
+      onSelect: (id) => {
+        const option = options.find((candidate) => candidate.id === id)
+        if (!option) return
+        if (option.available) playFrom(item, option)
+        else if (option.install?.download) installAndPlayFrom(item, option)
+        else notify(option.description ?? 'Not available')
+      },
+    })
+  }, OWNER)
+
   /* Songs */
   registerAction<MenuContext<Song>>('song.playFromHere', ({ list }) => {
     if (list) playSongs(list.songs, list.index, list.title)
@@ -136,7 +200,10 @@ function registerBuiltInActions() {
 const hasLink = ({ item }: MenuContext) => linkFor(item) !== ''
 
 function defineBuiltInEntries() {
+  const isPlaying = (item: Song) => currentSong.value?.id === item.id && currentSong.value?.source === item.source
   const song: ActionEntry<MenuContext<Song>>[] = [
+    // In the player's menu (the song that's playing): where its audio comes from.
+    { id: 'play-from', icon: 'tune', label: 'Play from…', action: 'song.playFrom', visible: ({ item }) => isPlaying(item) },
     { id: 'play-from-here', icon: 'play', label: 'Play from here', action: 'song.playFromHere', visible: ({ list }) => Boolean(list) },
     { id: 'play-next', icon: 'play-next', label: 'Play next', action: 'song.playNext' },
     { id: 'add-to-queue', icon: 'add-queue', label: 'Add to queue', action: 'song.addToQueue' },

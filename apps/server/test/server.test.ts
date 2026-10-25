@@ -1,89 +1,61 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { cp, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { PLUGINS_HEADER, parseManifest, readPluginArchive, sha256Hex, writePluginArchive, type HandshakeResponse } from '@noctis/plugin-core'
-import { createApp, withCors } from '../src/app'
-import { loadConfig, type ServerConfig } from '../src/config'
-import { PluginManager } from '../src/plugins/manager'
+import { startTestServer, type TestServer } from './helpers'
 
 const EXAMPLE = join(import.meta.dir, '../../../examples/plugins/play-stats')
 
-let dataDir: string
-let config: ServerConfig
-let plugins: PluginManager
-let fetch: (request: Request) => Promise<Response>
-
+let server: TestServer
 const STATS = 'play-stats@1.0.0'
 const call = (path: string, init: RequestInit & { plugins?: string } = {}) =>
-  fetch(new Request(`http://noctis.test${path}`, { ...init, headers: { ...(init.plugins !== undefined ? { [PLUGINS_HEADER]: init.plugins } : {}), ...(init.headers as Record<string, string>) } }))
-
-async function boot(env: Record<string, string> = {}) {
-  config = loadConfig({ NOCTIS_DATA_DIR: dataDir, ...env })
-  plugins = new PluginManager(config)
-  await plugins.load(await plugins.discover())
-  const app = createApp(config, plugins)
-  fetch = withCors((request) => app.handle(request))
-}
+  server.fetch(new Request(`http://noctis.test${path}`, { ...init, headers: { ...(init.plugins !== undefined ? { [PLUGINS_HEADER]: init.plugins } : {}), ...(init.headers as Record<string, string>) } }))
 
 beforeAll(async () => {
-  dataDir = await mkdtemp(join(tmpdir(), 'noctis-server-'))
-  const dir = join(dataDir, 'plugins')
-  await mkdir(dir, { recursive: true })
-
-  // A both-sides plugin as an unpacked folder (the real example).
-  await cp(EXAMPLE, join(dir, 'play-stats'), { recursive: true })
-
-  // A server-only plugin as an archive, depending on play-stats.
-  await writeFile(
-    join(dir, 'greeter.noctis'),
-    writePluginArchive({
-      manifest: parseManifest({ name: 'Greeter', type: 'unrestricted', side: 'server', version: '0.3.0', dependencies: { 'play-stats': '^1.0.0' } }),
-      server: `export default ({ Plugin }) => { Plugin.routes((app) => app.get('/hello', () => ({ hello: 'world' }))) }`,
-    }),
-  )
-
-  // Broken ones: a missing dependency, and code that throws.
-  await writeFile(
-    join(dir, 'lonely.noctis'),
-    writePluginArchive({
-      manifest: parseManifest({ name: 'Lonely', type: 'unrestricted', side: 'server', version: '1.0.0', dependencies: { ghost: '*' } }),
-      server: 'export default () => {}',
-    }),
-  )
-  await writeFile(
-    join(dir, 'crashy.noctis'),
-    writePluginArchive({
-      manifest: parseManifest({ name: 'Crashy', type: 'unrestricted', side: 'server', version: '1.0.0' }),
-      server: "export default () => { throw new Error('nope') }",
-    }),
-  )
-  await writeFile(join(dir, 'garbage.noctis'), 'not a zip')
-
-  await boot()
+  server = await startTestServer({}, async (dataDir) => {
+    const dir = join(dataDir, 'plugins')
+    await mkdir(dir, { recursive: true })
+    // A both-sides plugin as an unpacked folder (the real example).
+    await cp(EXAMPLE, join(dir, 'play-stats'), { recursive: true })
+    // A server-only plugin as an archive, depending on play-stats.
+    await writeFile(
+      join(dir, 'greeter.noctis'),
+      writePluginArchive({
+        manifest: parseManifest({ name: 'Greeter', type: 'unrestricted', side: 'server', version: '0.3.0', dependencies: { 'play-stats': '^1.0.0' } }),
+        server: `export default ({ Plugin }) => { Plugin.routes((app) => app.get('/hello', () => ({ hello: 'world' }))) }`,
+      }),
+    )
+    // Broken ones: a missing dependency, and code that throws.
+    await writeFile(
+      join(dir, 'lonely.noctis'),
+      writePluginArchive({ manifest: parseManifest({ name: 'Lonely', type: 'unrestricted', side: 'server', version: '1.0.0', dependencies: { ghost: '*' } }), server: 'export default () => {}' }),
+    )
+    await writeFile(
+      join(dir, 'crashy.noctis'),
+      writePluginArchive({ manifest: parseManifest({ name: 'Crashy', type: 'unrestricted', side: 'server', version: '1.0.0' }), server: "export default () => { throw new Error('nope') }" }),
+    )
+    await writeFile(join(dir, 'garbage.noctis'), 'not a zip')
+  })
 })
 
-afterAll(async () => {
-  plugins.close()
-  await rm(dataDir, { recursive: true, force: true })
-})
+afterAll(() => server.close())
 
 describe('loading', () => {
   test('states', () => {
-    const state = Object.fromEntries([...plugins.plugins].map(([id, plugin]) => [id, plugin.state]))
+    const state = Object.fromEntries([...server.services.plugins.plugins].map(([id, plugin]) => [id, plugin.state]))
     expect(state).toEqual({ 'play-stats': 'running', greeter: 'running', lonely: 'skipped', crashy: 'failed' })
-    expect(plugins.plugins.get('lonely')!.reason).toContain("ghost")
+    expect(server.services.plugins.plugins.get('lonely')!.reason).toContain("ghost")
   })
 })
 
 describe('negotiation', () => {
   test('handshake lists what a bare client is missing', async () => {
-    const response = await call('/api/v1/handshake', { plugins: '' })
+    const response = await call('/noctis/v1/handshake', { plugins: '' })
     const body = (await response.json()) as HandshakeResponse
     expect(response.status).toBe(200)
     expect(body.result.ok).toBe(false)
     expect(body.result.missing.map((item) => item.id)).toEqual(['play-stats'])
-    expect(body.plugins[0].download).toBe('/api/v1/plugins/play-stats/client.noctis')
+    expect(body.plugins[0].download).toBe('/noctis/v1/plugins/play-stats/client.noctis')
   })
 
   test('enforced: other routes answer 428 with the handshake', async () => {
@@ -105,14 +77,14 @@ describe('negotiation', () => {
   })
 
   test('the client half downloads, verifies and contains no server code', async () => {
-    const response = await call('/api/v1/plugins/play-stats/client.noctis')
+    const response = await call('/noctis/v1/plugins/play-stats/client.noctis')
     expect(response.status).toBe(200)
     const archive = readPluginArchive('play-stats.noctis', new Uint8Array(await response.arrayBuffer()))
     expect(archive.manifest.side).toBe('client')
     expect(archive.server).toBeUndefined()
-    const { plugins: requirements } = (await (await call('/api/v1/handshake')).json()) as HandshakeResponse
+    const { plugins: requirements } = (await (await call('/noctis/v1/handshake')).json()) as HandshakeResponse
     expect(await sha256Hex(archive.client!)).toBe(requirements[0].sha256)
-    expect((await call('/api/v1/plugins/greeter/client.noctis')).status).toBe(404)
+    expect((await call('/noctis/v1/plugins/greeter/client.noctis')).status).toBe(404)
   })
 })
 
@@ -135,15 +107,14 @@ describe('plugin routes', () => {
   })
 
   test('CORS preflight and headers', async () => {
-    const preflight = await call('/api/v1/info', { method: 'OPTIONS' })
+    const preflight = await call('/noctis/v1/info', { method: 'OPTIONS' })
     expect(preflight.status).toBe(204)
     expect(preflight.headers.get('access-control-allow-headers')).toContain(PLUGINS_HEADER)
-    expect((await call('/api/v1/info')).headers.get('access-control-allow-origin')).toBe('*')
+    expect((await call('/noctis/v1/info')).headers.get('access-control-allow-origin')).toBe('*')
   })
 
   test('storage survives a restart', async () => {
-    plugins.close()
-    await boot()
+    await server.restart()
     const top = (await (await call('/api/plugins/play-stats/top', { plugins: STATS })).json()) as { plays: number }[]
     expect(top[0].plays).toBe(2)
   })
@@ -151,8 +122,7 @@ describe('plugin routes', () => {
 
 describe('without enforcement', () => {
   test("only the plugin's own routes check", async () => {
-    plugins.close()
-    await boot({ NOCTIS_ENFORCE_CLIENT_PLUGINS: 'false' })
+    await server.restart({ NOCTIS_ENFORCE_CLIENT_PLUGINS: 'false' })
     expect((await call('/api/plugins/greeter/hello')).status).toBe(200)
     expect((await call('/api/plugins/play-stats/top')).status).toBe(428)
   })

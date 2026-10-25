@@ -6,8 +6,11 @@ A music client and server you can reshape with plugins. Why, and where it's goin
 - **Client** (`apps/client`): a Material You app built with **Vue 3.5** and
   **Capacitor 8**, in the spirit of InnerTune / ArchiveTune. Music comes from plugins:
   the app ships with none, and YouTube Music is one you install.
-- **Server** (`apps/server`): **Bun** + **Elysia 2**, extended with server plugins.
-  Like a modded Minecraft server, it can require clients to have matching plugins.
+- **Server** (`apps/server`): **Bun** + **Elysia 2**, with PostgreSQL and Redis. It
+  speaks **OpenSubsonic** (for OpenSubsonic apps with API keys), keeps a catalog where
+  one song can have many sources, has user groups with permissions, and is extended with
+  server plugins. Like a modded Minecraft server, it can
+  require clients to have matching plugins.
 - **Plugin core** (`packages/plugin-core`): the plugin system both share.
 
 The client:
@@ -38,20 +41,27 @@ bun run pack-plugin examples/plugins/youtube-music
 Then install `dist-plugins/youtube-music.noctis` from **Settings → Plugins → Install from
 file**.
 
-The server, with the example plugin that needs both sides:
+The server needs PostgreSQL and Redis (`docker compose up -d` starts both):
 
 ```sh
-bun run pack-plugin examples/plugins/play-stats
-mkdir -p apps/server/data/plugins && cp dist-plugins/play-stats.noctis apps/server/data/plugins/
-bun run dev:server                                # http://localhost:4747
+docker compose up -d
+bun run pack-plugin examples/plugins/local-library   # files on the server
+mkdir -p apps/server/data/plugins && cp dist-plugins/local-library.noctis apps/server/data/plugins/
+NOCTIS_ADMIN_USER=admin NOCTIS_ADMIN_PASSWORD=change-me LOCAL_LIBRARY_DIRS=~/Music bun run dev:server   # http://localhost:4747
 ```
 
-In the client, **Settings → Server → localhost:4747** connects, and offers to install the
-plugin the server requires. `bun test` runs the plugin core's and the server's tests.
+In the client:
+- **Settings → Server → localhost:4747** connects, and you sign in there.
+- If the server requires plugins, it offers to install them.
+- **Settings → Local music:** on Android the app scans the whole device (it asks for the music permission once), and you can add folders it missed. In browsers you add folders.
+- **Settings → Playback → Play from**, or the player's menu, chooses between a copy on
+  the device, your own services and the server's streams.
 
-In the browser, InnerTune requests go through a small proxy in `vite.config.ts` (CORS,
-and Cookie/Origin headers browsers refuse to send). Dragging in from the left or right
-screen edge simulates the Android back gesture, so predictive back works there too.
+OpenSubsonic apps can use the same address with an API key: a session token from
+`POST /noctis/v1/auth/login`. See [docs/SERVER-PLUGINS.md](docs/SERVER-PLUGINS.md).
+
+`bun test` runs the plugin core's and the server's tests. It needs PostgreSQL and Redis;
+see `NOCTIS_TEST_DATABASE_URL` and `NOCTIS_TEST_REDIS_URL`.
 
 ### Android
 
@@ -67,14 +77,20 @@ steam-run ./gradlew assembleDebug              # NixOS: gradle's binaries need a
 | Path | |
 | --- | --- |
 | `packages/plugin-core/` | shared by client and server: manifests (`side`, dependencies, client requirements), archives, semver, load order, the hook engine, `PluginBase`, client–server negotiation |
-| `apps/server/src/plugins/` | server plugins: loading, `Plugin.routes()`, SQLite storage (see [docs/SERVER-PLUGINS.md](docs/SERVER-PLUGINS.md)) |
-| `apps/server/src/app.ts` | the HTTP API: info, handshake, plugin downloads, plugin routes, client-plugin enforcement |
+| `apps/server/src/subsonic/` | the OpenSubsonic API: endpoints, auth, XML/JSON, plugin endpoints and hooks |
+| `apps/server/src/catalog/` | the catalog in PostgreSQL (songs with several sources, queues, bookmarks), providers and scanners, streaming with Range, "Play from" sources, recommendations |
+| `apps/server/src/auth.ts` | users, groups and permissions (PostgreSQL), sessions (Redis), guests |
+| `apps/server/src/noctis/` | `/noctis/v1`: negotiation, accounts, song sources, recommendations |
+| `apps/server/src/plugins/` | server plugins: loading, routes, providers, OpenSubsonic extensions, storage (see [docs/SERVER-PLUGINS.md](docs/SERVER-PLUGINS.md)) |
 
 Client paths below are in `apps/client/`.
 
 | Path | |
 | --- | --- |
-| `src/server.ts`, `src/settings/server.ts` | connecting to a server, and installing the plugins it requires |
+| `src/server.ts`, `src/settings/server.ts` | connecting to a Noctis or OpenSubsonic server, signing in, installing the plugins it requires |
+| `src/subsonic/` | the OpenSubsonic client (API keys only), and the server as a service |
+| `src/playFrom.ts` | "Play from": a song's options (device copy, your services, each server stream), the per-song choice and the preference |
+| `src/local/` | music on the device as the "On this device" service. Android: the whole device from MediaStore (music permission), plus extra folders through the Storage Access Framework (`LocalMusic.java`). Browsers: folders through the File System Access API |
 | `src/models.ts` | plain models every screen uses (songs, albums, sections, pages…) |
 | `src/services/` | the service layer: `types.ts` (what a service provides), `registry.ts`, `api.ts` (routes every call to the item's or the active service, through the `onRequest` hook) |
 | `examples/plugins/youtube-music/` | YouTube Music, as a plugin built from TypeScript: youtubei.js sessions and sign-in (`client.ts`), native/proxied fetch (`http.ts`), endpoints (`api.ts`, `parse.ts`), streams with BotGuard tokens (`stream.ts`, `potoken.ts`) |

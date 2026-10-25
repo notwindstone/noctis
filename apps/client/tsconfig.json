@@ -17,5 +17,6 @@
     "noEmit": true,
     "types": ["vite/client"]
   },
+  "exclude": ["../../examples/plugins/*/src/server.ts"],
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "../../examples/plugins/*/src/**/*.ts", "../../examples/plugins/*/src/**/*.vue", "vite.config.ts", "capacitor.config.ts"]
 }

@@ -1,4 +1,5 @@
 import { sourceOf, type Song, type StreamInfo } from '../models'
+import { resolveChosen } from '../playFrom'
 import { audioQuality } from '../preferences'
 import { request } from './api'
 
@@ -19,7 +20,10 @@ function preferEfficient(): boolean {
   return Boolean(connection?.saveData || /(^|-)2g|3g/.test(connection?.effectiveType ?? ''))
 }
 
-/** A playable URL for a song, from its service's `streams.resolve`. */
+/**
+ * A playable URL for a song: from where "Play from" says (a choice, or a copy on this
+ * device), otherwise its service's `streams.resolve`.
+ */
 export async function resolveStream(song: Song): Promise<StreamInfo> {
   const cached = streams.get(song.id)
   // Leave a margin so a long song doesn't outlive its URL mid-playback.
@@ -27,7 +31,8 @@ export async function resolveStream(song: Song): Promise<StreamInfo> {
 
   let stream: StreamInfo
   try {
-    stream = await request(sourceOf(song), 'streams.resolve', { song, efficient: preferEfficient() })
+    const efficient = preferEfficient()
+    stream = (await resolveChosen(song, efficient)) ?? (await request(sourceOf(song), 'streams.resolve', { song, efficient }))
   } catch (error) {
     throw error instanceof StreamError ? error : new StreamError((error as Error).message || 'This song is not available.')
   }

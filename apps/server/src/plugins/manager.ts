@@ -14,10 +14,13 @@ import {
   type PluginArchive,
 } from '@noctis/plugin-core'
 import * as Elysia from 'elysia'
+import { can, type User } from '../auth'
 import type { ServerConfig } from '../config'
 import { writeLog } from '../log'
-import { ServerPluginAPI } from './api'
-import { createServerHooks, SERVER_HOOK_NAMES, type ServerHooks } from './hooks'
+import * as mappers from '../subsonic/mappers'
+import type { Database } from '../db'
+import { ServerPluginAPI, type ServerRegistries } from './api'
+import { SERVER_HOOK_NAMES, type ServerHooks } from './hooks'
 import { PluginStorage } from './storage'
 
 /**
@@ -26,7 +29,7 @@ import { PluginStorage } from './storage'
  * only the instance owner can install them.
  *
  * Each plugin directory entry is a .noctis/.zip archive, or (for development) a folder
- * with metadata.json and server.js/index.js. A plugin's server half is an ES module:
+ * with metadata.json and server.js (or src/server.ts, built on load) and index.js. A plugin's server half is an ES module:
  *
  *   export default async function ({ Plugin, Noctis }) { ... }
  *
@@ -54,12 +57,16 @@ export interface ServerScope {
 export type ServerNamespace = ReturnType<PluginManager['namespace']>
 
 export class PluginManager {
-  readonly hooks: ServerHooks = createServerHooks()
+  readonly hooks: ServerHooks
   readonly plugins = new Map<string, LoadedPlugin>()
   private readonly storage: PluginStorage
 
-  constructor(private readonly config: ServerConfig) {
-    this.storage = new PluginStorage(join(config.dataDir, 'noctis.db'))
+  constructor(
+    private readonly config: ServerConfig,
+    private readonly registries: ServerRegistries & { db: Database; userFrom: (request: Request) => Promise<User | null> },
+  ) {
+    this.hooks = registries.hooks
+    this.storage = new PluginStorage(registries.db)
   }
 
   /** What server plugins can reach as `Noctis`. */
@@ -74,6 +81,19 @@ export class PluginManager {
       /** Other plugins, read-only: id → { manifest, state }. */
       plugins: () => [...this.plugins.entries()].map(([id, plugin]) => ({ id, manifest: plugin.archive.manifest, state: plugin.state })),
       log: writeLog,
+      /** The music catalog: upsertSong, setTags, removeSources, song, search, … */
+      catalog: this.registries.catalog,
+      /** Recommendations, after every plugin's onRecommend hooks. */
+      recommend: this.registries.recommender.recommend.bind(this.registries.recommender),
+      /** Defined audio providers. */
+      providers: () => this.registries.providers.list(),
+      /** For plugin routes: who's calling (from Authorization: Bearer), and what they may do. */
+      auth: {
+        userFrom: this.registries.userFrom,
+        can,
+      },
+      /** Catalog rows → OpenSubsonic objects, for plugin endpoints. */
+      subsonic: { ...mappers },
     }
   }
 
@@ -142,7 +162,7 @@ export class PluginManager {
     const { archive } = plugin
     const started = performance.now()
     try {
-      const api = new ServerPluginAPI(id, this.hooks, this.storage.forPlugin(id))
+      const api = new ServerPluginAPI(id, this.registries, this.storage.forPlugin(id))
       const module = await this.importServerHalf(archive)
       if (typeof module.default !== 'function') throw new TypeError('server.js must `export default` a function')
       await module.default({ Plugin: api, Noctis: this.namespace() } satisfies ServerScope)
@@ -178,7 +198,7 @@ export class PluginManager {
     } catch (error) {
       writeLog(id, 'error', 'disable threw:', error)
     }
-    plugin.api.removeRoutes()
+    plugin.api.removeAll()
     plugin.state = 'stopped'
   }
 
@@ -198,7 +218,7 @@ export class PluginManager {
     const requirements: ClientPluginRequirement[] = []
     for (const [id, plugin] of this.plugins) {
       if (plugin.state !== 'running' || !plugin.clientSha256) continue
-      const requirement = requirementFor(id, plugin.archive.manifest, plugin.clientSha256, `/api/v1/plugins/${id}/client.noctis`)
+      const requirement = requirementFor(id, plugin.archive.manifest, plugin.clientSha256, `/noctis/v1/plugins/${id}/client.noctis`)
       if (requirement) requirements.push(requirement)
     }
     return requirements
@@ -211,9 +231,6 @@ export class PluginManager {
     return clientArchiveOf(plugin.archive)
   }
 
-  close() {
-    this.storage.close()
-  }
 }
 
 /** An unpacked plugin folder (for development): metadata.json plus its entry files. */
@@ -225,13 +242,21 @@ async function readFolder(name: string, path: string): Promise<PluginArchive | n
     const handle = Bun.file(join(path, file))
     return (await handle.exists()) ? handle.text() : undefined
   }
+  // A TypeScript server half is built on the fly, bundling its npm packages.
+  const buildServer = async () => {
+    const entry = join(path, 'src', 'server.ts')
+    if (!(await Bun.file(entry).exists())) return read('server.js')
+    const result = await Bun.build({ entrypoints: [entry], target: 'bun', format: 'esm', external: ['elysia'] })
+    if (!result.success) throw new AggregateError(result.logs, `${name}: building src/server.ts failed`)
+    return result.outputs[0].text()
+  }
   const archive: PluginArchive = {
     id: idFromFileName(name),
     manifest,
     client: manifest.side !== 'server' ? await read('index.js') : undefined,
-    server: runsOnServer(manifest) ? await read('server.js') : undefined,
+    server: runsOnServer(manifest) ? await buildServer() : undefined,
   }
-  if (runsOnServer(manifest) && archive.server === undefined) throw new Error(`${name} has no server.js`)
+  if (runsOnServer(manifest) && archive.server === undefined) throw new Error(`${name} has no server.js or src/server.ts`)
   if (manifest.side === 'both' && archive.client === undefined) throw new Error(`${name} has no index.js`)
   return archive
 }

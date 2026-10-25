@@ -91,7 +91,7 @@ export function decodePluginsHeader(header: string | null | undefined): ClientPl
   return plugins
 }
 
-/** What GET /api/v1/handshake and failed requests answer with. */
+/** What GET /noctis/v1/handshake and failed requests answer with. */
 export interface HandshakeResponse {
   protocol: number
   server: { name: string; version: string }

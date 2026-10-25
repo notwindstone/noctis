@@ -1,0 +1,15 @@
+{
+  "name": "Local library",
+  "version": "1.0.0",
+  "side": "server",
+  "authors": [
+    "Noctis"
+  ],
+  "type": "unrestricted",
+  "description": "Audio files on the server: scans the directories you choose (LOCAL_LIBRARY_DIRS, or PUT /api/plugins/local-library/directories) into the catalog and streams them to every client.",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/local-library",
+  "categories": [
+    "service",
+    "library"
+  ]
+}

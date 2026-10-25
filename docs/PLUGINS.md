@@ -284,6 +284,38 @@ Plugin.subscribe('hook::onRequest::before', async (request) => {
 })
 ```
 
+## Play from
+
+`Noctis.libs.playFrom` decides where a song's audio comes from. A plugin can add options
+for any song, such as another service that has it, and they show up in the player's
+"Play from…" menu:
+
+```js
+const unregister = Noctis.libs.playFrom.registerPlaybackOptions(async (song) => {
+  const match = await findOnMyService(song.title, song.artists)
+  if (!match) return []
+  return [{
+    id: `my-service:${match.id}`,
+    label: 'My service',
+    description: 'FLAC',
+    available: true,
+    resolve: async (efficient) => ({ url: match.url, mimeType: 'audio/flac', bitrate: 900_000, expiresAt: Date.now() + 3_600_000 }),
+  }]
+})
+Plugin.subscribe('lifecycle::disable', unregister)
+```
+
+Other helpers there:
+- `playbackOptions(song)`;
+- `chooseOption(song, id)`;
+- `playbackPreference`, a ref holding `'auto' | 'server' | 'own'`.
+
+`Noctis.libs.local` is the device's music: `localTracks`, `scanLocalLibrary()`,
+`addLocalFolder()` (an extra folder), `requestMusicAccess()` (Android: the
+whole-device scan) and `findLocalMatch(title, artists)`. `Noctis.libs.server` is the
+connection to a Noctis server; its `serverRequest(path, init)` sends the session and
+the plugin header.
+
 ## Component registry
 
 The app renders its UI through `Noctis.C`, a reactive record — replacing an entry swaps

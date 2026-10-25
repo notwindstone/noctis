@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { checkClientPlugins, decodePluginsHeader, encodePluginsHeader, type ClientPluginRequirement } from '../src/negotiate'
 
 const requirement = (id: string, versions: string, required = true): ClientPluginRequirement => ({
-  id, name: id, version: '1.0.0', versions, required, sha256: '', download: `/api/v1/plugins/${id}/client.noctis`,
+  id, name: id, version: '1.0.0', versions, required, sha256: '', download: `/noctis/v1/plugins/${id}/client.noctis`,
 })
 
 describe('negotiation', () => {

@@ -31,24 +31,84 @@ A cross-platform app: Android, Windows, Linux, macOS, the browser, and possibly 
 - **Any part of the interface can be added, removed or changed by plugins.** People
   can build their own look and features, down to Winamp-style themes. (The Liquid Glass
   plugin already turns the Material You UI into an iOS one.)
-- It ships with **no music**, except songs stored locally on the device.
+- It ships with **no music services**. It plays **music on the device** (Settings → Local
+  music):
+  - **Android:** the whole device, from Android's media index, with the "Music and audio"
+    permission it asks for once. Music the index misses can be added as extra folders.
+  - **Browsers:** folders the user picks, through the File System Access API.
 
 ### The server (backend)
 
-- It starts from an existing API shape, such as **OpenSubsonic**, so existing clients
-  and tools can talk to it.
-- By default it has **no streaming services**. It has the recommendation model, the
-  local songs it hosts, and accounts for users to connect with.
-- It gathers songs from across the internet, splits them by sound quality, finds
-  metadata, and adds **AI-generated tags**. "AI" here doesn't mean slop: enough songs
-  and human-made tags already exist to train proper classification. Corporations just
-  don't care to do it.
-- It runs the **recommendations**, so they stay consistent whichever plugins add
-  sources.
+- It speaks **OpenSubsonic** (at `/rest`), so existing clients and tools talk to it
+  too: Feishin, Symfonium, Supersonic and the rest. Everything OpenSubsonic doesn't
+  cover lives under **`/noctis/`**: where each song can be played from, recommendations,
+  accounts, administration and plugin negotiation. Plugin routes live under
+  `/api/plugins/`.
+- By default it has **no streaming services**. Plugins add them, including **local files
+  on the server** (the local-library plugin, with the directories the admin chooses).
+- **Storage:** PostgreSQL for the catalog, users, groups, play queues, bookmarks and
+  plugin data, and Redis for sessions.
+- **Accounts:** users are in **groups**, and groups grant **permissions**: browse, stream,
+  download, playlists, queues, scanning, managing users, plus permissions plugins
+  define. Admins are simply the "admins" group. An instance that doesn't want accounts
+  turns on **guest access**: requests without a session act as the "guests" group
+  (browse and stream by default), and anything per-user still needs an account.
+- **Only OpenSubsonic clients are supported**, with API keys. Legacy Subsonic auth (a
+  password in every URL, or md5 tokens that force the server to keep plaintext
+  passwords) is refused, so the server never stores or receives passwords after sign-in.
 - It's secure enough to host **public instances**, like Invidious or Monochrome. A
   public server also takes heavy work off devices with weak hardware.
-- A lightweight on-device algorithm for picking among downloaded songs might also be
-  possible on the client. That's undecided.
+
+### Where audio comes from
+
+The server builds **its own music database** by indexing services (through plugins) and
+local files. The same song found in several places becomes **one song with several
+sources**, each with its quality: codec, bitrate, lossless or not.
+
+- **Noctis clients** get every source of a song from the server, for many songs at
+  once (`POST /noctis/v1/sources`), and **choose where to play it from** ("Play from",
+  in Settings → Playback and in the player's menu):
+  - a copy **on the device**;
+  - the user's **own account** on a service, through the client plugin for it (YouTube
+    Music, Spotify…). The server says which plugin that is, and offers it if it has it;
+  - any of the **server's streams**.
+
+  The automatic choice prefers the device, then the user's own services, then the
+  server. The same applies to downloading for offline listening.
+- **The server can also stream audio itself**, through providers: plugins that stream a
+  service's audio directly. That's what makes it work with clients that aren't Noctis,
+  like any OpenSubsonic app, which only know "stream this song". A provider can also be
+  client-only: it lists sources Noctis clients can play themselves, but the server never
+  streams them.
+- **Plugins can add sources**, or reorder them, with the `onSources` hook, and client
+  plugins can add "Play from" options.
+
+This also answers part of the copyright question below. Users who connect their own
+services play from their own accounts, and the server only needs to stream what a
+provider plugin on it can legitimately serve.
+
+### Recommendations and AI tagging (future work)
+
+The plan:
+- gather songs from across the internet;
+- split them by sound quality and find their metadata;
+- add **AI-generated tags**. "AI" here doesn't mean slop: enough songs and human-made
+  tags already exist to train proper classification. Corporations just don't care to
+  do it;
+- run **recommendations** on the server, so they stay consistent whichever plugins add
+  sources.
+
+**This part is open for the project's author and other contributors to build.** What's
+there now is the plumbing:
+- **a catalog with a `tags` field** per song (`Noctis.catalog.setTags`);
+- **a deliberately simple placeholder recommender:** co-listening, then shared artist,
+  genre, tags and era;
+- **`/noctis/v1/recommendations`**, which also backs OpenSubsonic's `getSimilarSongs2`;
+- **the `onRecommend` hook**, through which a plugin can adjust or completely replace
+  recommendations.
+
+A lightweight on-device algorithm for picking among downloaded songs might also be
+possible on the client. That's undecided.
 
 ### Plugins on both sides
 
@@ -56,9 +116,13 @@ On the server, plugins can add:
 
 - **New API endpoints.** These are usually paired with a client plugin, so the server
   processes something and hands it to clients. Anything can be built on top of these.
-- **Music services** to stream from.
-- **Changes to the recommendation system**, or a full replacement. Whether that can be
-  done well is still an open question.
+  That includes **OpenSubsonic extensions** (new `/rest` endpoints, listed in
+  `getOpenSubsonicExtensions`) and **hooks that change what any OpenSubsonic call
+  returns**.
+- **Music services**: indexing songs into the catalog, and streaming them (providers).
+- **Library scanners** that `startScan` drives, like the local-library plugin.
+- **Permissions** that admins can grant to groups.
+- **Changes to recommendations**, or a full replacement (`onRecommend`).
 
 Like mods in Minecraft, a server can **require clients to have a matching plugin**
 before they connect. A plugin can be client-only, server-only, or both. That makes
@@ -86,7 +150,8 @@ Storing music on the server and distributing it is piracy. Ideas so far:
   rightsholders can opt out of), depends on the jurisdiction. This needs real legal
   advice before any public instance does it.
 - **Users bring their own access.** Each client connects its own Spotify, SoundCloud,
-  YouTube or Yandex Music API keys or accounts. That raises its own questions:
+  YouTube or Yandex Music API keys or accounts. "Play from" already lets a client play a
+  server's song with the user's own account. Open questions remain:
   - How do recommendations work across everyone's different sources?
   - How do users avoid exposing their keys to strangers running public instances?
     Credentials should never be stored in plaintext or sent to the instance where
@@ -98,17 +163,23 @@ Storing music on the server and distributing it is piracy. Ideas so far:
 
 - **Server plugins are trusted code.** As with Minecraft server mods, only the instance
   owner can install them, from the server's own disk, never through the API.
-- **Public instances need the usual protections**: authentication, rate limits,
-  request size limits, and no plugin code reaching users without them knowing what
-  they're installing.
+- **Already in place:**
+  - sessions that can be revoked, stored only as hashes;
+  - Argon2 password hashes;
+  - permissions per group;
+  - no legacy password auth;
+  - request size limits;
+  - client plugins verified against the hashes the server announces.
+- **Still needed:** rate limiting, and an admin UI.
 
 ## Where things are
 
 | Path | What |
 | --- | --- |
 | `apps/client` | The Vue + Capacitor client |
-| `apps/server` | The Bun + Elysia server |
+| `apps/server` | The Bun + Elysia server: OpenSubsonic at `/rest`, Noctis at `/noctis/v1`, plugin routes at `/api/plugins` |
 | `packages/plugin-core` | Plugin code shared by both: manifests, archives, versions, dependencies, hooks, client–server negotiation |
-| `examples/plugins` | Example plugins: client-only, server-only, and both |
+| `examples/plugins` | Example plugins: client-only (YouTube Music, Spotify, Liquid Glass), server-only (local library), and both (server charts) |
+| `docker-compose.yml` | PostgreSQL and Redis for the server |
 | `docs/PLUGINS.md` | Writing client plugins |
-| `docs/SERVER-PLUGINS.md` | Server and both-sides plugins, and how clients and servers agree on them |
+| `docs/SERVER-PLUGINS.md` | The server, its plugins, and how clients and servers agree on them |

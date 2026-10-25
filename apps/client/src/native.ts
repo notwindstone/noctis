@@ -46,6 +46,29 @@ export interface MediaActionEvent {
   position?: number
 }
 
+/** A file from scanMusicFolder: where it is, plus whatever tags it has. */
+export interface NativeMusicFile {
+  uri: string
+  /** Relative to the picked folder (or, from MediaStore, to the storage volume). */
+  path: string
+  /** "<volume>:<path>": the same file has the same key from both scans. */
+  key?: string
+  mimeType: string
+  size: number
+  modified: number
+  title?: string
+  artist?: string
+  album?: string
+  albumArtist?: string
+  genre?: string
+  track?: number
+  disc?: number
+  year?: number
+  durationMs?: number
+  bitrate?: number
+  hasArtwork?: boolean
+}
+
 export interface LoginResult {
   cookie: string
   visitorData?: string
@@ -59,9 +82,17 @@ interface NoctisPlugin {
   clearCookies(options?: { url?: string }): Promise<void>
   captureResponse(options: { url: string; match: string; userAgent?: string; timeoutMs?: number }): Promise<{ url: string; body: string }>
   haptic(options: { type: HapticType }): Promise<void>
+  checkMusicPermission(): Promise<{ state: string }>
+  requestMusicPermission(): Promise<{ state: string }>
+  scanMediaStore(): Promise<{ files: NativeMusicFile[] }>
+  pickMusicFolder(): Promise<{ uri: string; name: string }>
+  scanMusicFolder(options: { uri: string }): Promise<{ files: NativeMusicFile[] }>
+  getLocalArtwork(options: { uri: string }): Promise<{ dataUrl: string | null }>
+  releaseMusicFolder(options: { uri: string }): Promise<void>
   updateMediaSession(state: MediaState): Promise<void>
   clearMediaSession(): Promise<void>
   addListener(event: 'mediaAction', handler: (data: MediaActionEvent) => void): Promise<PluginListenerHandle>
+  addListener(event: 'musicScanProgress', handler: (data: { uri: string; count: number }) => void): Promise<PluginListenerHandle>
   addListener(
     event: 'backStarted' | 'backProgressed',
     handler: (data: BackEventData) => void,

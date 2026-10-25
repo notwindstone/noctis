@@ -5,7 +5,7 @@
  *   GET  /api/plugins/play-stats/top     the 50 most played songs
  */
 
-export default function ({ Plugin, Noctis }) {
+export default async function ({ Plugin, Noctis }) {
   const { t } = Noctis.packages.elysia
 
   /** "<source>:<id>" → { song, plays, lastPlayed } */
@@ -22,16 +22,15 @@ export default function ({ Plugin, Noctis }) {
   function attach() {
     Plugin.routes((app) =>
       app
-        .post('/plays', { body: t.Object({ song: Song }) }, ({ body }) => {
+        .post('/plays', { body: t.Object({ song: Song }) }, async ({ body }) => {
           const key = keyOf(body.song)
-          const entry = Plugin.storage.get(key, { song: body.song, plays: 0 })
-          Plugin.storage.set(key, { song: body.song, plays: entry.plays + 1, lastPlayed: Date.now() })
+          const entry = await Plugin.storage.get(key, { song: body.song, plays: 0 })
+          await Plugin.storage.set(key, { song: body.song, plays: entry.plays + 1, lastPlayed: Date.now() })
           return { plays: entry.plays + 1 }
         })
-        .get('/top', () =>
-          Plugin.storage
-            .keys('song:')
-            .map((key) => Plugin.storage.get(key))
+        .get('/top', async () =>
+          (await Plugin.storage.entries('song:'))
+            .map(([, entry]) => entry)
             .sort((a, b) => b.plays - a.plays || b.lastPlayed - a.lastPlayed)
             .slice(0, 50),
         ),
@@ -41,5 +40,5 @@ export default function ({ Plugin, Noctis }) {
   Plugin.subscribe('lifecycle::disable', () => Plugin.removeRoutes())
   Plugin.subscribe('lifecycle::dirty-enable', attach)
   attach()
-  Plugin.log(`Counting plays (${Plugin.storage.keys('song:').length} songs so far)`)
+  Plugin.log(`Counting plays (${(await Plugin.storage.keys('song:')).length} songs so far)`)
 }

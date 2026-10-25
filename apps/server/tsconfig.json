@@ -13,5 +13,5 @@
     "noEmit": true,
     "types": ["bun"]
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "../../examples/plugins/*/src/server.ts"]
 }

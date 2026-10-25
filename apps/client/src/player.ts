@@ -58,11 +58,11 @@ function updateMediaSession(song: Song) {
   })
 }
 
-async function load(index: number, autoplay = true) {
+async function load(index: number, autoplay = true, reload = false) {
   const song = queue.value[index]
   if (!song) return
 
-  if (autoplay) {
+  if (autoplay && !reload) {
     // Plugins can skip songs (e.g. a filter): "stop" moves on to the next one.
     const outcome = await runBeforeHooks('onPlay', { song, index })
     if (outcome.stopped) {
@@ -81,7 +81,7 @@ async function load(index: number, autoplay = true) {
   audio.pause()
 
   updateMediaSession(song)
-  if (autoplay) recordPlay(song)
+  if (autoplay && !reload) recordPlay(song)
   void artworkHue(song.thumbnail).then((hue) => {
     if (token === loadToken) {
       currentHue.value = hue
@@ -91,7 +91,8 @@ async function load(index: number, autoplay = true) {
   void maybeFetchMore()
   savePlaybackState()
 
-  let source = await localSource(song.id)
+  // A reload (another "Play from" source) skips downloads: the point is the new source.
+  let source = reload ? null : await localSource(song.id)
   let streamed = false
 
   if (!source) {
@@ -114,7 +115,7 @@ async function load(index: number, autoplay = true) {
   if (autoplay) {
     try {
       await audio.play()
-      runAfterHooks('onPlay', { song, index })
+      if (!reload) runAfterHooks('onPlay', { song, index })
     } catch (error) {
       if (token === loadToken && (error as DOMException).name !== 'AbortError') {
         isLoading.value = false
@@ -169,6 +170,21 @@ async function maybeFetchMore() {
 /* ------------------------------------------------------------------ *
  * Public controls
  * ------------------------------------------------------------------ */
+
+/**
+ * Load the current song again where it is (playing or paused), e.g. after "Play from"
+ * picked another source. Doesn't count as another play.
+ */
+export async function reloadCurrent() {
+  const index = currentIndex.value
+  const song = queue.value[index]
+  if (!song) return
+  const at = position.value
+  const playing = isPlaying.value
+  forgetStream(song.id)
+  pendingSeek = at > 0 ? at : null
+  await load(index, playing, true)
+}
 
 function setQueue(
   songs: Song[],

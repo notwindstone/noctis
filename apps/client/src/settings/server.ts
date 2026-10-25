@@ -2,11 +2,15 @@ import { shallowReactive, watch } from 'vue'
 import { defineSection, group, type SettingsRowDef } from '../plugins/rows'
 import { enablePlugin } from '../plugins/runtime'
 import { approvedHashes, findPlugin } from '../plugins/store'
-import { connect, disconnect, handshake, installFromServer, missingPlugins, serverError, serverStatus, serverUrl } from '../server'
+import { connect, disconnect, handshake, installFromServer, missingPlugins, otherServerName, serverError, serverKind, serverStatus, serverUrl, signIn, signInWithApiKey, signOut } from '../server'
+import { credentials } from '../subsonic/client'
 import { notify } from '../snackbar'
 import { confirm, showTextDialog } from '../ui'
 
-/** Settings → Server: connect to a Noctis server and install the plugins it requires. */
+/**
+ * Settings → Server: connect to a Noctis or OpenSubsonic server, sign in, choose where
+ * songs play from, and install the plugins a Noctis server requires.
+ */
 
 const STATUS: Record<string, string> = {
   none: 'Not connected',
@@ -19,13 +23,15 @@ const STATUS: Record<string, string> = {
 function promptAddress() {
   showTextDialog({
     title: 'Connect to a server',
-    description: 'The address of a Noctis server, like https://music.example.com or http://192.168.1.10:4747.',
+    description: 'A Noctis server, or any OpenSubsonic server (Navidrome, Gonic…): https://music.example.com, 192.168.1.10:4747…',
     placeholder: 'https://',
     confirmLabel: 'Connect',
     async onConfirm(value) {
       try {
         const response = await connect(value)
-        notify(response.result.ok ? `Connected to ${response.server.name}` : `${response.server.name} needs plugins to connect`)
+        if (!response) notify(`Connected to ${otherServerName.value}`)
+        else notify(response.result.ok ? `Connected to ${response.server.name}` : `${response.server.name} needs plugins to connect`)
+        if (!credentials.value && (!response || response.result.ok)) promptSignIn()
       } catch (error) {
         notify(error instanceof Error ? error.message : String(error))
       }
@@ -56,13 +62,60 @@ function installRequired() {
       }
       try {
         const response = await connect()
-        notify(response.result.ok ? `Connected to ${response.server.name}` : 'Some plugins are still missing')
+        notify(!response || response.result.ok ? 'Connected' : 'Some plugins are still missing')
+        if (!credentials.value) promptSignIn()
       } catch {
         /* status shows the error */
       }
     },
   })
 }
+
+/** Noctis servers: username, then password (the text dialog has one field). Others: an API key. */
+function promptSignIn() {
+  if (serverKind.value !== 'noctis') {
+    showTextDialog({
+      title: 'Sign in with an API key',
+      description: `Create an API key in ${serverName()}'s settings and paste it here. Noctis only uses API keys (OpenSubsonic apiKeyAuthentication), never your password.`,
+      placeholder: 'API key',
+      confirmLabel: 'Sign in',
+      async onConfirm(key) {
+        try {
+          await signInWithApiKey(key)
+          notify(`Signed in to ${serverName()}`)
+        } catch (error) {
+          notify(error instanceof Error ? error.message : String(error))
+        }
+      },
+    })
+    return
+  }
+  showTextDialog({
+    title: 'Sign in',
+    description: `Your account on ${serverName()}.`,
+    placeholder: 'Username',
+    confirmLabel: 'Next',
+    onConfirm(username) {
+      if (!username.trim()) return
+      showTextDialog({
+        title: `Password for ${username.trim()}`,
+        description: 'Exchanged for a session; the password isn\'t kept on this device.',
+        placeholder: 'Password',
+        confirmLabel: 'Sign in',
+        async onConfirm(password) {
+          try {
+            await signIn(username.trim(), password)
+            notify(`Signed in as ${username.trim()}`)
+          } catch (error) {
+            notify(error instanceof Error ? error.message : String(error))
+          }
+        },
+      })
+    },
+  })
+}
+
+const serverName = () => handshake.value?.server.name ?? (otherServerName.value || serverUrl.value)
 
 const pluginRows = shallowReactive<SettingsRowDef[]>([])
 
@@ -73,7 +126,7 @@ export function defineServerSettings() {
       icon: 'server',
       title: 'Server',
       get description() {
-        return serverStatus.value === 'none' ? 'Connect to a Noctis server' : `${STATUS[serverStatus.value]} · ${handshake.value?.server.name ?? serverUrl.value}`
+        return serverStatus.value === 'none' ? 'Noctis or OpenSubsonic' : `${STATUS[serverStatus.value]} · ${serverName()}`
       },
     },
     [
@@ -93,7 +146,7 @@ export function defineServerSettings() {
           icon: 'sync',
           title: 'Status',
           get value() {
-            const name = handshake.value ? ` · ${handshake.value.server.name} ${handshake.value.server.version}` : ''
+            const name = handshake.value ? ` · ${handshake.value.server.name} ${handshake.value.server.version}` : serverKind.value === 'opensubsonic' ? ` · ${otherServerName.value} (OpenSubsonic)` : ''
             return serverStatus.value === 'error' ? `${STATUS.error}: ${serverError.value}` : `${STATUS[serverStatus.value]}${name}`
           },
           get hidden() {
@@ -102,6 +155,43 @@ export function defineServerSettings() {
           onClick: () => void connect().catch(() => {}),
         },
       ]),
+      group('account', [
+        {
+          id: 'sign-in',
+          icon: 'login',
+          title: 'Sign in',
+          description: 'Your library, playlists and recommendations',
+          get hidden() {
+            return credentials.value !== null
+          },
+          onClick: promptSignIn,
+        },
+        {
+          id: 'signed-in',
+          icon: 'account',
+          title: 'Signed in',
+          get value() {
+            return credentials.value ? `${credentials.value.username} · ${serverKind.value === 'noctis' ? 'session' : 'API key'}` : ''
+          },
+          get hidden() {
+            return credentials.value === null
+          },
+        },
+        {
+          id: 'sign-out',
+          icon: 'logout',
+          title: 'Sign out',
+          destructive: true,
+          get hidden() {
+            return credentials.value === null
+          },
+          onClick: () => void signOut().then(() => notify('Signed out')),
+        },
+      ], {
+        get hidden() {
+          return serverStatus.value !== 'connected'
+        },
+      }),
       { id: 'plugins-header', type: 'header', title: 'Plugins the server uses', get hidden() { return pluginRows.length === 0 } },
       group('plugins', pluginRows),
       group('install', [
@@ -127,7 +217,7 @@ export function defineServerSettings() {
       {
         id: 'note',
         type: 'note',
-        text: 'Like a modded Minecraft server, a Noctis server can require client plugins. They are downloaded from the server and checked against the hashes it announces before installing.',
+        text: 'Songs on a Noctis server can have several sources; "Play from" (Settings → Playback, or the player\'s menu) chooses between the server\'s streams, your own services and copies on this device. Like a modded Minecraft server, a Noctis server can also require client plugins: they\'re downloaded from the server and checked against the hashes it announces before installing.',
       },
     ],
     'noctis',

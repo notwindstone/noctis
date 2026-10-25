@@ -1,96 +1,50 @@
-import {
-  checkClientPlugins,
-  decodePluginsHeader,
-  PLUGINS_HEADER,
-  PROTOCOL_VERSION,
-  type ClientPlugin,
-  type HandshakeResponse,
-} from '@noctis/plugin-core'
+import { decodePluginsHeader, PLUGINS_HEADER } from '@noctis/plugin-core'
 import { Elysia } from 'elysia'
-import type { ServerConfig } from './config'
-import type { PluginManager } from './plugins/manager'
+import { handshakeFor, noctisRoutes, SERVER_VERSION } from './noctis/routes'
+import type { Services } from './services'
+import { createSubsonic } from './subsonic/router'
 
-export const SERVER_VERSION = '0.1.0'
+export { SERVER_VERSION }
 
 /**
- * The HTTP API.
+ * The server's HTTP surface:
  *
- *   GET  /api/v1/info                          server name and versions
- *   GET  /api/v1/handshake                     what this client is missing (send x-noctis-plugins)
- *   GET  /api/v1/plugins                       the server's plugins
- *   GET  /api/v1/plugins/:id/client.noctis     a "both" plugin's client half, to install
- *   ANY  /api/plugins/:id/*                    a plugin's own routes
+ *   /rest/*           OpenSubsonic, for any Subsonic/OpenSubsonic client
+ *   /noctis/v1/*      Noctis: plugin negotiation, accounts, sources, recommendations
+ *   /api/plugins/:id  each plugin's own routes
  *
- * Clients send `x-noctis-plugins: id@version,…` with every request. With
- * enforceClientPlugins on, any other API request from a client that lacks a required
- * plugin gets 428 Precondition Required and the handshake body, saying what to install.
- * A plugin's own routes always require that plugin's client half (when it's required).
+ * Noctis clients send `x-noctis-plugins: id@version,…` with every request. With
+ * enforceClientPlugins on, /noctis and /api requests from a client that lacks a
+ * required plugin get 428 Precondition Required and the handshake, saying what to
+ * install. /rest is never checked: OpenSubsonic clients can't negotiate plugins.
  */
 
 /** Routes a client can call before it has the required plugins. */
-const OPEN_ROUTES = [/^\/api\/v1\/(info|handshake)$/, /^\/api\/v1\/plugins(\/[^/]+\/client\.noctis)?$/]
+const OPEN_ROUTES = [/^\/noctis\/v1\/(info|handshake|plugins|auth\/[a-z]+)$/, /^\/noctis\/v1\/plugins\/[^/]+\/client\.noctis$/]
 
-export function createApp(config: ServerConfig, plugins: PluginManager) {
-  const handshake = async (client: ClientPlugin[]): Promise<HandshakeResponse> => {
-    const requirements = plugins.clientRequirements()
-    const response: HandshakeResponse = {
-      protocol: PROTOCOL_VERSION,
-      server: { name: config.name, version: SERVER_VERSION },
-      plugins: requirements,
-      result: checkClientPlugins(requirements, client),
-    }
-    const after = await plugins.hooks.run<HandshakeResponse>('onHandshake', 'after', { response })
-    return after.stopped ? after.response : response
-  }
-
-  const preconditionFailed = (body: HandshakeResponse) => Response.json(body, { status: 428 })
+export function createApp(services: Services) {
+  const { config, plugins } = services
+  const subsonic = createSubsonic(services, SERVER_VERSION)
+  const clientPluginsOf = (request: Request) => decodePluginsHeader(request.headers.get(PLUGINS_HEADER))
 
   return new Elysia()
     .onBeforeHandle(async ({ request }) => {
       const path = new URL(request.url).pathname
-      const clientPlugins = decodePluginsHeader(request.headers.get(PLUGINS_HEADER))
+      const clientPlugins = clientPluginsOf(request)
 
       const hooked = await plugins.hooks.runBefore<Response>('onRequest', { request, path, clientPlugins })
       if (hooked.stopped) return hooked.response
 
-      if (config.enforceClientPlugins && path.startsWith('/api/') && !OPEN_ROUTES.some((route) => route.test(path))) {
-        const body = await handshake(clientPlugins)
-        if (!body.result.ok) return preconditionFailed(body)
+      const negotiated = path.startsWith('/noctis/') || path.startsWith('/api/')
+      if (config.enforceClientPlugins && negotiated && !OPEN_ROUTES.some((route) => route.test(path))) {
+        const body = await handshakeFor(services, clientPlugins)
+        if (!body.result.ok) return Response.json(body, { status: 428 })
       }
     })
 
-    .get('/api/v1/info', () => ({
-      name: config.name,
-      version: SERVER_VERSION,
-      protocol: PROTOCOL_VERSION,
-    }))
+    .all('/rest/:endpoint', ({ request, params }) => subsonic(request, params.endpoint))
 
-    .get('/api/v1/handshake', ({ request }) => handshake(decodePluginsHeader(request.headers.get(PLUGINS_HEADER))))
-
-    .get('/api/v1/plugins', () =>
-      [...plugins.plugins.entries()].map(([id, { archive, state }]) => ({
-        id,
-        name: archive.manifest.name,
-        version: archive.manifest.version,
-        side: archive.manifest.side,
-        description: archive.manifest.description,
-        authors: archive.manifest.authors,
-        source: archive.manifest.source,
-        state,
-        client: archive.manifest.client,
-      })),
-    )
-
-    .get('/api/v1/plugins/:id/client.noctis', ({ params, status }) => {
-      const bytes = plugins.clientArchive(params.id)
-      if (!bytes) return status(404, { error: `No client plugin "${params.id}" on this server` })
-      return new Response(bytes, {
-        headers: {
-          'content-type': 'application/zip',
-          'content-disposition': `attachment; filename="${params.id}.noctis"`,
-        },
-      })
-    })
+    .use(noctisRoutes(services))
 
     .all('/api/plugins/:id/*', async ({ params, request, status }) => {
       const plugin = plugins.plugins.get(params.id)
@@ -98,11 +52,10 @@ export function createApp(config: ServerConfig, plugins: PluginManager) {
       if (!plugin || !router) return status(404, { error: `No plugin "${params.id}" with routes on this server` })
 
       // The plugin's own routes need its client half, even with enforcement off.
-      const requirement = plugin.archive.manifest.client
-      if (plugin.archive.manifest.side === 'both' && requirement?.required) {
-        const body = await handshake(decodePluginsHeader(request.headers.get(PLUGINS_HEADER)))
-        const mine = body.result.missing.concat(body.result.outdated.map((item) => item.requirement)).some((item) => item.id === params.id)
-        if (mine) return preconditionFailed(body)
+      if (plugin.archive.manifest.side === 'both' && plugin.archive.manifest.client?.required) {
+        const body = await handshakeFor(services, clientPluginsOf(request))
+        const missing = [...body.result.missing, ...body.result.outdated.map((item) => item.requirement)]
+        if (missing.some((item) => item.id === params.id)) return Response.json(body, { status: 428 })
       }
 
       // Hand the request to the plugin's router, with the prefix stripped.
@@ -115,13 +68,14 @@ export function createApp(config: ServerConfig, plugins: PluginManager) {
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'access-control-allow-headers': `content-type, authorization, ${PLUGINS_HEADER}`,
+  'access-control-allow-headers': `content-type, authorization, range, ${PLUGINS_HEADER}`,
+  'access-control-expose-headers': 'content-length, content-range, accept-ranges',
   'access-control-max-age': '86400',
 }
 
 /**
  * A fetch handler around the app with CORS for browser clients. The API uses no
- * cookies, so any origin may call it; credentials are bearer tokens (later).
+ * cookies (credentials are API keys), so any origin may call it.
  */
 export function withCors(handle: (request: Request) => Response | Promise<Response>) {
   return async (request: Request): Promise<Response> => {

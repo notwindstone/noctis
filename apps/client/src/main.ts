@@ -9,7 +9,11 @@ import { startPlugins } from './plugins/runtime'
 import { defineBuiltInSettings } from './settings/builtin'
 import { definePluginSettings } from './settings/plugins'
 import { defineServerSettings } from './settings/server'
+import { defineLocalSettings } from './settings/local'
+import { initDeviceService } from './local/service'
 import { connect, serverUrl } from './server'
+import { credentials } from './subsonic/client'
+import { attachServerService } from './subsonic/service'
 import { initTheme } from './theme'
 
 initTheme()
@@ -21,7 +25,13 @@ defineBuiltIns()
 defineBuiltInSettings()
 definePluginSettings()
 defineServerSettings()
+defineLocalSettings()
 exposeNamespace()
+
+initDeviceService()
+
+// Signed in to a server: it's a service from the start, so Home doesn't wait for the network.
+if (serverUrl.value && credentials.value) attachServerService()
 
 createApp(App).mount('#app')
 

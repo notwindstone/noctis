@@ -1,45 +1,40 @@
-import { Database } from 'bun:sqlite'
+import type { Database } from '../db'
 
 /**
- * Per-plugin key/value storage in SQLite, like the client's Plugin.storage but on the
- * server. Values are JSON; each plugin only sees its own keys.
+ * Per-plugin key/value storage in PostgreSQL, like the client's Plugin.storage but
+ * async. Values are JSON; each plugin only sees its own keys.
  */
 export class PluginStorage {
-  private readonly db: Database
-
-  constructor(path: string) {
-    this.db = new Database(path, { create: true, strict: true })
-    this.db.run('PRAGMA journal_mode = WAL')
-    this.db.run('CREATE TABLE IF NOT EXISTS plugin_data (plugin TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (plugin, key))')
-  }
+  constructor(private readonly sql: Database) {}
 
   forPlugin(plugin: string) {
-    const db = this.db
-    const get = db.query<{ value: string }, { plugin: string; key: string }>('SELECT value FROM plugin_data WHERE plugin = $plugin AND key = $key')
-    const set = db.query('INSERT INTO plugin_data (plugin, key, value) VALUES ($plugin, $key, $value) ON CONFLICT (plugin, key) DO UPDATE SET value = excluded.value')
-    const remove = db.query('DELETE FROM plugin_data WHERE plugin = $plugin AND key = $key')
-    const keys = db.query<{ key: string }, { plugin: string; prefix: string }>("SELECT key FROM plugin_data WHERE plugin = $plugin AND key LIKE $prefix ESCAPE '\\' ORDER BY key")
+    const sql = this.sql
     return {
-      get<T>(key: string, fallback?: T): T | undefined {
-        const row = get.get({ plugin, key })
-        return row ? (JSON.parse(row.value) as T) : fallback
+      async get<T>(key: string, fallback?: T): Promise<T | undefined> {
+        const [row] = await sql`SELECT value FROM plugin_data WHERE plugin = ${plugin} AND key = ${key}`
+        return row ? (row.value as T) : fallback
       },
-      set(key: string, value: unknown) {
-        set.run({ plugin, key, value: JSON.stringify(value) })
+      async set(key: string, value: unknown) {
+        await sql`
+          INSERT INTO plugin_data (plugin, key, value) VALUES (${plugin}, ${key}, (${JSON.stringify(value ?? null)}::text)::jsonb)
+          ON CONFLICT (plugin, key) DO UPDATE SET value = EXCLUDED.value`
       },
-      remove(key: string) {
-        remove.run({ plugin, key })
+      async remove(key: string) {
+        await sql`DELETE FROM plugin_data WHERE plugin = ${plugin} AND key = ${key}`
       },
       /** Keys starting with `prefix`. */
-      keys(prefix = ''): string[] {
-        const escaped = prefix.replace(/[\\%_]/g, (char) => `\\${char}`)
-        return keys.all({ plugin, prefix: `${escaped}%` }).map((row) => row.key)
+      async keys(prefix = ''): Promise<string[]> {
+        const pattern = `${prefix.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
+        const rows: { key: string }[] = await sql`SELECT key FROM plugin_data WHERE plugin = ${plugin} AND key LIKE ${pattern} ORDER BY key`
+        return rows.map((row) => row.key)
+      },
+      /** Every key starting with `prefix`, with its value (one query). */
+      async entries<T>(prefix = ''): Promise<[string, T][]> {
+        const pattern = `${prefix.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
+        const rows: { key: string; value: T }[] = await sql`SELECT key, value FROM plugin_data WHERE plugin = ${plugin} AND key LIKE ${pattern} ORDER BY key`
+        return rows.map((row) => [row.key, row.value])
       },
     }
-  }
-
-  close() {
-    this.db.close()
   }
 }
 

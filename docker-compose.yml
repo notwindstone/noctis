@@ -1,0 +1,27 @@
+# PostgreSQL and Redis for the Noctis server (apps/server):
+#   docker compose up -d
+#   NOCTIS_ADMIN_USER=admin NOCTIS_ADMIN_PASSWORD=change-me bun run dev:server
+# The defaults in apps/server/src/config.ts point at these.
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: noctis
+      POSTGRES_PASSWORD: noctis
+      POSTGRES_DB: noctis
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "noctis"]
+      interval: 5s
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis:/data
+volumes:
+  postgres:
+  redis:

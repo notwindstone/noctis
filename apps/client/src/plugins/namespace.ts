@@ -9,6 +9,8 @@ import * as native from '../native'
 import * as navigation from '../navigation'
 import * as offline from '../offline'
 import * as player from '../player'
+import * as playFrom from '../playFrom'
+import * as local from '../local/library'
 import * as server from '../server'
 import * as preferences from '../preferences'
 import * as snackbar from '../snackbar'
@@ -108,6 +110,8 @@ function build() {
       offline,
       player,
       preferences,
+      playFrom,
+      local,
       server,
       session,
       snackbar,

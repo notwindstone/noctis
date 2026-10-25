@@ -5,6 +5,7 @@ import SeedSwatches from '../components/settings/SeedSwatches.vue'
 import StorageMeter from '../components/settings/StorageMeter.vue'
 import { clearHistory, clearSearchHistory, history, searchHistory } from '../library'
 import { cached, clearCache, clearDownloads, downloads, formatBytes, usage } from '../offline'
+import { playbackPreference, type PlaybackPreference } from '../playFrom'
 import { defineSection, group, type SettingsBlock } from '../plugins/rows'
 import {
   audioQuality,
@@ -131,7 +132,30 @@ const QUALITY_OPTIONS: { value: AudioQuality; label: string; description: string
   { value: 'low', label: 'Data saver', description: 'Smallest stream, around 50–70 kbps' },
 ]
 
+const PLAY_FROM: Record<PlaybackPreference, { label: string; description: string }> = {
+  auto: { label: 'Automatic', description: 'A copy on this device, then your own services, then the server' },
+  server: { label: 'The server or service', description: 'Where the song comes from, as it is' },
+  own: { label: 'Your files and services', description: 'Prefer this device and your own services; servers only as a fallback' },
+}
+
 const playbackBlocks: SettingsBlock[] = [
+  group('play-from', [
+    {
+      id: 'play-from',
+      icon: 'tune',
+      title: 'Play from',
+      description: "For one song, choose in the player's menu",
+      select: {
+        options: (Object.keys(PLAY_FROM) as PlaybackPreference[]).map((value) => ({ value, label: PLAY_FROM[value].label, description: PLAY_FROM[value].description })),
+        get value() {
+          return playbackPreference.value
+        },
+        set(value: string) {
+          playbackPreference.value = value as PlaybackPreference
+        },
+      },
+    },
+  ]),
   group('playback', [
     {
       id: 'quality',

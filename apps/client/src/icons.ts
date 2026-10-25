@@ -6,6 +6,10 @@ import { shallowReactive } from 'vue'
 import i_plugin from '@material-symbols/svg-400/rounded/extension.svg?raw'
 import i_pluginFill from '@material-symbols/svg-400/rounded/extension-fill.svg?raw'
 import i_server from '@material-symbols/svg-400/rounded/dns.svg?raw'
+import i_folder from '@material-symbols/svg-400/rounded/folder.svg?raw'
+import i_folderFill from '@material-symbols/svg-400/rounded/folder-fill.svg?raw'
+import i_device from '@material-symbols/svg-400/rounded/library_music.svg?raw'
+import i_deviceFill from '@material-symbols/svg-400/rounded/library_music-fill.svg?raw'
 import i_serverFill from '@material-symbols/svg-400/rounded/dns-fill.svg?raw'
 import i_upload from '@material-symbols/svg-400/rounded/upload_file.svg?raw'
 import i_uploadFill from '@material-symbols/svg-400/rounded/upload_file-fill.svg?raw'
@@ -160,6 +164,8 @@ const RAW = {
   'home': [i_home, i_homeFill],
   'plugin': [i_plugin, i_pluginFill],
   'server': [i_server, i_serverFill],
+  'folder': [i_folder, i_folderFill],
+  'device-music': [i_device, i_deviceFill],
   'upload': [i_upload, i_uploadFill],
   'add-link': [i_add_link, i_add_linkFill],
   'terminal': [i_terminal, i_terminalFill],

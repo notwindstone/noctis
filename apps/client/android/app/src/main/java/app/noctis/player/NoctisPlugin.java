@@ -1,5 +1,6 @@
 package app.noctis.player;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.Notification;
 import android.app.PendingIntent;
@@ -7,7 +8,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.Build;
+import android.provider.DocumentsContract;
 import android.os.Handler;
 import android.os.Looper;
 import android.support.v4.media.MediaMetadataCompat;
@@ -22,12 +25,16 @@ import androidx.activity.result.ActivityResult;
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -43,9 +50,18 @@ import java.util.concurrent.Executors;
  * - haptics: the platform's own tuned feedback constants instead of raw vibration;
  * - media session: lock screen / notification controls, backed by PlaybackService;
  * - system colours: the wallpaper-derived Material You accent (Android 12+);
- * - Google sign-in: a dedicated WebView whose cookies are handed back to the app.
+ * - Google sign-in: a dedicated WebView whose cookies are handed back to the app;
+ * - local music: folders the user picks (Storage Access Framework), scanned with their
+ *   tags (see LocalMusic).
  */
-@CapacitorPlugin(name = "Noctis")
+@CapacitorPlugin(
+    name = "Noctis",
+    permissions = {
+        // Local music: "Music and audio" on Android 13+, storage before that.
+        @Permission(alias = "audio", strings = { Manifest.permission.READ_MEDIA_AUDIO }),
+        @Permission(alias = "storage", strings = { Manifest.permission.READ_EXTERNAL_STORAGE }),
+    }
+)
 public class NoctisPlugin extends Plugin {
 
     private OnBackPressedCallback backCallback;
@@ -375,6 +391,147 @@ public class NoctisPlugin extends Plugin {
 
     private static String hex(int color) {
         return String.format("#%06X", 0xFFFFFF & color);
+    }
+
+    /* ---------------- Local music ---------------- */
+
+    private final ExecutorService musicScanner = Executors.newSingleThreadExecutor();
+
+    private String musicAlias() {
+        return Build.VERSION.SDK_INT >= 33 ? "audio" : "storage";
+    }
+
+    private JSObject musicPermissionState() {
+        JSObject response = new JSObject();
+        PermissionState state = getPermissionState(musicAlias());
+        response.put("state", state == null ? "prompt" : state.toString());
+        return response;
+    }
+
+    /** Whether the app may read the device's music: "granted", "denied", "prompt"… */
+    @PluginMethod
+    public void checkMusicPermission(PluginCall call) {
+        call.resolve(musicPermissionState());
+    }
+
+    @PluginMethod
+    public void requestMusicPermission(PluginCall call) {
+        if (getPermissionState(musicAlias()) == PermissionState.GRANTED) {
+            call.resolve(musicPermissionState());
+            return;
+        }
+        requestPermissionForAlias(musicAlias(), call, "onMusicPermission");
+    }
+
+    @PermissionCallback
+    private void onMusicPermission(PluginCall call) {
+        call.resolve(musicPermissionState());
+    }
+
+    /** Every song in Android's media index. Emits "musicScanProgress" { count }. */
+    @PluginMethod
+    public void scanMediaStore(PluginCall call) {
+        if (getPermissionState(musicAlias()) != PermissionState.GRANTED) {
+            call.reject("Allow access to music first", "PERMISSION");
+            return;
+        }
+        musicScanner.execute(() -> {
+            try {
+                JSArray files = LocalMusic.scanMediaStore(getContext(), (count) -> {
+                    JSObject progress = new JSObject();
+                    progress.put("uri", "mediastore");
+                    progress.put("count", count);
+                    notifyListeners("musicScanProgress", progress);
+                });
+                JSObject response = new JSObject();
+                response.put("files", files);
+                call.resolve(response);
+            } catch (Exception e) {
+                call.reject("Couldn't read the device's music: " + e.getMessage());
+            }
+        });
+    }
+
+    /** Let the user pick a music folder; the grant is persisted across restarts. */
+    @PluginMethod
+    public void pickMusicFolder(PluginCall call) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(call, intent, "onMusicFolderPicked");
+    }
+
+    @ActivityCallback
+    private void onMusicFolderPicked(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        Intent data = result.getData();
+        if (result.getResultCode() != Activity.RESULT_OK || data == null || data.getData() == null) {
+            call.reject("No folder was picked", "CANCELLED");
+            return;
+        }
+        Uri tree = data.getData();
+        try {
+            getContext().getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException e) {
+            call.reject("Android didn't grant lasting access to that folder");
+            return;
+        }
+        String id = DocumentsContract.getTreeDocumentId(tree);
+        JSObject response = new JSObject();
+        response.put("uri", tree.toString());
+        // "primary:Music/Albums" → "Music/Albums"
+        response.put("name", id.contains(":") ? id.substring(id.indexOf(':') + 1) : id);
+        call.resolve(response);
+    }
+
+    /** Every audio file in a picked folder, with tags. Emits "musicScanProgress" { count }. */
+    @PluginMethod
+    public void scanMusicFolder(PluginCall call) {
+        String uri = call.getString("uri");
+        if (uri == null) {
+            call.reject("uri is required");
+            return;
+        }
+        musicScanner.execute(() -> {
+            try {
+                JSArray files = LocalMusic.scan(getContext(), Uri.parse(uri), (count) -> {
+                    JSObject progress = new JSObject();
+                    progress.put("uri", uri);
+                    progress.put("count", count);
+                    notifyListeners("musicScanProgress", progress);
+                });
+                JSObject response = new JSObject();
+                response.put("files", files);
+                call.resolve(response);
+            } catch (Exception e) {
+                call.reject("Couldn't read that folder: " + e.getMessage());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void getLocalArtwork(PluginCall call) {
+        String uri = call.getString("uri");
+        if (uri == null) {
+            call.reject("uri is required");
+            return;
+        }
+        musicScanner.execute(() -> {
+            JSObject response = new JSObject();
+            response.put("dataUrl", LocalMusic.artwork(getContext(), Uri.parse(uri)));
+            call.resolve(response);
+        });
+    }
+
+    /** Give up access to a folder the user removed. */
+    @PluginMethod
+    public void releaseMusicFolder(PluginCall call) {
+        String uri = call.getString("uri");
+        try {
+            if (uri != null) getContext().getContentResolver().releasePersistableUriPermission(Uri.parse(uri), Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException ignored) {
+            // already gone
+        }
+        call.resolve();
     }
 
     @PluginMethod

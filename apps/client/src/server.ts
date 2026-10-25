@@ -9,6 +9,8 @@ import {
 } from '@noctis/plugin-core'
 import { computed, ref, shallowRef } from 'vue'
 import { request as httpRequest, type HttpResponse } from './http'
+import { credentials, hasExtension, subsonic } from './subsonic/client'
+import { attachServerService, detachServerService } from './subsonic/service'
 import { downloadBytes, installFromArchive, PluginInstallError, type InstallResult } from './plugins/install'
 import { writeLog } from './plugins/log'
 import { isRunning } from './plugins/runtime'
@@ -16,17 +18,26 @@ import { installedPlugins, isEnabled } from './plugins/store'
 import { persisted } from './storage'
 
 /**
- * The connection to a Noctis server (apps/server).
+ * The connection to a server: a Noctis server (apps/server), or any OpenSubsonic
+ * server (Navidrome, Gonic…), which gets the same library features without Noctis's
+ * extras.
  *
- * Every request says which plugins this client runs (`x-noctis-plugins`). A server can
- * require client plugins, like a Minecraft server requiring mods: until they're
- * installed it answers 428 with a handshake listing them, and this module downloads
- * them from the server, checks their hashes and installs them.
+ * Every request to a Noctis server says which plugins this client runs
+ * (`x-noctis-plugins`). A server can require client plugins, like a Minecraft server
+ * requiring mods: until they're installed it answers 428 with a handshake listing them,
+ * and this module downloads them from the server, checks their hashes and installs them.
+ *
+ * Signed in, the server becomes a service (src/subsonic/service.ts).
  */
 
 export const serverUrl = persisted<string>('noctis:server-url', '', (value) => typeof value === 'string')
 
 export type ServerStatus = 'none' | 'connecting' | 'connected' | 'needs-plugins' | 'error'
+
+/** "noctis": /noctis/v1 and /rest; "opensubsonic": /rest only. */
+export const serverKind = persisted<'noctis' | 'opensubsonic' | null>('noctis:server-kind', null, (value) => value === null || value === 'noctis' || value === 'opensubsonic')
+/** For OpenSubsonic servers, which have no handshake: the server's name (its "type"). */
+export const otherServerName = ref('')
 
 export const serverStatus = ref<ServerStatus>(serverUrl.value ? 'connecting' : 'none')
 export const serverError = ref('')
@@ -79,11 +90,16 @@ function normalize(url: string): string {
 export async function serverRequest<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   if (!serverUrl.value) throw new ServerError('Not connected to a Noctis server', 0)
   let response: HttpResponse
+  const auth = credentials.value
   try {
     response = await httpRequest(`${serverUrl.value}${path}`, {
       method: init.method,
       body: init.body,
-      headers: { [PLUGINS_HEADER]: encodePluginsHeader(clientPlugins()), accept: 'application/json' },
+      headers: {
+        [PLUGINS_HEADER]: encodePluginsHeader(clientPlugins()),
+        accept: 'application/json',
+        ...(auth ? { authorization: `Bearer ${auth.apiKey}` } : {}),
+      },
     })
   } catch (error) {
     throw new ServerError(`Couldn't reach the server: ${error instanceof Error ? error.message : String(error)}`, 0)
@@ -100,18 +116,52 @@ export async function serverRequest<T = unknown>(path: string, init: { method?: 
   return response.data as T
 }
 
-/** Check in with the server (and remember it). Resolves to the handshake. */
-export async function connect(url = serverUrl.value): Promise<HandshakeResponse> {
+/** Whether `base` speaks OpenSubsonic; resolves to its "type" (e.g. "navidrome"). */
+async function probeOpenSubsonic(base: string): Promise<string | null> {
+  try {
+    const response = await httpRequest(`${base}/rest/ping.view?f=json&v=1.16.1&c=noctis`)
+    const body = (response.data as { 'subsonic-response'?: { type?: string } } | null)?.['subsonic-response']
+    return body ? (body.type ?? 'OpenSubsonic') : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Check in with the server (and remember it). Resolves to the handshake for Noctis
+ * servers, or null for other OpenSubsonic servers.
+ */
+export async function connect(url = serverUrl.value): Promise<HandshakeResponse | null> {
   serverStatus.value = 'connecting'
   serverError.value = ''
   try {
     const base = normalize(url)
+    if (base !== serverUrl.value) signOutLocally()
     serverUrl.value = base
-    const response = await serverRequest<HandshakeResponse>('/api/v1/handshake')
-    if (typeof response?.protocol !== 'number' || !response.result) throw new ServerError("That doesn't look like a Noctis server", 0)
-    handshake.value = response
-    serverStatus.value = response.result.ok ? 'connected' : 'needs-plugins'
-    writeLog('noctis', 'info', `Connected to ${response.server.name} ${response.server.version} at ${base}${response.result.ok ? '' : ` (needs ${missingPlugins.value.map((item) => item.id).join(', ')})`}`)
+
+    let response: HandshakeResponse | null = null
+    try {
+      response = await serverRequest<HandshakeResponse>('/noctis/v1/handshake')
+      if (typeof response?.protocol !== 'number' || !response.result) response = null
+    } catch (error) {
+      if (!(error instanceof ServerError) || error.status === 0) throw error
+    }
+
+    if (response) {
+      serverKind.value = 'noctis'
+      handshake.value = response
+      serverStatus.value = response.result.ok ? 'connected' : 'needs-plugins'
+      writeLog('noctis', 'info', `Connected to ${response.server.name} ${response.server.version} at ${base}${response.result.ok ? '' : ` (needs ${missingPlugins.value.map((item) => item.id).join(', ')})`}`)
+    } else {
+      const type = await probeOpenSubsonic(base)
+      if (!type) throw new ServerError("That isn't a Noctis or OpenSubsonic server", 0)
+      serverKind.value = 'opensubsonic'
+      otherServerName.value = type
+      handshake.value = null
+      serverStatus.value = 'connected'
+      writeLog('noctis', 'info', `Connected to an OpenSubsonic server (${type}) at ${base}`)
+    }
+    if (credentials.value) attachServerService()
     return response
   } catch (error) {
     serverStatus.value = 'error'
@@ -120,8 +170,51 @@ export async function connect(url = serverUrl.value): Promise<HandshakeResponse>
   }
 }
 
+/**
+ * Sign in to a Noctis server: the password is exchanged for a session token (which is
+ * also the OpenSubsonic API key) and not kept.
+ */
+export async function signIn(username: string, password: string): Promise<void> {
+  if (serverKind.value !== 'noctis') throw new ServerError('This server needs an API key (OpenSubsonic apiKeyAuthentication)', 0)
+  const body = await serverRequest<{ token?: string; error?: string }>('/noctis/v1/auth/login', {
+    method: 'POST',
+    body: { username, password, label: `Noctis on ${navigator.userAgent.includes('Android') ? 'Android' : 'the web'}` },
+  })
+  if (!body.token) throw new ServerError(body.error ?? 'Sign-in failed', 401)
+  credentials.value = { username, apiKey: body.token }
+  attachServerService()
+  writeLog('noctis', 'info', `Signed in to ${serverUrl.value} as ${username}`)
+}
+
+/** Sign in to another OpenSubsonic server with an API key it issued (Noctis never sends passwords to it). */
+export async function signInWithApiKey(apiKey: string): Promise<void> {
+  if (!(await hasExtension('apiKeyAuthentication'))) {
+    throw new ServerError("This server doesn't support API keys (OpenSubsonic apiKeyAuthentication), and Noctis doesn't use legacy Subsonic passwords", 0)
+  }
+  const auth = { username: '', apiKey: apiKey.trim() }
+  await subsonic('ping', {}, auth)
+  const user = (await subsonic('getUser', {}, auth).catch(() => null))?.user?.username ?? 'API key'
+  credentials.value = { ...auth, username: user }
+  attachServerService()
+  writeLog('noctis', 'info', `Signed in to ${serverUrl.value} as ${user} (API key)`)
+}
+
+function signOutLocally() {
+  credentials.value = null
+  detachServerService()
+}
+
+export async function signOut() {
+  if (serverKind.value === 'noctis' && credentials.value) {
+    await serverRequest('/noctis/v1/auth/logout', { method: 'POST' }).catch(() => {})
+  }
+  signOutLocally()
+}
+
 export function disconnect() {
+  void signOut()
   serverUrl.value = ''
+  serverKind.value = null
   handshake.value = null
   serverStatus.value = 'none'
   serverError.value = ''
