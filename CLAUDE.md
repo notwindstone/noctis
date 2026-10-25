@@ -12,7 +12,7 @@ plugin APIs are in [docs/PLUGINS.md](docs/PLUGINS.md) (client) and
 | Monorepo | Bun 1.4 workspaces (`bun install`, `bun.lock`; no npm lockfile) | `package.json` |
 | Client UI | Vue 3.5 + TypeScript 6 (vue-tsc), Vite 8, Material Symbols icons; plain CSS (`src/styles/main.css`), no UI framework | `apps/client` |
 | Android | Capacitor 8 (minSdk 24, target/compile 36), Java in `NoctisPlugin.java` (predictive back, media session, login WebViews, local music via MediaStore + SAF) | `apps/client/android` |
-| Browser | The same Vite build as static files (`apps/client/dist`); YouTube/Spotify requests rely on the Vite dev proxy (`vite.config.ts`) in development | `apps/client` |
+| Browser | The same Vite build (`bun run build:web` → `apps/client/dist`, relative paths). Served by Noctis servers at `/` (`NOCTIS_WEB_CLIENT`, `apps/server/src/web.ts`; the page auto-connects to its server) or from any static host. YouTube/Spotify plugins need a CORS proxy in browsers (Vite dev proxy in development; a CORS extension otherwise) — deliberately not solved | `apps/client` |
 | Desktop | **Planned: Tauri** (not set up yet) | — |
 | iOS | Maybe later (Capacitor) | — |
 | Server | Bun + **Elysia 2.0.0-rc.0** (pinned), PostgreSQL 18 via `Bun.SQL`, Redis 8 via `Bun.RedisClient` (sessions), music-metadata in the local-library plugin | `apps/server` |

@@ -32,6 +32,8 @@ export interface ServerConfig {
    * default), for instances that don't require accounts.
    */
   guestAccess: boolean
+  /** The browser client at "/": its build directory, or null when turned off. */
+  webClient: string | null
 }
 
 const flag = (value: string | undefined, fallback: boolean) => (value === undefined ? fallback : /^(1|true|yes|on)$/i.test(value))
@@ -52,5 +54,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     admin: env.NOCTIS_ADMIN_USER && env.NOCTIS_ADMIN_PASSWORD ? { name: env.NOCTIS_ADMIN_USER, password: env.NOCTIS_ADMIN_PASSWORD } : null,
     openRegistration: flag(env.NOCTIS_OPEN_REGISTRATION, false),
     guestAccess: flag(env.NOCTIS_GUEST_ACCESS, false),
+    webClient: flag(env.NOCTIS_WEB_CLIENT, true) ? resolve(env.NOCTIS_WEB_CLIENT_DIR ?? join(import.meta.dir, '../../client/dist')) : null,
   }
 }

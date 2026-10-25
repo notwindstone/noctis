@@ -326,6 +326,7 @@ The design for what comes next is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md):
 | `GET /noctis/v1/providers`, `GET`/`POST /noctis/v1/scan` | Providers; library scans. |
 | `/noctis/v1/admin/…` | Users, groups, permissions. |
 | `ANY /api/plugins/:id/*` | A plugin's own routes. |
+| `GET /*` (anything else) | The browser client, when `NOCTIS_WEB_CLIENT` is on. A page it serves connects to this server by itself. |
 
 CORS is open (`*`): there are no cookies, and credentials are tokens.
 
@@ -347,6 +348,8 @@ Settings come from environment variables; see `apps/server/.env.example`.
 | `NOCTIS_GUEST_ACCESS` | `false` | Requests without a session act as the guests group |
 | `NOCTIS_ENFORCE_CLIENT_PLUGINS` | `true` | Refuse Noctis clients missing required plugins |
 | `NOCTIS_MAX_BODY_BYTES` | `1048576` | Largest request body |
+| `NOCTIS_WEB_CLIENT` | `true` | Serve the browser client at `/` |
+| `NOCTIS_WEB_CLIENT_DIR` | `apps/client/dist` | Which build to serve (run `bun run build:web` first) |
 | `LOCAL_LIBRARY_DIRS` | none | The local-library plugin's first directories |
 
 ## Not there yet

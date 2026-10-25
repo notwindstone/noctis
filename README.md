@@ -58,6 +58,11 @@ In the client:
 - **Settings → Playback → Play from**, or the player's menu, chooses between a copy on
   the device, your own services and the server's streams.
 
+The server also serves the **browser version** at its address (turn it off with
+`NOCTIS_WEB_CLIENT=false`); `bun run build:web` builds it, and the same files work from any
+static host, connecting to any server. In browsers the YouTube Music and Spotify plugins
+need a CORS proxy (a CORS extension); songs from servers, device folders and themes work.
+
 OpenSubsonic apps can use the same address with an API key: a session token from
 `POST /noctis/v1/auth/login`. See [docs/SERVER-PLUGINS.md](docs/SERVER-PLUGINS.md).
 

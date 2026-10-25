@@ -15,7 +15,8 @@
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
     "sync": "bun run --filter @noctis/client sync",
-    "pack-plugin": "bun scripts/pack-plugin.mjs"
+    "pack-plugin": "bun scripts/pack-plugin.mjs",
+    "build:web": "bun run --filter @noctis/client build"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.10",

@@ -73,6 +73,9 @@ function innertubeProxy(): Plugin {
 
 export default defineConfig({
   plugins: [vue(), innertubeProxy()],
+  // Relative asset paths: the same build works served by a Noctis server at "/", from a
+  // subfolder of any static host (GitHub Pages…), and inside the Android app.
+  base: './',
   server: {
     host: true,
     port: 5173,

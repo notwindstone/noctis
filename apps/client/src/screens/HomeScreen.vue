@@ -11,6 +11,8 @@ import { usePullToRefresh } from '../pullToRefresh'
 import { notify } from '../snackbar'
 import { loadHome, loadMoreHome } from '../services/api'
 import { activeService, servicesReady } from '../services/registry'
+import { credentials } from '../subsonic/client'
+import { handshake, otherServerName, serverStatus, serverUrl } from '../server'
 import { account, onSessionChange, openAccountSettings, signedIn } from '../services/session'
 import type { HomeResult, Section } from '../models'
 
@@ -100,6 +102,15 @@ function selectFilter(filter: string) {
 /** No plugin provides a service yet: a fresh install, not a failure. */
 const noService = computed(() => error.value !== null && !activeService.value)
 
+/** Connected to a server (e.g. the one this web client came from) but not signed in. */
+const needsSignIn = computed(() => noService.value && Boolean(serverUrl.value) && (serverStatus.value === 'connected' || serverStatus.value === 'needs-plugins') && !credentials.value)
+const serverName = computed(() => handshake.value?.server.name ?? (otherServerName.value || serverUrl.value.replace(/^https?:\/\//, '')))
+
+function openServer() {
+  tap()
+  void navigate({ name: 'settings-page', page: 'server' })
+}
+
 function openPlugins() {
   tap()
   void navigate({ name: 'settings-page', page: 'plugins' })
@@ -168,6 +179,15 @@ onSessionChange(() => void load(null))
         </div>
       </div>
     </template>
+
+    <C.StateView
+      v-else-if="needsSignIn && sections.length === 0"
+      icon="server"
+      :title="`Sign in to ${serverName}`"
+      message="Your library, playlists and recommendations are waiting on the server."
+      action="Sign in"
+      @action="openServer"
+    />
 
     <C.StateView
       v-else-if="noService && sections.length === 0"

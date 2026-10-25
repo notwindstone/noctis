@@ -36,6 +36,9 @@ A cross-platform app: Android, Windows, Linux, macOS, the browser, and possibly 
   - **Android:** the whole device, from Android's media index, with the "Music and audio"
     permission it asks for once. Music the index misses can be added as extra folders.
   - **Browsers:** folders the user picks, through the File System Access API.
+- **In the browser**, the app is served by Noctis servers themselves (admins can turn it
+  off) or from any static host. Service plugins like YouTube Music need a CORS proxy
+  there; servers stream their own songs, so that's left to extensions for now.
 
 ### The server (backend)
 
