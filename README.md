@@ -1,7 +1,8 @@
 # Noctis
 
 A music client and server you can reshape with plugins. Why, and where it's going:
-[docs/VISION.md](docs/VISION.md).
+[docs/VISION.md](docs/VISION.md). The design for recommendations and AI:
+[docs/RECOMMENDATIONS.md](docs/RECOMMENDATIONS.md).
 
 - **Client** (`apps/client`): a Material You app built with **Vue 3.5** and
   **Capacitor 8**, in the spirit of InnerTune / ArchiveTune. Music comes from plugins:

@@ -87,25 +87,36 @@ This also answers part of the copyright question below. Users who connect their 
 services play from their own accounts, and the server only needs to stream what a
 provider plugin on it can legitimately serve.
 
-### Recommendations and AI tagging (future work)
+### Recommendations and AI (designed, not built yet)
 
 The plan:
 - gather songs from across the internet;
 - split them by sound quality and find their metadata;
-- add **AI-generated tags**. "AI" here doesn't mean slop: enough songs and human-made
-  tags already exist to train proper classification. Corporations just don't care to
-  do it;
+- add **AI-generated tags**. "AI" here doesn't mean slop: enough songs and human-made tags
+  already exist to train proper classification. Corporations just don't care to do it;
 - run **recommendations** on the server, so they stay consistent whichever plugins add
   sources.
 
-**This part is open for the project's author and other contributors to build.** What's
-there now is the plumbing:
-- **a catalog with a `tags` field** per song (`Noctis.catalog.setTags`);
-- **a deliberately simple placeholder recommender:** co-listening, then shared artist,
-  genre, tags and era;
-- **`/noctis/v1/recommendations`**, which also backs OpenSubsonic's `getSimilarSongs2`;
-- **the `onRecommend` hook**, through which a plugin can adjust or completely replace
-  recommendations.
+The agreed design is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md). In short:
+
+- **Native core, replaceable AI.** The core owns the schema, song identity, the job queue
+  and the recommendation API. The models run in **AI providers**: either a container in
+  any language (custom models, GPUs), or a Noctis server plugin. Both speak one task
+  contract (`tag`, `embed`, `match`, `recommend`), and results are stored with the model
+  that made them, so models can be swapped safely.
+- **Plugins feed the catalog** and don't keep their own big indexes. The catalog is a lazy
+  cache of what's searched or played, built on MusicBrainz IDs and ISRCs.
+- **Instances share derived data** (identities, tags and embeddings, as signed datasets),
+  never listening history.
+- **Hardware tiers:** no AI, precomputed data, or full local or remote providers, so old
+  hardware still gets recommendations.
+
+**The models and recommendation logic are for the project's author and other
+contributors to build**, on that design. What's there now is the plumbing:
+- a `tags` field per song;
+- a simple placeholder recommender;
+- `/noctis/v1/recommendations`, which also backs OpenSubsonic's `getSimilarSongs2`;
+- the `onRecommend` hook.
 
 A lightweight on-device algorithm for picking among downloaded songs might also be
 possible on the client. That's undecided.
@@ -123,6 +134,8 @@ On the server, plugins can add:
 - **Library scanners** that `startScan` drives, like the local-library plugin.
 - **Permissions** that admins can grant to groups.
 - **Changes to recommendations**, or a full replacement (`onRecommend`).
+- **AI providers**, once built: tagging, embeddings, matching and recommendation
+  models, alongside containers with custom models ([RECOMMENDATIONS.md](RECOMMENDATIONS.md)).
 
 Like mods in Minecraft, a server can **require clients to have a matching plugin**
 before they connect. A plugin can be client-only, server-only, or both. That makes
@@ -183,3 +196,4 @@ Storing music on the server and distributing it is piracy. Ideas so far:
 | `docker-compose.yml` | PostgreSQL and Redis for the server |
 | `docs/PLUGINS.md` | Writing client plugins |
 | `docs/SERVER-PLUGINS.md` | The server, its plugins, and how clients and servers agree on them |
+| `docs/RECOMMENDATIONS.md` | The design for recommendations, AI providers, song identity and the catalog at scale |

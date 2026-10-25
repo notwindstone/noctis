@@ -247,8 +247,15 @@ recommendations live at `GET /noctis/v1/recommendations?seed=&limit=&context=`. 
 back `getSimilarSongs2`.
 
 The built-in algorithm is a placeholder: co-listening, then shared artist, genre, tags and
-era, then random songs. The real recommender and AI tagging are future work (see
-[VISION.md](VISION.md)). They'll plug in through `onRecommend` and `catalog.setTags`.
+era, then random songs. Today a plugin can change it with `onRecommend`, and set tags
+with `catalog.setTags`.
+
+The design for what comes next is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md):
+- **AI providers:** containers with custom models, or plugins, through
+  `Plugin.defineAiProvider`;
+- a job queue, and results tagged by model;
+- song identity on MusicBrainz IDs;
+- a rate-limited HTTP layer for plugins.
 
 ## Accounts, groups and sessions
 
@@ -350,6 +357,7 @@ Settings come from environment variables; see `apps/server/.env.example`.
   reverse proxy.
 - **No admin UI.** The admin API exists, but plugins can't be enabled, disabled or
   reloaded without a restart.
-- **Recommendations and AI tagging** are future work (see above).
+- **Recommendations and AI** are designed but not built: AI providers, job queue, song
+  identity and the rate-limited HTTP layer ([RECOMMENDATIONS.md](RECOMMENDATIONS.md)).
 - **Some OpenSubsonic parts are missing:** shares, podcasts, internet radio, lyrics.
   Plugins can add them as extensions.
