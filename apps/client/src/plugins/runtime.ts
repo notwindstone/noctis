@@ -31,12 +31,14 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as
 /** sha256 → API of code that has run in this session. */
 const executed = new Map<string, PluginAPI>()
 
-export type PluginRunState = 'running' | 'stopped' | 'failed'
+/** "starting": its code is running for the first time (it may already call servers). */
+export type PluginRunState = 'starting' | 'running' | 'stopped' | 'failed'
 
 /** sha256 → what happened to it in this session. */
 export const runStates = shallowReactive<Record<string, PluginRunState>>({})
 
 async function cleanRun(plugin: InstalledPlugin): Promise<boolean> {
+  runStates[plugin.sha256] = 'starting'
   const api = new PluginAPI(plugin.id)
   const started = performance.now()
   try {

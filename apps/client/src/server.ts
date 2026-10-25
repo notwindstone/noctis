@@ -13,8 +13,8 @@ import { credentials, hasExtension, subsonic } from './subsonic/client'
 import { attachServerService, detachServerService } from './subsonic/service'
 import { downloadBytes, installFromArchive, PluginInstallError, type InstallResult } from './plugins/install'
 import { writeLog } from './plugins/log'
-import { isRunning } from './plugins/runtime'
-import { installedPlugins, isEnabled } from './plugins/store'
+import { runStates } from './plugins/runtime'
+import { installedPlugins } from './plugins/store'
 import { persisted } from './storage'
 
 /**
@@ -61,8 +61,9 @@ export class ServerError extends Error {
 
 /** Plugins this client runs, as the server sees them. */
 export function clientPlugins(): ClientPlugin[] {
+  // Starting counts: a plugin's first requests happen while its code runs.
   return installedPlugins.value
-    .filter((plugin) => isEnabled(plugin) && isRunning(plugin))
+    .filter((plugin) => runStates[plugin.sha256] === 'running' || runStates[plugin.sha256] === 'starting')
     .map((plugin) => ({ id: plugin.id, version: plugin.metadata.version || '0.0.0' }))
 }
 

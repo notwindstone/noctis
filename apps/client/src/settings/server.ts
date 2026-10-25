@@ -101,6 +101,7 @@ function promptSignIn() {
         title: `Password for ${username.trim()}`,
         description: 'Exchanged for a session; the password isn\'t kept on this device.',
         placeholder: 'Password',
+        password: true,
         confirmLabel: 'Sign in',
         async onConfirm(password) {
           try {

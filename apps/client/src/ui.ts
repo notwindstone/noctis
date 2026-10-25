@@ -49,6 +49,8 @@ export interface TextDialog {
   description?: string
   placeholder?: string
   multiline?: boolean
+  /** Hide what's typed (passwords). */
+  password?: boolean
   confirmLabel?: string
   onConfirm: (value: string) => void | Promise<void>
 }

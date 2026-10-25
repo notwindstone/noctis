@@ -59,7 +59,9 @@ async function submitText() {
   textBusy.value = true
   try {
     await dialog.onConfirm(text.value)
-    textDialog.value = null
+    // Close only this dialog: onConfirm may have opened the next one (sign-in asks for
+    // the username, then the password).
+    if (textDialog.value === dialog) textDialog.value = null
   } finally {
     textBusy.value = false
   }
@@ -140,10 +142,13 @@ async function confirmAction() {
     />
     <input
       v-else
+      :key="textDialog?.title"
       v-model="text"
       class="text-field"
+      :type="textDialog?.password ? 'password' : 'text'"
       :placeholder="textDialog?.placeholder"
-      autocomplete="off"
+      :autocomplete="textDialog?.password ? 'current-password' : 'off'"
+      autocapitalize="off"
       @keydown.enter="submitText"
     />
     <template #actions>
