@@ -94,7 +94,22 @@ interface NoctisPlugin {
   updateMediaSession(state: MediaState): Promise<void>
   clearMediaSession(): Promise<void>
   setKeepAwake(options: { awake: boolean }): Promise<void>
+  checkNotificationPermission(): Promise<{ state: string }>
+  requestNotificationPermission(): Promise<{ state: string }>
+  showNotification(options: {
+    id: string
+    title: string
+    body?: string
+    /** 0..1 */
+    progress?: number
+    indeterminate?: boolean
+    ongoing?: boolean
+    quiet?: boolean
+    actions?: { id: string; label: string }[]
+  }): Promise<void>
+  closeNotification(options: { id: string }): Promise<void>
   addListener(event: 'mediaAction', handler: (data: MediaActionEvent) => void): Promise<PluginListenerHandle>
+  addListener(event: 'notificationAction', handler: (data: { id: string; action: string }) => void): Promise<PluginListenerHandle>
   addListener(event: 'openFile', handler: (data: { name: string; data?: string; error?: string }) => void): Promise<PluginListenerHandle>
   addListener(event: 'musicScanProgress', handler: (data: { uri: string; count: number }) => void): Promise<PluginListenerHandle>
   addListener(

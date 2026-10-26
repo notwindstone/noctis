@@ -3,11 +3,13 @@ import { Directory, Filesystem } from '@capacitor/filesystem'
 import { computed, reactive, watch } from 'vue'
 import { haptic } from './haptics'
 import { isNative } from './native'
-import { cacheEnabled, maxCacheMb } from './preferences'
-import { notify } from './snackbar'
+import * as notifications from './notifications'
+import { cacheEnabled, downloadConcurrency, downloadNotifications, maxCacheMb } from './preferences'
+import { writeLog } from './plugins/log'
 import { persisted } from './storage'
 import { fetchRange } from './http'
-import type { Song } from './models'
+import { sourceOf, type Song } from './models'
+import { services } from './services/registry'
 import { forgetStream, resolveStream } from './services/stream'
 
 /**
@@ -87,15 +89,19 @@ function bytesToBase64(bytes: ArrayBuffer): string {
   return btoa(binary)
 }
 
+class Cancelled extends Error {}
+
 async function fetchAll(
   url: string,
   headers: Record<string, string> | undefined,
   total: number,
   onChunk: (base64: string, bytes: ArrayBuffer | undefined, index: number) => Promise<void>,
   onProgress: (fraction: number) => void,
+  isCancelled: () => boolean = () => false,
 ) {
   let index = 0
   for (let start = 0; start < total; start += CHUNK, index++) {
+    if (isCancelled()) throw new Cancelled()
     const end = Math.min(start + CHUNK, total) - 1
     let attempt = 0
     for (;;) {
@@ -111,7 +117,7 @@ async function fetchAll(
   }
 }
 
-async function save(song: Song, kind: OfflineKind): Promise<OfflineEntry> {
+async function save(song: Song, kind: OfflineKind, isCancelled?: () => boolean): Promise<OfflineEntry> {
   const stream = await resolveStream(song)
   const total = stream.contentLength
   if (!total) throw new Error('Unknown file size')
@@ -139,7 +145,12 @@ async function save(song: Song, kind: OfflineKind): Promise<OfflineEntry> {
       const transfer = transfers.get(song.id)
       if (transfer) transfer.progress = progress
     },
-  )
+    isCancelled,
+  ).catch(async (error) => {
+    // Don't leave half a file behind.
+    if (isNative) await deleteFile(path)
+    throw error
+  })
 
   if (!isNative) {
     const cache = await caches.open(WEB_CACHE)
@@ -165,41 +176,259 @@ async function deleteFile(path: string) {
   }
 }
 
+/**
+ * Downloads wait in a queue and run a few at a time: the limit is the user's setting
+ * (Settings → Storage), lowered by what a song's service declares in `downloads`
+ * (parallel transfers, minimum gap between starts) so rate-limited sources aren't hammered.
+ * Whoever calls `download` (the app, a plugin) lands in the same queue.
+ */
+interface Job {
+  song: Song
+  source: string
+  done: Promise<void>
+  finish: () => void
+  cancelled: boolean
+}
+
+const pending: Job[] = []
+const running = new Map<string, Job>()
+/** Songs waiting or downloading, kept so a killed app picks the queue up again on the next start. */
+const savedQueue = persisted<Song[]>('noctis:download-queue', [], (value) => Array.isArray(value))
+
+/** Fetches abort as the page goes away; those songs failed only on paper and must stay queued. */
+let closing = false
+window.addEventListener('pagehide', () => {
+  closing = true
+})
+window.addEventListener('pageshow', () => {
+  closing = false
+})
+
+const saveQueue = () => {
+  if (closing) return
+  savedQueue.value = [...running.values(), ...pending].map((job) => job.song)
+}
+const lastStart = new Map<string, number>()
+let wakeTimer: number | undefined
+
+/** What the download notification shows: the current run of downloads, from the first queued song until the queue empties. */
+export const batch = reactive({ total: 0, done: 0, failed: 0, active: false, finished: false, current: '' })
+
+/** What's downloading now, for the notification's second line: "Title · Artist", or the titles when several run at once. */
+const syncCurrent = () => {
+  const songs = [...running.values()].map((job) => job.song)
+  batch.current =
+    songs.length === 1
+      ? [songs[0].title, songs[0].artists[0]?.name].filter(Boolean).join(' · ')
+      : songs.map((song) => song.title).join(', ')
+}
+
+/** 0..1 across the whole run; songs in flight count by their own progress. */
+export const batchFraction = computed(() => {
+  if (batch.total === 0) return 0
+  let partial = 0
+  for (const transfer of transfers.values()) if (transfer.kind === 'download') partial += transfer.progress
+  return Math.min(1, (batch.done + batch.failed + partial) / batch.total)
+})
+
+export const batchText = computed(() => {
+  if (batch.active) return `Downloading ${Math.min(batch.done + batch.failed + 1, batch.total)} of ${batch.total}`
+  const songs = `${batch.done} ${batch.done === 1 ? 'song' : 'songs'}`
+  return batch.failed > 0 ? `Downloaded ${songs}, ${batch.failed} failed` : `Downloaded ${songs}`
+})
+
+const NOTIFICATION = 'noctis-downloads'
+
+/**
+ * The download progress as a system notification, in the foreground too: its Cancel button
+ * is the way to stop a run. With notifications off, pressing a song's download button
+ * again cancels it instead.
+ */
+watch(
+  () => [batch.active, batch.finished, batchText.value, batchFraction.value, batch.current] as const,
+  ([active, finished, text, fraction, current]) => {
+    if (!active && !finished) {
+      notifications.close(NOTIFICATION)
+      return
+    }
+    if (!downloadNotifications.value) return
+    void notifications.show({
+      id: NOTIFICATION,
+      title: text,
+      body: active ? current || undefined : undefined,
+      progress: active ? fraction : undefined,
+      ongoing: active,
+      quiet: true,
+      actions: active ? [{ id: 'cancel', label: 'Cancel' }] : undefined,
+      onAction: (action) => {
+        if (action === 'cancel') cancelDownloads()
+        else if (!batch.active) notifications.close(NOTIFICATION)
+      },
+    })
+  },
+)
+
+function startRun() {
+  if (!batch.active) Object.assign(batch, { total: 0, done: 0, failed: 0, active: true, finished: false, current: '' })
+}
+
+function endRun() {
+  batch.active = false
+  // Everything was cancelled: there's nothing to report.
+  batch.finished = batch.total > 0
+  if (batch.failed === 0 && batch.done > 0) haptic('confirm')
+  else if (batch.failed > 0) haptic('reject')
+}
+
+const runningFor = (source: string) => [...running.values()].filter((job) => job.source === source).length
+
+function pump() {
+  window.clearTimeout(wakeTimer)
+  let wait = Infinity
+  for (let i = 0; i < pending.length && running.size < Math.max(1, downloadConcurrency.value); ) {
+    const job = pending[i]
+    const limits = services[job.source]?.downloads
+    const gap = limits?.minIntervalMs ?? 0
+    const sinceStart = Date.now() - (lastStart.get(job.source) ?? 0)
+    if (runningFor(job.source) >= Math.max(1, limits?.concurrency ?? Infinity)) {
+      i++
+    } else if (sinceStart < gap) {
+      wait = Math.min(wait, gap - sinceStart)
+      i++
+    } else {
+      pending.splice(i, 1)
+      lastStart.set(job.source, Date.now())
+      running.set(job.song.id, job)
+      syncCurrent()
+      void run(job)
+    }
+  }
+  if (wait !== Infinity) wakeTimer = window.setTimeout(pump, wait)
+}
+
+async function run(job: Job) {
+  const { song, finish } = job
+  try {
+    const entry = await save(song, 'download', () => job.cancelled)
+    offline.value = { ...offline.value, [song.id]: { ...entry, kind: 'download' } }
+    batch.done++
+  } catch (error) {
+    forgetStream(song.id)
+    if (error instanceof Cancelled || job.cancelled) {
+      batch.total--
+    } else {
+      batch.failed++
+      writeLog('noctis', 'warn', `Couldn't download "${song.title}": ${(error as Error).message}`)
+    }
+  } finally {
+    transfers.delete(song.id)
+    running.delete(song.id)
+    syncCurrent()
+    finish()
+    saveQueue()
+    if (pending.length === 0 && running.size === 0) endRun()
+    else pump()
+  }
+}
+
+function enqueue(song: Song): Promise<void> {
+  const queued = pending.find((job) => job.song.id === song.id) ?? running.get(song.id)
+  if (queued) return queued.done
+
+  let finish = () => {}
+  const done = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  startRun()
+  batch.total++
+  transfers.set(song.id, { kind: 'download', progress: 0 })
+  pending.push({ song, source: sourceOf(song), done, finish, cancelled: false })
+  saveQueue()
+  pump()
+  return done
+}
+
+/** Stop one song: drop it from the queue, or abort it between chunks if it's downloading. */
+export function cancelDownload(id: string) {
+  const index = pending.findIndex((job) => job.song.id === id)
+  if (index >= 0) {
+    const [job] = pending.splice(index, 1)
+    transfers.delete(id)
+    batch.total--
+    job.finish()
+    saveQueue()
+    if (running.size === 0 && pending.length === 0 && batch.active) endRun()
+    return
+  }
+  const job = running.get(id)
+  if (job) job.cancelled = true
+}
+
+/** Stop everything: queued songs leave the queue, transfers in progress stop after their current chunk. */
+export function cancelDownloads() {
+  for (const id of [...pending.map((job) => job.song.id), ...running.keys()]) cancelDownload(id)
+}
+
+/** Pick up songs a previous session didn't finish. */
+for (const song of savedQueue.value.slice()) {
+  if (!offline.value[song.id]) void enqueue(song)
+}
+savedQueue.value = [...running.values(), ...pending].map((job) => job.song)
+
+/**
+ * Save a song on the device. Resolves when it's done (or failed); a download waits its turn
+ * in the queue, a cache fill (`kind: 'cache'`, from playback) starts right away.
+ */
 export async function download(song: Song, kind: OfflineKind = 'download') {
   const existing = offline.value[song.id]
   if (existing) {
     // Promote a cached song to a download without fetching it again.
     if (kind === 'download' && existing.kind === 'cache') {
       offline.value = { ...offline.value, [song.id]: { ...existing, kind: 'download', song } }
-      notify(`Downloaded "${song.title}"`)
     }
     return
   }
-  if (transfers.has(song.id)) {
-    const transfer = transfers.get(song.id)
-    if (transfer && kind === 'download') transfer.kind = 'download'
-    return
+  const transfer = transfers.get(song.id)
+  if (transfer) {
+    // Already being cached: keep the file as a download once it lands.
+    if (kind === 'download' && transfer.kind === 'cache') {
+      transfer.kind = 'download'
+      startRun()
+      batch.total++
+      const inFlight = cacheFills.get(song.id)
+      await inFlight
+      if (offline.value[song.id]) {
+        offline.value = { ...offline.value, [song.id]: { ...offline.value[song.id], kind: 'download' } }
+        batch.done++
+      } else {
+        batch.failed++
+      }
+      if (pending.length === 0 && running.size === 0) endRun()
+      return
+    }
+    return kind === 'download' ? enqueue(song) : undefined
   }
 
-  transfers.set(song.id, { kind, progress: 0 })
+  if (kind === 'download') return enqueue(song)
+
+  const fill = cacheFill(song)
+  cacheFills.set(song.id, fill)
+  await fill
+}
+
+const cacheFills = new Map<string, Promise<void>>()
+
+async function cacheFill(song: Song) {
+  transfers.set(song.id, { kind: 'cache', progress: 0 })
   try {
-    const entry = await save(song, kind)
-    const finalKind = transfers.get(song.id)?.kind ?? kind
-    offline.value = { ...offline.value, [song.id]: { ...entry, kind: finalKind } }
-    if (finalKind === 'download') {
-      haptic('confirm')
-      notify(`Downloaded "${song.title}"`)
-    } else {
-      void trimCache()
-    }
-  } catch (error) {
+    const entry = await save(song, 'cache')
+    offline.value = { ...offline.value, [song.id]: entry }
+    void trimCache()
+  } catch {
     forgetStream(song.id)
-    if (kind === 'download') {
-      haptic('reject')
-      notify(`Couldn't download "${song.title}": ${(error as Error).message}`)
-    }
   } finally {
     transfers.delete(song.id)
+    cacheFills.delete(song.id)
   }
 }
 

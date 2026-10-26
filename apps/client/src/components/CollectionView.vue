@@ -95,9 +95,8 @@ function downloadAll() {
   tap()
   const missing = props.songs.filter((song) => offlineState(song.id) !== 'downloaded')
   if (missing.length === 0) return notify('Everything here is already downloaded')
-  notify(`Downloading ${songCount(missing.length)}…`)
-  // One at a time keeps memory flat and the connection free for playback.
-  void missing.reduce<Promise<void>>((chain, song) => chain.then(() => download(song, 'download')), Promise.resolve())
+  // The queue paces them (Settings → Storage, and each service's own limits).
+  for (const song of missing) void download(song, 'download')
 }
 
 const songActions = useItemDelegation(() => ({ items: props.songs, play: 'list', title: props.title }))

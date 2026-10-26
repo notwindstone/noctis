@@ -8,6 +8,7 @@ import { registerIcon, ICONS } from '../icons'
 import * as library from '../library'
 import * as native from '../native'
 import * as navigation from '../navigation'
+import * as notifications from '../notifications'
 import * as offline from '../offline'
 import * as player from '../player'
 import * as matching from '../matching'
@@ -111,6 +112,7 @@ function build() {
       models,
       native,
       navigation,
+      notifications,
       offline,
       player,
       preferences,

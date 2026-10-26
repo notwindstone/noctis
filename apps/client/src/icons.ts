@@ -55,6 +55,8 @@ import i_download from '@material-symbols/svg-400/rounded/download.svg?raw'
 import i_downloadFill from '@material-symbols/svg-400/rounded/download-fill.svg?raw'
 import i_downloaded from '@material-symbols/svg-400/rounded/download_done.svg?raw'
 import i_downloadedFill from '@material-symbols/svg-400/rounded/download_done-fill.svg?raw'
+import i_notifications from '@material-symbols/svg-400/rounded/notifications.svg?raw'
+import i_notificationsFill from '@material-symbols/svg-400/rounded/notifications-fill.svg?raw'
 import i_downloading from '@material-symbols/svg-400/rounded/downloading.svg?raw'
 import i_downloadingFill from '@material-symbols/svg-400/rounded/downloading-fill.svg?raw'
 import i_history from '@material-symbols/svg-400/rounded/history.svg?raw'
@@ -196,6 +198,7 @@ const RAW = {
   'download': [i_download, i_downloadFill],
   'downloaded': [i_downloaded, i_downloadedFill],
   'downloading': [i_downloading, i_downloadingFill],
+  'notifications': [i_notifications, i_notificationsFill],
   'history': [i_history, i_historyFill],
   'cached': [i_cached, i_cachedFill],
   'more': [i_more, i_moreFill],

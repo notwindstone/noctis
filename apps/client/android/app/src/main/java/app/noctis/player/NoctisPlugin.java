@@ -69,6 +69,8 @@ import java.util.concurrent.Executors;
         // Local music: "Music and audio" on Android 13+, storage before that.
         @Permission(alias = "audio", strings = { Manifest.permission.READ_MEDIA_AUDIO }),
         @Permission(alias = "storage", strings = { Manifest.permission.READ_EXTERNAL_STORAGE }),
+        // Notifications are opt-in from Android 13.
+        @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS }),
     }
 )
 public class NoctisPlugin extends Plugin {
@@ -77,6 +79,7 @@ public class NoctisPlugin extends Plugin {
 
     @Override
     public void load() {
+        instance = this;
         backCallback = new OnBackPressedCallback(false) {
             @Override
             public void handleOnBackStarted(@NonNull BackEventCompat event) {
@@ -112,6 +115,9 @@ public class NoctisPlugin extends Plugin {
     @Override
     protected void handleOnNewIntent(Intent intent) {
         super.handleOnNewIntent(intent);
+        if (intent != null && intent.hasExtra(EXTRA_NOTIFICATION)) {
+            dispatchNotificationAction(intent.getStringExtra(EXTRA_NOTIFICATION), "click");
+        }
         if (isOpenFile(intent)) readOpenedFile(intent.getData());
     }
 
@@ -119,6 +125,7 @@ public class NoctisPlugin extends Plugin {
     protected void handleOnDestroy() {
         releaseAwake();
         releaseMediaSession();
+        if (instance == this) instance = null;
         super.handleOnDestroy();
     }
 
@@ -823,5 +830,144 @@ public class NoctisPlugin extends Plugin {
             manager.flush();
             call.resolve();
         });
+    }
+
+    /* ---------------- Notifications ---------------- */
+
+    static final String EXTRA_NOTIFICATION = "app.noctis.player.NOTIFICATION";
+    private static final String CHANNEL_GENERAL = "noctis_general";
+    private static final String CHANNEL_QUIET = "noctis_quiet";
+    private static volatile NoctisPlugin instance;
+
+    /** Taps and action buttons arrive here (from the activity or NotificationActionReceiver). */
+    static void dispatchNotificationAction(String id, String action) {
+        NoctisPlugin plugin = instance;
+        if (plugin == null || id == null) return;
+        JSObject event = new JSObject();
+        event.put("id", id);
+        event.put("action", action);
+        plugin.notifyListeners("notificationAction", event);
+    }
+
+    private JSObject notificationPermissionState() {
+        JSObject response = new JSObject();
+        // Before Android 13 notifications need no permission.
+        PermissionState state = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+            ? PermissionState.GRANTED
+            : getPermissionState("notifications");
+        response.put("state", state == null ? "prompt" : state.toString());
+        return response;
+    }
+
+    @PluginMethod
+    public void checkNotificationPermission(PluginCall call) {
+        call.resolve(notificationPermissionState());
+    }
+
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || getPermissionState("notifications") == PermissionState.GRANTED) {
+            call.resolve(notificationPermissionState());
+            return;
+        }
+        requestPermissionForAlias("notifications", call, "onNotificationPermission");
+    }
+
+    @PermissionCallback
+    private void onNotificationPermission(PluginCall call) {
+        call.resolve(notificationPermissionState());
+    }
+
+    private void ensureNotificationChannels(android.app.NotificationManager manager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        if (manager.getNotificationChannel(CHANNEL_GENERAL) == null) {
+            manager.createNotificationChannel(
+                new android.app.NotificationChannel(CHANNEL_GENERAL, "General", android.app.NotificationManager.IMPORTANCE_DEFAULT)
+            );
+        }
+        if (manager.getNotificationChannel(CHANNEL_QUIET) == null) {
+            android.app.NotificationChannel quiet = new android.app.NotificationChannel(
+                CHANNEL_QUIET, "Progress", android.app.NotificationManager.IMPORTANCE_LOW
+            );
+            quiet.setDescription("Downloads and other long-running tasks");
+            quiet.setShowBadge(false);
+            manager.createNotificationChannel(quiet);
+        }
+    }
+
+    /**
+     * Show or update a notification:
+     * { id, title, body?, progress? (0..1), indeterminate?, ongoing?, quiet?, actions?: [{ id, label }] }
+     * Showing an id again replaces it. A tap or button emits "notificationAction" { id, action },
+     * with action "click" for the notification itself.
+     */
+    @PluginMethod
+    public void showNotification(PluginCall call) {
+        String id = call.getString("id");
+        if (id == null) {
+            call.reject("A notification needs an id");
+            return;
+        }
+        if (notificationPermissionState().getString("state").equals("denied")) {
+            call.reject("Notifications are turned off");
+            return;
+        }
+        android.app.NotificationManager manager = (android.app.NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        ensureNotificationChannels(manager);
+
+        Intent open = new Intent(getContext(), MainActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK)
+            .putExtra(EXTRA_NOTIFICATION, id);
+        int code = id.hashCode();
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(
+            getContext(),
+            Boolean.TRUE.equals(call.getBoolean("quiet", false)) ? CHANNEL_QUIET : CHANNEL_GENERAL
+        )
+            .setSmallIcon(R.drawable.ic_stat_noctis)
+            .setContentTitle(call.getString("title", ""))
+            .setContentText(call.getString("body"))
+            .setContentIntent(PendingIntent.getActivity(getContext(), code, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
+            .setOngoing(Boolean.TRUE.equals(call.getBoolean("ongoing", false)))
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true);
+
+        Double progress = call.getDouble("progress");
+        if (progress != null) {
+            builder.setProgress(1000, (int) Math.round(Math.max(0, Math.min(1, progress)) * 1000), false);
+        } else if (Boolean.TRUE.equals(call.getBoolean("indeterminate", false))) {
+            builder.setProgress(0, 0, true);
+        }
+
+        JSArray actions = call.getArray("actions");
+        if (actions != null) {
+            try {
+                for (int i = 0; i < actions.length(); i++) {
+                    org.json.JSONObject action = actions.getJSONObject(i);
+                    Intent intent = new Intent(getContext(), NotificationActionReceiver.class)
+                        .setPackage(getContext().getPackageName())
+                        .putExtra(EXTRA_NOTIFICATION, id)
+                        .putExtra("action", action.getString("id"));
+                    builder.addAction(
+                        0,
+                        action.getString("label"),
+                        PendingIntent.getBroadcast(getContext(), code + i + 1, intent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT)
+                    );
+                }
+            } catch (org.json.JSONException e) {
+                call.reject("Invalid notification actions");
+                return;
+            }
+        }
+
+        manager.notify(id, 0, builder.build());
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void closeNotification(PluginCall call) {
+        String id = call.getString("id");
+        android.app.NotificationManager manager = (android.app.NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        if (id != null && manager != null) manager.cancel(id, 0);
+        call.resolve();
     }
 }

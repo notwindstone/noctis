@@ -11,6 +11,8 @@ import {
   audioQuality,
   autoplayRelated,
   cacheEnabled,
+  downloadConcurrency,
+  downloadNotifications,
   contentCountry,
   contentLanguage,
   hapticsEnabled,
@@ -332,6 +334,29 @@ const storageBlocks: SettingsBlock[] = [
       get value() {
         return `${downloads.value.length} songs · ${formatBytes(usage.value.download)}`
       },
+    },
+    {
+      id: 'download-concurrency',
+      icon: 'downloading',
+      title: 'Simultaneous downloads',
+      description: 'Some services allow fewer at once, or space them out, to avoid being rate limited.',
+      select: {
+        title: 'Simultaneous downloads',
+        options: [1, 2, 3, 4, 6].map((n) => ({ value: String(n), label: String(n) })),
+        get value() {
+          return String(downloadConcurrency.value)
+        },
+        set(value) {
+          downloadConcurrency.value = Number(value)
+        },
+      },
+    },
+    {
+      id: 'download-notifications',
+      icon: 'notifications',
+      title: 'Download notifications',
+      description: 'Show progress, with a Cancel button, in a notification. Without it, press a song\'s download button again to cancel.',
+      toggle: bool(downloadNotifications),
     },
     {
       id: 'remove-downloads',

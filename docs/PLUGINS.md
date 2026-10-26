@@ -236,6 +236,40 @@ account })` adds an account that isn't a service's (the server's, before you sig
 Downloads fetch `contentLength` bytes in ranges from `fetchUrl ?? url` (with
 `fetchHeaders` on a device); `blob:` and `data:` URLs work too.
 
+`Noctis.libs.offline.download(song)` (also what the Download buttons call) puts the song in
+the download queue and resolves when it's done or failed; the app shows one notification
+("Downloading 3 of 12", with Cancel) rather than a message per song. `offline.cancelDownload(id)`
+and `cancelDownloads()` stop songs; a Download button pressed while its song downloads cancels it. How many run at once is the user's
+setting (Settings → Storage). The queue survives the app being closed or killed and resumes at the next start. A service that throttles clients can lower that with
+`downloads: { concurrency, minIntervalMs }` in its definition: at most `concurrency` of
+its songs at once, and at least `minIntervalMs` between two starts.
+
+### Notifications
+
+`Noctis.libs.notifications` shows system notifications: Android's shade, the browser's
+Notifications API (a desktop backend will join them).
+
+```ts
+const { notifications } = Noctis.libs
+await notifications.show({
+  id: 'my-sync',            // showing the same id again updates it
+  title: 'Syncing 3 of 12',
+  progress: 0.25,           // 0..1 is a bar; 'indeterminate' a busy one (a percentage in the browser's text)
+  ongoing: true,            // can't be swiped away while work continues
+  quiet: true,              // no sound or pop-up
+  actions: [{ id: 'stop', label: 'Stop' }],   // buttons (Android)
+  onlyInBackground: true,   // hidden while the app is in front, shown when it goes away
+  onAction: (action) => { if (action === 'stop') cancel() },  // 'click' is the notification itself
+})
+notifications.update('my-sync', { progress: 0.5 })
+notifications.close('my-sync')
+```
+
+`show` asks for permission the first time (Android 13+, browsers), so call it from something
+the user did; it resolves `false` if notifications aren't allowed. `permission()` and
+`requestPermission()` return `'granted' | 'denied' | 'prompt'`. Progress updates are
+throttled to a few a second. Downloads use this for their progress ("Downloading 3 of 12").
+
 ### Signing in with OAuth
 
 `Noctis.libs.auth.openAuthWindow({ url, redirect, title })` opens an authorization page
@@ -503,4 +537,4 @@ rows into them.
 | `hooks`, `hookNames`, `withHooks` | Hooks |
 | `icons`, `registerIcon` | Icons |
 | `log`, `writeLog` | The plugin log |
-| `libs` | `auth`, `player`, `navigation`, `library`, `offline`, `session`, `ui`, `snackbar`, `theme`, `preferences`, `http`, `stream`, `models`, `thumbnails`, `haptics`, `back` |
+| `libs` | `auth`, `player`, `navigation`, `library`, `offline`, `notifications`, `session`, `ui`, `snackbar`, `theme`, `preferences`, `http`, `stream`, `models`, `thumbnails`, `haptics`, `back` |

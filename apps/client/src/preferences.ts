@@ -21,6 +21,10 @@ export const pauseHistory = persisted('noctis:pause-history', false, isBoolean)
 export const cacheEnabled = persisted('noctis:cache-enabled', true, isBoolean)
 /** Maximum size of the automatic song cache, in MB. 0 = unlimited. */
 export const maxCacheMb = persisted('noctis:cache-max', 512, (value) => typeof value === 'number' && value >= 0)
+/** Songs downloaded at once (a service can allow fewer, see ServiceDefinition.downloads). */
+export const downloadConcurrency = persisted('noctis:download-concurrency', 2, (value) => typeof value === 'number' && value >= 1)
+/** A system notification with the download progress while the app is in the background. */
+export const downloadNotifications = persisted('noctis:download-notifications', true, isBoolean)
 
 /* Content */
 export const contentLanguage = persisted('noctis:hl', 'en', (value) => typeof value === 'string')

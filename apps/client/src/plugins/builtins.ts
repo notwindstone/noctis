@@ -1,6 +1,6 @@
 import { isLiked, toggleLike } from '../library'
 import { navigate } from '../navigation'
-import { download, offlineState, removeOffline, transfers } from '../offline'
+import { cancelDownload, download, offlineState, removeOffline, transfers } from '../offline'
 import { addToQueue, currentSong, playNext, playRadio, playSongs, removeFromQueue, shufflePlay, startRadio } from '../player'
 import { notify } from '../snackbar'
 import { closePlayer, confirm, openPlayer, queueOpen, showChoice, showPlayFrom, type ItemMenuRequest } from '../ui'
@@ -55,7 +55,10 @@ function registerBuiltInActions() {
   registerAction<MenuContext<Song>>('song.addToQueue', ({ item }) => addToQueue(item), OWNER)
   registerAction<MenuContext<Song>>('song.startRadio', ({ item }) => void startRadio(item), OWNER)
   registerAction<MenuContext<Song>>('song.like', ({ item }) => toggleLike(item), OWNER)
-  registerAction<MenuContext<Song>>('song.download', ({ item }) => void download(item), OWNER)
+  registerAction<MenuContext<Song>>('song.download', ({ item }) => {
+    if (offlineState(item.id) === 'downloading') cancelDownload(item.id)
+    else void download(item)
+  }, OWNER)
   registerAction<MenuContext<Song>>('song.removeDownload', ({ item, handlers }) => {
     confirm({
       title: 'Remove download?',
@@ -130,7 +133,9 @@ function registerBuiltInActions() {
           handlers.success()
         },
       })
-    } else if (state !== 'downloading') {
+    } else if (state === 'downloading') {
+      cancelDownload(song.id)
+    } else {
       void download(song, 'download')
     }
   }, OWNER)
@@ -157,9 +162,12 @@ function defineBuiltInEntries() {
     {
       id: 'download',
       icon: 'download',
-      label: ({ item }) => (offlineState(item.id) === 'cached' ? 'Keep offline' : 'Download'),
+      label: ({ item }) => {
+        const state = offlineState(item.id)
+        return state === 'downloading' ? 'Cancel download' : state === 'cached' ? 'Keep offline' : 'Download'
+      },
       action: 'song.download',
-      visible: ({ item }) => offlineState(item.id) === 'none' || offlineState(item.id) === 'cached',
+      visible: ({ item }) => offlineState(item.id) !== 'downloaded',
     },
     {
       id: 'remove-download',

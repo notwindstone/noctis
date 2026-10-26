@@ -97,6 +97,17 @@ export interface ServiceDefinition {
     resolve(input: { song: Song; efficient: boolean }): Promise<StreamInfo>
   }
 
+  /**
+   * Limits for downloading this service's songs, on top of the user's own setting
+   * (Settings → Storage): use them when the source throttles or bans heavy clients.
+   */
+  downloads?: {
+    /** Songs of this service downloading at once. */
+    concurrency?: number
+    /** Minimum time between two downloads starting, in milliseconds. */
+    minIntervalMs?: number
+  }
+
   /** Synchronous helpers, called while rendering; keep them cheap. */
   links?: {
     /** A link to share; empty or undefined hides "Copy link". */
