@@ -16,13 +16,18 @@ const MARKER = '<meta name="noctis-server" content="same-origin">'
 
 export function webClient(dir: string) {
   const root = resolve(dir)
-  let index: Promise<string | null> | null = null
+  let index: { modified: number; html: Promise<string | null> } | null = null
 
-  const indexHtml = () =>
-    (index ??= Bun.file(join(root, 'index.html'))
-      .text()
-      .then((html) => html.replace('<head>', `<head>\n    ${MARKER}`))
-      .catch(() => null))
+  // Read again when the build changes: a rebuild replaces the fingerprinted assets the
+  // old index.html points to, so a stale copy would serve a blank page.
+  const indexHtml = () => {
+    const file = Bun.file(join(root, 'index.html'))
+    const modified = file.lastModified
+    if (!index || index.modified !== modified) {
+      index = { modified, html: file.text().then((html) => html.replace('<head>', `<head>\n    ${MARKER}`)).catch(() => null) }
+    }
+    return index.html
+  }
 
   /** A response for `request`, or null if it isn't the web client's to answer. */
   return async function serve(request: Request): Promise<Response | null> {

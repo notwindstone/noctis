@@ -44,10 +44,9 @@ export function onSessionChange(callback: () => void) {
   })
 }
 
-/** Open the settings section where the active service's account is managed. */
+/** Open Settings → Accounts, where every account (the active service's among them) is managed. */
 export function openAccountSettings() {
-  const section = currentAccount.value?.section
-  void navigate({ name: 'settings-page', page: section ?? 'plugins' })
+  void navigate({ name: 'settings-page', page: 'accounts' })
 }
 
 export function refreshAccount(): Promise<unknown> {

@@ -1,5 +1,6 @@
-import { describeProblem, resolveLoadOrder } from '@noctis/plugin-core'
+import { describePlatforms, describeProblem, resolveLoadOrder, supportsPlatform } from '@noctis/plugin-core'
 import { shallowReactive } from 'vue'
+import { platform } from '../native'
 import { writeLog } from './log'
 import { setServicesReady } from '../services/registry'
 import { noctisNamespace, type NoctisNamespace } from './namespace'
@@ -38,6 +39,12 @@ export type PluginRunState = 'starting' | 'running' | 'stopped' | 'failed'
 export const runStates = shallowReactive<Record<string, PluginRunState>>({})
 
 async function cleanRun(plugin: InstalledPlugin): Promise<boolean> {
+  // Installed by an older version, or the data moved between devices.
+  if (!supportsPlatform(plugin.metadata, platform)) {
+    writeLog(plugin.id, 'error', `Not started: made for ${describePlatforms(plugin.metadata)}, and this is ${platform}`)
+    runStates[plugin.sha256] = 'failed'
+    return false
+  }
   runStates[plugin.sha256] = 'starting'
   const api = new PluginAPI(plugin.id)
   const started = performance.now()

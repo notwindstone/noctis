@@ -10,7 +10,7 @@ import { readJson, writeJson } from './storage'
 import { artworkHue as themeArtworkHue } from './theme'
 import { queueMore, radio, radioFor, startQueue } from './services/api'
 import type { RadioSeed } from './services/types'
-import { artistNames, type Playlist, type Song } from './models'
+import { artistNames, type Playlist, type Song, type StreamInfo } from './models'
 import { forgetStream, resolveStream } from './services/stream'
 import { thumbnailAt } from './thumbnails'
 
@@ -27,6 +27,8 @@ export const isLoading = ref(false)
 export const position = ref(0)
 export const duration = ref(0)
 export const playbackError = ref<string | null>(null)
+/** What the current song plays from: its stream (format, bitrate), or a download. For "Play from". */
+export const nowPlayingFrom = shallowRef<{ stream: StreamInfo | null; downloaded: boolean } | null>(null)
 /** Hue of the current artwork (null for monochrome art), for player colours. */
 export const currentHue = ref<number | null>(null)
 
@@ -42,6 +44,19 @@ let fetchingMore = false
 let loadToken = 0
 let pendingSeek: number | null = null
 let retriedExpired = false
+/** The stream the current song plays from; null for downloads, local files and nothing loaded. */
+let currentStream: StreamInfo | null = null
+let pausedAt = 0
+let resumeWatch: number | undefined
+
+/**
+ * Paused longer than this, resuming fetches a fresh stream: the URL may have expired, the
+ * network may have changed (some URLs only work from the address that asked for them),
+ * and Android may have dropped the paused element's connection.
+ */
+const STALE_PAUSE_MS = 10 * 60_000
+/** A resume that has no audio to play after this long loads the stream again. */
+const RESUME_TIMEOUT_MS = 8000
 
 /* ------------------------------------------------------------------ *
  * Loading
@@ -78,6 +93,10 @@ async function load(index: number, autoplay = true, reload = false) {
   playbackError.value = null
   isLoading.value = true
   retriedExpired = false
+  currentStream = null
+  nowPlayingFrom.value = null
+  pausedAt = Date.now()
+  window.clearTimeout(resumeWatch)
   audio.pause()
 
   updateMediaSession(song)
@@ -97,7 +116,10 @@ async function load(index: number, autoplay = true, reload = false) {
 
   if (!source) {
     try {
-      source = (await resolveStream(song)).url
+      const stream = await resolveStream(song)
+      if (token !== loadToken) return
+      source = stream.url
+      currentStream = stream
       streamed = true
     } catch (error) {
       if (token !== loadToken) return
@@ -111,6 +133,7 @@ async function load(index: number, autoplay = true, reload = false) {
 
   if (token !== loadToken) return
   audio.src = source
+  nowPlayingFrom.value = { stream: currentStream, downloaded: !streamed }
 
   if (autoplay) {
     try {
@@ -175,15 +198,34 @@ async function maybeFetchMore() {
  * Load the current song again where it is (playing or paused), e.g. after "Play from"
  * picked another source. Doesn't count as another play.
  */
-export async function reloadCurrent() {
+export async function reloadCurrent(play = isPlaying.value) {
   const index = currentIndex.value
   const song = queue.value[index]
   if (!song) return
-  const at = position.value
-  const playing = isPlaying.value
+  const at = audio.src ? audio.currentTime || position.value : position.value
   forgetStream(song.id)
   pendingSeek = at > 0 ? at : null
-  await load(index, playing, true)
+  await load(index, play, true)
+}
+
+/** Whether resuming should fetch a fresh stream instead of trusting the paused one. */
+function streamIsStale(): boolean {
+  if (!currentStream) return false
+  return Date.now() - pausedAt > STALE_PAUSE_MS || currentStream.expiresAt - Date.now() < 60_000
+}
+
+/**
+ * Resuming a stream that never gets going (a dead connection after a long pause, a URL
+ * that stopped working without an error) loads it again where it was.
+ */
+function watchResume() {
+  window.clearTimeout(resumeWatch)
+  if (!currentStream) return
+  const token = loadToken
+  resumeWatch = window.setTimeout(() => {
+    if (token !== loadToken || audio.paused || audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return
+    void reloadCurrent(true)
+  }, RESUME_TIMEOUT_MS)
 }
 
 function setQueue(
@@ -333,10 +375,18 @@ export async function togglePlay() {
   }
 
   if (audio.paused) {
+    if (streamIsStale()) {
+      await reloadCurrent(true)
+      return
+    }
+    watchResume()
     try {
       await audio.play()
-    } catch {
-      notify('Playback could not start.')
+    } catch (error) {
+      if ((error as DOMException).name === 'AbortError') return
+      // The paused stream may be gone; a fresh one usually plays.
+      if (currentStream) await reloadCurrent(true)
+      else notify('Playback could not start.')
     }
   } else {
     audio.pause()
@@ -359,6 +409,9 @@ export const seekCount = ref(0)
 /** Stop and clear the queue; the mini player disappears. */
 export function stopPlayback() {
   loadToken++
+  currentStream = null
+  nowPlayingFrom.value = null
+  window.clearTimeout(resumeWatch)
   audio.pause()
   audio.removeAttribute('src')
   audio.load()
@@ -463,12 +516,16 @@ audio.addEventListener('loadedmetadata', () => {
 audio.addEventListener('playing', () => {
   isLoading.value = false
   isPlaying.value = true
+  // It plays again: a later expiry deserves its own retry.
+  retriedExpired = false
+  window.clearTimeout(resumeWatch)
 })
 audio.addEventListener('play', () => {
   isPlaying.value = true
 })
 audio.addEventListener('pause', () => {
   isPlaying.value = false
+  pausedAt = Date.now()
   savePlaybackState()
 })
 audio.addEventListener('waiting', () => {
@@ -500,6 +557,8 @@ audio.addEventListener('error', () => {
       .then((stream) => {
         if (currentSong.value?.id !== song.id) return
         pendingSeek = resumeAt
+        currentStream = stream
+        nowPlayingFrom.value = { stream, downloaded: false }
         audio.src = stream.url
         return audio.play()
       })

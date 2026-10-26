@@ -17,7 +17,7 @@ plugin APIs are in [docs/PLUGINS.md](docs/PLUGINS.md) (client) and
 | iOS | Maybe later (Capacitor) | — |
 | Server | Bun + **Elysia 2.0.0-rc.0** (pinned), PostgreSQL 18 via `Bun.SQL`, Redis 8 via `Bun.RedisClient` (sessions), music-metadata in the local-library plugin | `apps/server` |
 | Shared plugin system | Plain TypeScript (no Vue/Bun APIs), fflate for archives | `packages/plugin-core` |
-| Example plugins | YouTube Music (youtubei.js 18, bgutils-js 4), Spotify, Liquid Glass (@sohumsuthar/liquid-glass CSS + optics), local-library (server), play-stats (both) | `examples/plugins` |
+| Example plugins | YouTube Music (youtubei.js 18, bgutils-js 4), Spotify, SoundCloud (web app API, HLS joined into one file), Monochrome (community API instances, FLAC), Liquid Glass (@sohumsuthar/liquid-glass CSS + optics), local-library and MusicBrainz (server), play-stats (both) | `examples/plugins` |
 | Dev services | `docker compose up -d` (PostgreSQL + Redis); Nix devshell in `flake.nix` | root |
 
 ## Commands

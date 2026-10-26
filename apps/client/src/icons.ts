@@ -159,6 +159,14 @@ import i_vibrate from '@material-symbols/svg-400/rounded/swipe_down.svg?raw'
 import i_vibrateFill from '@material-symbols/svg-400/rounded/swipe_down-fill.svg?raw'
 import i_list from '@material-symbols/svg-400/rounded/format_list_bulleted.svg?raw'
 import i_listFill from '@material-symbols/svg-400/rounded/format_list_bulleted-fill.svg?raw'
+import i_bolt from '@material-symbols/svg-400/rounded/bolt.svg?raw'
+import i_boltFill from '@material-symbols/svg-400/rounded/bolt-fill.svg?raw'
+import i_devices from '@material-symbols/svg-400/rounded/devices.svg?raw'
+import i_devicesFill from '@material-symbols/svg-400/rounded/devices-fill.svg?raw'
+import i_password from '@material-symbols/svg-400/rounded/password.svg?raw'
+import i_passwordFill from '@material-symbols/svg-400/rounded/password-fill.svg?raw'
+import i_cloud from '@material-symbols/svg-400/rounded/cloud.svg?raw'
+import i_cloudFill from '@material-symbols/svg-400/rounded/cloud-fill.svg?raw'
 
 const RAW = {
   'home': [i_home, i_homeFill],
@@ -239,6 +247,10 @@ const RAW = {
   'paint': [i_paint, i_paintFill],
   'vibrate': [i_vibrate, i_vibrateFill],
   'list': [i_list, i_listFill],
+  'bolt': [i_bolt, i_boltFill],
+  'devices': [i_devices, i_devicesFill],
+  'cloud': [i_cloud, i_cloudFill],
+  'password': [i_password, i_passwordFill],
 } as const
 
 export type IconName = keyof typeof RAW

@@ -10,10 +10,12 @@ import { defineBuiltInSettings } from './settings/builtin'
 import { definePluginSettings } from './settings/plugins'
 import { defineServerSettings } from './settings/server'
 import { defineLocalSettings } from './settings/local'
+import { defineAccountSettings } from './settings/accounts'
 import { initDeviceService } from './local/service'
 import { isNative } from './native'
+import { initOpenFiles } from './openFiles'
 import { connect, serverUrl } from './server'
-import { credentials } from './subsonic/client'
+import { canUseServer } from './subsonic/client'
 import { attachServerService } from './subsonic/service'
 import { initTheme } from './theme'
 
@@ -27,12 +29,13 @@ defineBuiltInSettings()
 definePluginSettings()
 defineServerSettings()
 defineLocalSettings()
+defineAccountSettings()
 exposeNamespace()
 
 initDeviceService()
 
-// Signed in to a server: it's a service from the start, so Home doesn't wait for the network.
-if (serverUrl.value && credentials.value) attachServerService()
+// Signed in to a server (or a guest on one): it's a service from the start, so Home doesn't wait for the network.
+if (serverUrl.value && canUseServer()) attachServerService()
 
 createApp(App).mount('#app')
 
@@ -41,7 +44,9 @@ createApp(App).mount('#app')
 // Served by a Noctis server (its web client at "/"): connect to that server right away.
 const hostedBy = !isNative && document.querySelector('meta[name="noctis-server"]')?.getAttribute('content') === 'same-origin' ? location.origin : null
 
+// Opened files (a .noctis plugin) wait for plugins, so installing one can replace a running one.
 void startPlugins().then(() => {
+  initOpenFiles()
   if (!serverUrl.value && hostedBy) void connect(hostedBy).catch(() => {})
   else if (serverUrl.value) void connect().catch(() => {})
 })

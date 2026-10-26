@@ -5,7 +5,7 @@ import SeedSwatches from '../components/settings/SeedSwatches.vue'
 import StorageMeter from '../components/settings/StorageMeter.vue'
 import { clearHistory, clearSearchHistory, history, searchHistory } from '../library'
 import { cached, clearCache, clearDownloads, downloads, formatBytes, usage } from '../offline'
-import { playbackPreference, type PlaybackPreference } from '../playFrom'
+import { preferenceLabel } from '../playFrom'
 import { defineSection, group, type SettingsBlock } from '../plugins/rows'
 import {
   audioQuality,
@@ -15,6 +15,7 @@ import {
   contentLanguage,
   hapticsEnabled,
   maxCacheMb,
+  keepAwake,
   mediaControls,
   pauseHistory,
   persistentQueue,
@@ -23,7 +24,8 @@ import {
   type AudioQuality,
 } from '../preferences'
 import { colorSource, effectiveColorSource, isDark, mode, supportsSystemColor, type ColorSource, type ThemeMode } from '../theme'
-import { confirm } from '../ui'
+import { hasNoctisPlugin } from '../native'
+import { confirm, showPlayFrom } from '../ui'
 import { activeService, activeServiceId, services } from '../services/registry'
 
 /**
@@ -132,28 +134,18 @@ const QUALITY_OPTIONS: { value: AudioQuality; label: string; description: string
   { value: 'low', label: 'Data saver', description: 'Smallest stream, around 50–70 kbps' },
 ]
 
-const PLAY_FROM: Record<PlaybackPreference, { label: string; description: string }> = {
-  auto: { label: 'Automatic', description: 'A copy on this device, then your own services, then the server' },
-  server: { label: 'The server or service', description: 'Where the song comes from, as it is' },
-  own: { label: 'Your files and services', description: 'Prefer this device and your own services; servers only as a fallback' },
-}
-
 const playbackBlocks: SettingsBlock[] = [
   group('play-from', [
     {
       id: 'play-from',
       icon: 'tune',
       title: 'Play from',
-      description: "For one song, choose in the player's menu",
-      select: {
-        options: (Object.keys(PLAY_FROM) as PlaybackPreference[]).map((value) => ({ value, label: PLAY_FROM[value].label, description: PLAY_FROM[value].description })),
-        get value() {
-          return playbackPreference.value
-        },
-        set(value: string) {
-          playbackPreference.value = value as PlaybackPreference
-        },
+      // The same dialog as the player's: for one song, open it from the player's menu.
+      get value() {
+        return preferenceLabel()
       },
+      chevron: true,
+      onClick: () => showPlayFrom({ song: null }),
     },
   ]),
   group('playback', [
@@ -192,6 +184,14 @@ const playbackBlocks: SettingsBlock[] = [
       description:
         'Song, play/pause and skip on the lock screen and in notifications. Also keeps music playing in the background.',
       toggle: bool(mediaControls),
+    },
+    {
+      id: 'keep-awake',
+      icon: 'bolt',
+      title: 'Keep playing with the screen off',
+      description: "Keeps the phone's CPU and Wi-Fi awake while music plays, so a sleeping phone doesn't cut it off. Uses a little more battery.",
+      hidden: !hasNoctisPlugin,
+      toggle: bool(keepAwake),
     },
   ]),
   group('personal', [

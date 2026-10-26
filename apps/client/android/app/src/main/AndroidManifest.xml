@@ -25,6 +25,38 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Plugin archives (.noctis): "Open with Noctis" installs them. Android matches
+                 files by MIME type, which apps rarely know for .noctis, so this also matches
+                 by name where the URI has one, and accepts generic binary files (the app
+                 checks they're plugins). Noctis servers send application/x-noctis-plugin. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/x-noctis-plugin" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <!-- pathPattern isn't greedy across dots, hence the repeats. -->
+                <data android:pathPattern=".*\\.noctis" />
+                <data android:pathPattern=".*\\..*\\.noctis" />
+                <data android:pathPattern=".*\\..*\\..*\\.noctis" />
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.noctis" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+
         </activity>
 
         <activity

@@ -52,11 +52,13 @@ NOCTIS_ADMIN_USER=admin NOCTIS_ADMIN_PASSWORD=change-me LOCAL_LIBRARY_DIRS=~/Mus
 ```
 
 In the client:
-- **Settings → Server → localhost:4747** connects, and you sign in there.
+- **Settings → Server → localhost:4747** connects. **Settings → Accounts** is where you sign in
+  (to the server and to every service plugin, in one place).
 - If the server requires plugins, it offers to install them.
 - **Settings → Local music:** on Android the app scans the whole device (it asks for the music permission once), and you can add folders it missed. In browsers you add folders.
-- **Settings → Playback → Play from**, or the player's menu, chooses between a copy on
-  the device, your own services and the server's streams.
+- **Settings → Playback → Play from**, or the player's menu (for one song), opens one dialog
+  that chooses between a copy on the device, your own services and the server's streams,
+  down to one provider (the server's YouTube Music, your SoundCloud…).
 
 The server also serves the **browser version** at its address (turn it off with
 `NOCTIS_WEB_CLIENT=false`); `bun run build:web` builds it, and the same files work from any
@@ -93,12 +95,17 @@ Client paths below are in `apps/client/`.
 
 | Path | |
 | --- | --- |
-| `src/server.ts`, `src/settings/server.ts` | connecting to a Noctis or OpenSubsonic server, signing in, installing the plugins it requires |
-| `src/subsonic/` | the OpenSubsonic client (API keys only), and the server as a service |
-| `src/playFrom.ts` | "Play from": a song's options (device copy, your services, each server stream), the per-song choice and the preference |
+| `src/server.ts`, `src/settings/server.ts` | connecting to a Noctis or OpenSubsonic server, signing in, installing the plugins it requires; guest access |
+| `src/accounts.ts`, `src/settings/accounts.ts` | Settings → Accounts: every service's account (`signInMethods`, `signOut`) and the server's, in one page |
+| `src/subsonic/` | the OpenSubsonic client (API keys first, else Subsonic token auth from a username and password, never stored), the server's account (`account.ts`) and the server as a service |
+| `src/playFrom.ts` | "Play from": a song's options (device copy, your services, each server stream), the per-song choice, the preference and the fallback when a song's own source can't play it |
+| `src/matching.ts` | finding a song on another service by searching (`offerAsSource`), so songs known only from metadata can play |
 | `src/local/` | music on the device as the "On this device" service. Android: the whole device from MediaStore (music permission), plus extra folders through the Storage Access Framework (`LocalMusic.java`). Browsers: folders through the File System Access API |
 | `src/models.ts` | plain models every screen uses (songs, albums, sections, pages…) |
 | `src/services/` | the service layer: `types.ts` (what a service provides), `registry.ts`, `api.ts` (routes every call to the item's or the active service, through the `onRequest` hook) |
+| `examples/plugins/soundcloud/` | SoundCloud: discovery home, search, artists, playlists, radios, your library (signed in on SoundCloud's own page), HLS joined into one file (`stream.ts`) |
+| `examples/plugins/monochrome/` | Monochrome (monochrome.st): lossless FLAC through API instances you add (`instances.ts`: tracks API or hifi-api, detected, with failover), editors' picks, TIDAL playlists found on the catalog by ISRC |
+| `examples/plugins/musicbrainz/` | a server plugin that indexes MusicBrainz into the catalog, on search or by release/artist |
 | `examples/plugins/youtube-music/` | YouTube Music, as a plugin built from TypeScript: youtubei.js sessions and sign-in (`client.ts`), native/proxied fetch (`http.ts`), endpoints (`api.ts`, `parse.ts`), streams with BotGuard tokens (`stream.ts`, `potoken.ts`) |
 | `src/plugins/` | the client's side of the plugin system: runtime, hooks, component/action registries, settings rows (see [docs/PLUGINS.md](docs/PLUGINS.md)) |
 | `src/player.ts` | queue, shuffle/repeat, radio autoplay, offline-first sources, persisted queue |
@@ -108,7 +115,7 @@ Client paths below are in `apps/client/`.
 | `src/navigation.ts`, `components/ScreenStack.vue` | per-tab screen stacks; every screen is a layer, so back gestures can reveal the real previous screen |
 | `src/theme.ts` | OKLCH Material 3 schemes from wallpaper (Android 12+), album art or a preset |
 | `android/.../NoctisPlugin.java` | predictive back events, system accent colour, Google sign-in, cookie clearing |
-| `android/.../LoginActivity.java` | WebView sign-in at accounts.google.com; returns music.youtube.com cookies |
+| `android/.../LoginActivity.java` | WebView sign-in: Google for YouTube Music, OAuth redirects, and a site's own page until it sets a cookie (SoundCloud) |
 
 ## Streaming
 

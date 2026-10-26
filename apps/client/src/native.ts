@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core'
+import type { PluginPlatform } from '@noctis/plugin-core'
 
 export interface BackEventData {
   /** 0..1, how far the user has swiped. */
@@ -79,6 +80,7 @@ interface NoctisPlugin {
   getSystemColors(): Promise<SystemColors>
   openLogin(): Promise<LoginResult>
   openAuth(options: { url: string; redirect: string; title?: string }): Promise<{ url: string }>
+  openCookieLogin(options: { url: string; cookieUrl: string; cookie: string; title?: string }): Promise<{ value: string; cookies: string }>
   clearCookies(options?: { url?: string }): Promise<void>
   captureResponse(options: { url: string; match: string; userAgent?: string; timeoutMs?: number }): Promise<{ url: string; body: string }>
   haptic(options: { type: HapticType }): Promise<void>
@@ -91,7 +93,9 @@ interface NoctisPlugin {
   releaseMusicFolder(options: { uri: string }): Promise<void>
   updateMediaSession(state: MediaState): Promise<void>
   clearMediaSession(): Promise<void>
+  setKeepAwake(options: { awake: boolean }): Promise<void>
   addListener(event: 'mediaAction', handler: (data: MediaActionEvent) => void): Promise<PluginListenerHandle>
+  addListener(event: 'openFile', handler: (data: { name: string; data?: string; error?: string }) => void): Promise<PluginListenerHandle>
   addListener(event: 'musicScanProgress', handler: (data: { uri: string; count: number }) => void): Promise<PluginListenerHandle>
   addListener(
     event: 'backStarted' | 'backProgressed',
@@ -105,3 +109,7 @@ export const Noctis = registerPlugin<NoctisPlugin>('Noctis')
 
 export const isNative = Capacitor.isNativePlatform()
 export const hasNoctisPlugin = isNative && Capacitor.isPluginAvailable('Noctis')
+
+/** Which app this is, for plugins' "platforms" (metadata.json). Desktop means Tauri, once it exists. */
+export const platform: PluginPlatform =
+  Capacitor.getPlatform() === 'android' ? 'android' : Capacitor.getPlatform() === 'ios' ? 'ios' : '__TAURI_INTERNALS__' in window ? 'desktop' : 'web'

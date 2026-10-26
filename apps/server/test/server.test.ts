@@ -79,6 +79,8 @@ describe('negotiation', () => {
   test('the client half downloads, verifies and contains no server code', async () => {
     const response = await call('/noctis/v1/plugins/play-stats/client.noctis')
     expect(response.status).toBe(200)
+    // Its own type, so Android offers to open the download with Noctis.
+    expect(response.headers.get('content-type')).toBe('application/x-noctis-plugin')
     const archive = readPluginArchive('play-stats.noctis', new Uint8Array(await response.arrayBuffer()))
     expect(archive.manifest.side).toBe('client')
     expect(archive.server).toBeUndefined()

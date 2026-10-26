@@ -5,6 +5,7 @@ import {
   currentSong,
   duration,
   hasNext,
+  isLoading,
   isPlaying,
   next,
   pause,
@@ -15,7 +16,7 @@ import {
   seekCount,
   stopPlayback,
 } from './player'
-import { mediaControls } from './preferences'
+import { keepAwake, mediaControls } from './preferences'
 import { artistNames } from './models'
 import { thumbnailAt } from './thumbnails'
 
@@ -26,6 +27,9 @@ import { thumbnailAt } from './thumbnails'
  *
  * The session only starts once something has actually played, so a restored queue
  * doesn't put a notification up on launch.
+ *
+ * While music plays (or is loading to play), a CPU and Wi-Fi wake lock keeps a phone
+ * with the screen off from sleeping between buffer refills (`keepAwake`).
  */
 
 let started = false
@@ -90,6 +94,13 @@ export function initMediaControls() {
   // Position isn't watched continuously: the system extrapolates it from the last
   // update while playing, so only state changes and seeks need sending.
   watch([currentSong, currentIndex, isPlaying, duration, seekCount, hasNext], sync)
+
+  // Loading counts: a song starting with the screen off needs the network too.
+  watch(
+    () => keepAwake.value && Boolean(currentSong.value) && (isPlaying.value || isLoading.value),
+    (awake) => void Noctis.setKeepAwake({ awake }).catch(() => {}),
+    { immediate: true },
+  )
 
   watch(mediaControls, (enabled) => {
     if (enabled) {

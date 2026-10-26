@@ -9,7 +9,7 @@ export interface HttpResponse {
 }
 
 /** Hosts the dev server proxies (vite.config.ts) for requests the browser can't make. */
-const PROXIED = /^https:\/\/(api-partner\.spotify\.com|clienttoken\.spotify\.com|open\.spotify\.com|open\.spotifycdn\.com)\//
+const PROXIED = /^https:\/\/(api-partner\.spotify\.com|clienttoken\.spotify\.com|open\.spotify\.com|open\.spotifycdn\.com|api-v2\.soundcloud\.com|secure\.soundcloud\.com|soundcloud\.com|a-v2\.sndcdn\.com|tracks\.monochrome\.st|monochrome\.st|monochrome-api\.samidy\.com)\//
 
 /**
  * An HTTP request without CORS: Capacitor's native HTTP on a device; in the browser,

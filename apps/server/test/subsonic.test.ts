@@ -180,6 +180,11 @@ describe('browsing', () => {
     expect((await json('getGenres')).genres.genre.map((genre: Body) => genre.value)).toEqual(['Soundtrack', 'Synthwave'])
     expect((await json('getRandomSongs', { size: '50' })).randomSongs.song).toHaveLength(4)
     expect((await json('search3', { query: 'drive' })).searchResult3.song[0].title).toBe('Night Drive')
+    // Words can come from different fields: artist and title, in any order.
+    const mixed = (await json('search3', { query: 'mitsukiyo memory' })).searchResult3
+    expect(mixed.song.map((song: Body) => song.title)).toEqual(['Luminous Memory'])
+    expect((await json('search3', { query: 'school unwelcome mitsukiyo' })).searchResult3.song.map((song: Body) => song.title)).toEqual(['Unwelcome School'])
+    expect((await json('search3', { query: 'mitsukiyo nothing-like-this' })).searchResult3.song ?? []).toEqual([])
     const xml = await (await rest('getGenres', { apiKey: key })).text()
     expect(xml).toContain('<genre songCount="2" albumCount="1">Soundtrack</genre>')
   })

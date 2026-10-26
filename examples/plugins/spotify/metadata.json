@@ -5,7 +5,10 @@
     "Noctis"
   ],
   "type": "unrestricted",
-  "description": "Spotify's home, search, albums, artists and playlists, plus your library and liked songs when signed in. Uses Spotify the way its web player does (no developer account or Premium needed); audio is matched and played from YouTube Music, so the YouTube Music plugin must stay on. Android app only.",
+  "platforms": [
+    "android"
+  ],
+  "description": "Spotify's home, search, albums, artists and playlists, plus your library and liked songs when signed in. Uses Spotify the way its web player does (no developer account or Premium needed); audio is matched and played from YouTube Music, so the YouTube Music plugin must stay on.",
   "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/spotify",
   "categories": [
     "service"

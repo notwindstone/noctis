@@ -44,6 +44,18 @@ export function showChoice<T extends string>(dialog: ChoiceDialog<T>) {
   choiceDialog.value = dialog as unknown as ChoiceDialog
 }
 
+export interface PlayFromRequest {
+  /** The song to choose for (the player's); null: only the preference for every song (Settings). */
+  song: Song | null
+}
+
+/** The Play from dialog (src/components/PlayFromDialog.vue), the same from Settings and the player. */
+export const playFromDialog = shallowRef<PlayFromRequest | null>(null)
+
+export function showPlayFrom(request: PlayFromRequest) {
+  playFromDialog.value = request
+}
+
 export interface TextDialog {
   title: string
   description?: string

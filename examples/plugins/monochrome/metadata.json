@@ -1,0 +1,16 @@
+{
+  "name": "Monochrome",
+  "version": "1.0.0",
+  "authors": [
+    "Noctis"
+  ],
+  "type": "unrestricted",
+  "platforms": [
+    "*"
+  ],
+  "description": "Lossless music (FLAC) through Monochrome's community API instances, like monochrome.st: search, albums, artists, editors' picks, and TIDAL playlists with a hifi-api instance. Add at least one instance in Settings → Monochrome. Also plays songs from other services and servers in lossless when it has them.",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/monochrome",
+  "categories": [
+    "service"
+  ]
+}

@@ -7,6 +7,7 @@ import ItemCard from '../components/ItemCard.vue'
 import ItemRow from '../components/ItemRow.vue'
 import MIcon from '../components/MIcon.vue'
 import PlayerSheet from '../components/PlayerSheet.vue'
+import PlayFromDialog from '../components/PlayFromDialog.vue'
 import QueuePanel from '../components/QueuePanel.vue'
 import RefreshIndicator from '../components/RefreshIndicator.vue'
 import ScreenStack from '../components/ScreenStack.vue'
@@ -48,6 +49,7 @@ type BuiltInComponentName =
   | 'SnackbarHost'
   | 'BottomSheet'
   | 'DialogShell'
+  | 'PlayFromDialog'
   | 'QueuePanel'
   | 'SeekBar'
   | 'TopAppBar'
@@ -85,6 +87,7 @@ const BUILT_IN: Record<BuiltInComponentName, Component> = {
   // Sheets, dialogs and the player's parts
   BottomSheet,
   DialogShell,
+  PlayFromDialog,
   QueuePanel,
   SeekBar,
   // Building blocks

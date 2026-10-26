@@ -129,6 +129,8 @@ async function confirmAction() {
     </template>
   </C.DialogShell>
 
+  <C.PlayFromDialog />
+
   <C.DialogShell :open="textDialog !== null" :title="textDialog?.title ?? ''" @close="textDialog = null">
     <p v-if="textDialog?.description" class="type-body-medium muted dialog-description">{{ textDialog.description }}</p>
     <textarea

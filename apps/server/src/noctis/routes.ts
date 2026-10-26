@@ -1,4 +1,4 @@
-import { checkClientPlugins, decodePluginsHeader, PLUGINS_HEADER, PROTOCOL_VERSION, type ClientPlugin, type HandshakeResponse } from '@noctis/plugin-core'
+import { checkClientPlugins, decodePluginsHeader, PLATFORM_HEADER, PLUGINS_HEADER, PROTOCOL_VERSION, type ClientPlugin, type HandshakeResponse } from '@noctis/plugin-core'
 import { Elysia, t } from 'elysia'
 import { AuthError, can, type User } from '../auth'
 import type { Services } from '../services'
@@ -27,14 +27,14 @@ export const SERVER_VERSION = '0.3.0'
  * Sessions: `Authorization: Bearer <token>`. The same token is OpenSubsonic's apiKey.
  */
 
-/** What a client with these plugins is missing, after plugins' onHandshake hooks. */
-export async function handshakeFor({ config, plugins }: Services, client: ClientPlugin[]): Promise<HandshakeResponse> {
+/** What a client with these plugins (on this platform) is missing, after plugins' onHandshake hooks. */
+export async function handshakeFor({ config, plugins }: Services, client: ClientPlugin[], platform?: string | null): Promise<HandshakeResponse> {
   const requirements = plugins.clientRequirements()
   const response: HandshakeResponse = {
     protocol: PROTOCOL_VERSION,
     server: { name: config.name, version: SERVER_VERSION },
     plugins: requirements,
-    result: checkClientPlugins(requirements, client),
+    result: checkClientPlugins(requirements, client, platform),
   }
   const after = await plugins.hooks.run<HandshakeResponse>('onHandshake', 'after', { response })
   return after.stopped ? after.response : response
@@ -53,7 +53,7 @@ const label = t.Optional(t.String({ maxLength: 100 }))
 
 export function noctisRoutes(services: Services) {
   const { config, accounts, sessions, catalog, recommender, providers, plugins, scanners, sources, permissions } = services
-  const handshake = (client: ClientPlugin[]) => handshakeFor(services, client)
+  const handshake = (request: Request) => handshakeFor(services, decodePluginsHeader(request.headers.get(PLUGINS_HEADER)), request.headers.get(PLATFORM_HEADER))
 
   const tokenOf = (request: Request) => /^Bearer\s+(\S+)$/i.exec(request.headers.get('authorization') ?? '')?.[1]
 
@@ -90,7 +90,7 @@ export function noctisRoutes(services: Services) {
         library: await catalog.counts(),
       }))
 
-      .get('/handshake', ({ request }) => handshake(decodePluginsHeader(request.headers.get(PLUGINS_HEADER))))
+      .get('/handshake', ({ request }) => handshake(request))
 
       .get('/plugins', () =>
         [...plugins.plugins.entries()].map(([id, { archive, state }]) => ({
@@ -101,6 +101,7 @@ export function noctisRoutes(services: Services) {
           description: archive.manifest.description,
           authors: archive.manifest.authors,
           source: archive.manifest.source,
+          platforms: archive.manifest.platforms,
           state,
           client: archive.manifest.client,
         })),
@@ -109,7 +110,8 @@ export function noctisRoutes(services: Services) {
       .get('/plugins/:id/client.noctis', ({ params, status }) => {
         const bytes = plugins.clientArchive(params.id)
         if (!bytes) return status(404, { error: `No client plugin "${params.id}" on this server` })
-        return new Response(bytes, { headers: { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="${params.id}.noctis"` } })
+        // Its own type, so Android offers to open the download with Noctis (see AndroidManifest.xml).
+        return new Response(bytes, { headers: { 'content-type': 'application/x-noctis-plugin', 'content-disposition': `attachment; filename="${params.id}.noctis"` } })
       })
 
       /* ---------------- Accounts and sessions ---------------- */

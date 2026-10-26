@@ -55,8 +55,14 @@ type Metadata = {
   languages?: string[] // ISO 639-1
   side?: 'client' | 'server' | 'both' // default 'client'
   dependencies?: Record<string, string> // plugin id → semver range, e.g. { "youtube-music": "^1.0.0" }
+  platforms?: string[] | '*' // where index.js runs: 'android', 'ios', 'web', 'desktop'; default ['*'] (everywhere)
 }
 ```
+
+`platforms` says which apps a plugin works in. The Spotify example lists `["android"]`
+(it needs the app's hidden WebView); most plugins can leave it out, or say `"*"`.
+Noctis refuses to install a plugin made for another platform, and a Noctis server doesn't
+require one from clients it can't run on.
 
 Plugins whose `dependencies` are missing or the wrong version don't start; the log on
 their page says why. Plugins that run on the server, or on both sides, are covered in
@@ -65,7 +71,9 @@ its client half.
 
 Pack a folder with `bun run pack-plugin path/to/folder` (writes
 `dist-plugins/<folder>.noctis`). Install it from **Settings → Plugins → Install from
-file** or **Install from URL**.
+file** or **Install from URL**. On Android, opening a `.noctis` file (from a file manager,
+the browser's downloads or a chat app) offers Noctis, which installs it and asks before
+running it. A copy named `my-plugin (1).noctis` still installs as `my-plugin`.
 
 ### Consent and code fingerprints
 
@@ -183,7 +191,7 @@ Plugin.defineService('spotify', {
 
 Every endpoint takes **one input object** and returns a promise. Only `name` is
 required; leave out what a service can't do and the app hides or disables what needs it
-(no `library.playlists` → no "Your playlists"; no `account` → no account card).
+(no `library.playlists` → no "Your playlists"; no `account` → the service has no entry in Settings → Accounts).
 
 | Area | Endpoints (input → result) |
 | --- | --- |
@@ -198,7 +206,7 @@ required; leave out what a service can't do and the app hides or disables what n
 | `streams` | `resolve({ song, efficient })` → `{ url, mimeType, bitrate, expiresAt, contentLength?, loudnessDb?, fetchUrl?, fetchHeaders? }` |
 | `links` | `share(item)` → URL or `undefined` — **synchronous** |
 | `thumbnails` | `resize(url, px)` → URL or `undefined` if it isn't yours — **synchronous**, runs while rendering |
-| `account` | `{ signedIn, info, sessionKey, section?, signInTitle?, signInDescription?, refresh?() }` |
+| `account` | `{ signedIn, info, sessionKey, section?, signInTitle?, signInDescription?, refresh?(), signInMethods?, signOut?() }` |
 
 The full types are in [`apps/client/src/services/types.ts`](../apps/client/src/services/types.ts) and
 [`apps/client/src/models.ts`](../apps/client/src/models.ts). Use getters for live values (`get signedIn()`,
@@ -218,6 +226,13 @@ does) — as with settings rows, nothing needs rebuilding.
 `account.sessionKey` should change whenever content would come out different (another
 account, region…): screens refetch and cached pages are dropped when it changes.
 
+Accounts are managed in one place, **Settings → Accounts**: every service's account and
+the connected server's. A service doesn't add its own sign-in buttons. It lists
+`signInMethods` instead (`{ id, label, description?, icon?, hidden?, run() }`, main one
+first) and a `signOut()`; Accounts shows them, asks before signing out, and links to the
+service's `section` for its other settings. `Noctis.libs.accounts.registerAccount(id, { name,
+account })` adds an account that isn't a service's (the server's, before you sign in).
+
 Downloads fetch `contentLength` bytes in ranges from `fetchUrl ?? url` (with
 `fetchHeaders` on a device); `blob:` and `data:` URLs work too.
 
@@ -230,7 +245,15 @@ it, so any redirect URI works. In the browser (development) a popup ends on
 `/auth-callback.html`, so use `http://127.0.0.1:5199/auth-callback.html` (open the dev
 server at that address too). 
 
-Two more helpers for services without a public API:
+Three more helpers for services without a public API:
+
+- `Noctis.libs.auth.openCookieLogin({ url, cookieUrl, cookie, title })` opens a site's
+  own sign-in page and resolves with the value of the cookie `cookie` on `cookieUrl` as
+  soon as the site sets it, with every cookie on `cookieUrl` (`{ value, cookies }`;
+  httpOnly ones too, where refresh tokens live). That suits sites whose session is a cookie, and whose
+  single-page sign-in never redirects anywhere a redirect URI could catch. The SoundCloud
+  plugin reads `oauth_token` this way. Device only; in a browser, ask for the value
+  instead.
 
 - `Noctis.libs.auth.captureWebResponse({ url, match })` loads `url` in a hidden WebView
   and resolves with `{ url, body }` of the first response whose URL contains `match`, so
@@ -241,7 +264,7 @@ Two more helpers for services without a public API:
   CORS (native HTTP on a device) and resolves with `{ status, headers, data }`, `data`
   parsed when it's JSON.
 
-The Spotify plugin shows both.
+The Spotify and SoundCloud plugins show them.
 
 Other plugins can call any service through the same API:
 
@@ -287,8 +310,8 @@ Plugin.subscribe('hook::onRequest::before', async (request) => {
 ## Play from
 
 `Noctis.libs.playFrom` decides where a song's audio comes from. A plugin can add options
-for any song, such as another service that has it, and they show up in the player's
-"Play from…" menu:
+for any song, such as another service that has it. They show up in the Play from dialog,
+which is the same from Settings → Playback and from the player's menu:
 
 ```js
 const unregister = Noctis.libs.playFrom.registerPlaybackOptions(async (song) => {
@@ -299,16 +322,57 @@ const unregister = Noctis.libs.playFrom.registerPlaybackOptions(async (song) => 
     label: 'My service',
     description: 'FLAC',
     available: true,
+    target: 'own:my-service', // lets "All songs → Always My service" pick it
+    group: 'own', // listed under "Yours"; 'server' for a server's streams
     resolve: async (efficient) => ({ url: match.url, mimeType: 'audio/flac', bitrate: 900_000, expiresAt: Date.now() + 3_600_000 }),
   }]
 })
 Plugin.subscribe('lifecycle::disable', unregister)
 ```
 
+A target is the same for every song: `device`, `server:<provider>` (the server's copy
+from one provider) or `own:<service>`. The preference for all songs is a mode
+(`'auto' | 'server' | 'own'`) or one target. Songs without that target play as `'auto'`.
+Services with `streams` are targets automatically. Add others with
+`registerPlaybackTargets(() => [{ id, label, group, available, description }])`, where
+`available: false` shows the target greyed out with `description` saying why.
+
 Other helpers there:
-- `playbackOptions(song)`;
-- `chooseOption(song, id)`;
-- `playbackPreference`, a ref holding `'auto' | 'server' | 'own'`.
+- `playbackOptions(song)`, `pickOption(song, options)` (which one would play);
+- `chooseOption(song, id)` (`null` follows the preference again), `chosenOption(song)`;
+- `playbackPreference` (a ref) and `playbackTargets()`;
+- `showPlayFrom({ song })` in `Noctis.libs.ui` opens the dialog. The dialog is
+  `C.PlayFromDialog`, so a plugin can replace it.
+
+When a song's own source can't play it (a server that only knows it from MusicBrainz,
+a stream a service refuses), the player tries the song's other available options: this
+device first, then yours, then a server's (`resolveFallback`).
+
+### Finding a song on your service
+
+`Noctis.libs.matching` lets a service play songs from elsewhere by searching for them.
+One call is enough:
+
+```js
+const stop = Noctis.libs.matching.offerAsSource('soundcloud', {
+  minScore: 0.7, // 0..1, from title, artists and length
+  skip: ['spotify'], // sources that match on their own
+  accept: (song) => !isPreview(song), // which of your songs may stand in for another
+})
+Plugin.subscribe('lifecycle::disable', stop)
+```
+
+Every song from another source then gets a "Play from" option on this service. It's
+found by searching when it's first needed and remembered on the device. It isn't offered
+when the song already has this service as a source (say, the server's YouTube Music
+copy).
+- **Rejected matches:** lengths far apart (an hour-long loop), and uploads that alter the
+  song ("bass boosted", "slowed", "cover", "remix", "live"…) unless the wanted title says
+  so too.
+- **Helpers:** `matchScore(wanted, candidate)` and `candidatesOn(service, song)` are there
+  for plugins that match their own way.
+
+The YouTube Music and SoundCloud plugins both offer themselves.
 
 `Noctis.libs.local` is the device's music: `localTracks`, `scanLocalLibrary()`,
 `addLocalFolder()` (an extra folder), `requestMusicAccess()` (Android: the

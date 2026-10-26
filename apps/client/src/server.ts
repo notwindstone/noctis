@@ -1,5 +1,6 @@
 import {
   encodePluginsHeader,
+  PLATFORM_HEADER,
   PLUGINS_HEADER,
   readPluginArchive,
   sha256Hex,
@@ -9,7 +10,8 @@ import {
 } from '@noctis/plugin-core'
 import { computed, ref, shallowRef } from 'vue'
 import { request as httpRequest, type HttpResponse } from './http'
-import { credentials, hasExtension, subsonic } from './subsonic/client'
+import { platform } from './native'
+import { canUseServer, credentials, guestAccess, hasExtension, subsonic, tokenCredentials } from './subsonic/client'
 import { attachServerService, detachServerService } from './subsonic/service'
 import { downloadBytes, installFromArchive, PluginInstallError, type InstallResult } from './plugins/install'
 import { writeLog } from './plugins/log'
@@ -26,8 +28,10 @@ import { persisted } from './storage'
  * (`x-noctis-plugins`). A server can require client plugins, like a Minecraft server
  * requiring mods: until they're installed it answers 428 with a handshake listing them,
  * and this module downloads them from the server, checks their hashes and installs them.
+ * Plugins that don't run on this platform (`x-noctis-platform`) aren't required of it.
  *
- * Signed in, the server becomes a service (src/subsonic/service.ts).
+ * Signed in, the server becomes a service (src/subsonic/service.ts). Servers with guest
+ * access (`/noctis/v1/info`) are a service without signing in; signing in is optional.
  */
 
 export const serverUrl = persisted<string>('noctis:server-url', '', (value) => typeof value === 'string')
@@ -98,8 +102,10 @@ export async function serverRequest<T = unknown>(path: string, init: { method?: 
       body: init.body,
       headers: {
         [PLUGINS_HEADER]: encodePluginsHeader(clientPlugins()),
+        [PLATFORM_HEADER]: platform,
         accept: 'application/json',
-        ...(auth ? { authorization: `Bearer ${auth.apiKey}` } : {}),
+        // Legacy token credentials are for /rest only; Noctis endpoints take sessions.
+        ...(auth && 'apiKey' in auth ? { authorization: `Bearer ${auth.apiKey}` } : {}),
       },
     })
   } catch (error) {
@@ -137,32 +143,45 @@ export async function connect(url = serverUrl.value): Promise<HandshakeResponse 
   serverError.value = ''
   try {
     const base = normalize(url)
-    if (base !== serverUrl.value) signOutLocally()
+    if (base !== serverUrl.value) {
+      guestAccess.value = false
+      signOutLocally()
+    }
     serverUrl.value = base
 
     let response: HandshakeResponse | null = null
+    let unreachable: unknown = null
     try {
       response = await serverRequest<HandshakeResponse>('/noctis/v1/handshake')
       if (typeof response?.protocol !== 'number' || !response.result) response = null
     } catch (error) {
-      if (!(error instanceof ServerError) || error.status === 0) throw error
+      if (!(error instanceof ServerError)) throw error
+      // Status 0: no answer at all. In a browser that's also what a server without Noctis's
+      // CORS headers looks like (Navidrome refuses the preflight for x-noctis-*), so try
+      // OpenSubsonic, which needs no custom headers, before giving up.
+      if (error.status === 0) unreachable = error
     }
 
     if (response) {
       serverKind.value = 'noctis'
+      // An open route, so it answers even before the required plugins are installed.
+      const info = await serverRequest<{ guestAccess?: boolean }>('/noctis/v1/info').catch(() => null)
+      if (info) guestAccess.value = info.guestAccess === true
       handshake.value = response
       serverStatus.value = response.result.ok ? 'connected' : 'needs-plugins'
       writeLog('noctis', 'info', `Connected to ${response.server.name} ${response.server.version} at ${base}${response.result.ok ? '' : ` (needs ${missingPlugins.value.map((item) => item.id).join(', ')})`}`)
     } else {
       const type = await probeOpenSubsonic(base)
-      if (!type) throw new ServerError("That isn't a Noctis or OpenSubsonic server", 0)
+      if (!type) throw unreachable ?? new ServerError("That isn't a Noctis or OpenSubsonic server", 0)
       serverKind.value = 'opensubsonic'
+      guestAccess.value = false
       otherServerName.value = type
       handshake.value = null
       serverStatus.value = 'connected'
       writeLog('noctis', 'info', `Connected to an OpenSubsonic server (${type}) at ${base}`)
     }
-    if (credentials.value) attachServerService()
+    if (canUseServer()) attachServerService()
+    else detachServerService()
     return response
   } catch (error) {
     serverStatus.value = 'error'
@@ -190,7 +209,7 @@ export async function signIn(username: string, password: string): Promise<void> 
 /** Sign in to another OpenSubsonic server with an API key it issued (Noctis never sends passwords to it). */
 export async function signInWithApiKey(apiKey: string): Promise<void> {
   if (!(await hasExtension('apiKeyAuthentication'))) {
-    throw new ServerError("This server doesn't support API keys (OpenSubsonic apiKeyAuthentication), and Noctis doesn't use legacy Subsonic passwords", 0)
+    throw new ServerError("This server doesn't support API keys: sign in with your username and password instead", 0)
   }
   const auth = { username: '', apiKey: apiKey.trim() }
   await subsonic('ping', {}, auth)
@@ -200,9 +219,32 @@ export async function signInWithApiKey(apiKey: string): Promise<void> {
   writeLog('noctis', 'info', `Signed in to ${serverUrl.value} as ${user} (API key)`)
 }
 
+/**
+ * Sign in to an OpenSubsonic or Subsonic server with a username and password, for
+ * servers without API keys (Navidrome's demo…): Subsonic token auth, with the password
+ * turned into md5(password + salt) right away and never stored.
+ */
+export async function signInWithPassword(username: string, password: string): Promise<void> {
+  if (serverKind.value === 'noctis') return signIn(username, password)
+  const auth = tokenCredentials(username, password)
+  try {
+    await subsonic('ping', {}, auth)
+  } catch (error) {
+    // 40: wrong username or password; 41: the server wants plain passwords (not supported).
+    const code = (error as { code?: number }).code
+    if (code === 41) throw new ServerError("This server doesn't accept token logins, and Noctis doesn't send plain passwords", 41)
+    throw new ServerError(code === 40 ? 'Wrong username or password' : error instanceof Error ? error.message : String(error), code ?? 0)
+  }
+  credentials.value = auth
+  attachServerService()
+  writeLog('noctis', 'info', `Signed in to ${serverUrl.value} as ${username} (username and password, token auth)`)
+}
+
 function signOutLocally() {
   credentials.value = null
-  detachServerService()
+  // A guest server stays usable without the account.
+  if (guestAccess.value && serverUrl.value) attachServerService()
+  else detachServerService()
 }
 
 export async function signOut() {
@@ -214,6 +256,8 @@ export async function signOut() {
 
 export function disconnect() {
   void signOut()
+  guestAccess.value = false
+  detachServerService()
   serverUrl.value = ''
   serverKind.value = null
   handshake.value = null

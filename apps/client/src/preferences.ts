@@ -13,6 +13,8 @@ export const autoplayRelated = persisted('noctis:autoplay', true, isBoolean)
 export const persistentQueue = persisted('noctis:persistent-queue', true, isBoolean)
 /** Media notification with lock-screen controls (Android). */
 export const mediaControls = persisted('noctis:media-controls', true, isBoolean)
+/** Hold a CPU (and Wi-Fi) wake lock while playing, so a sleeping phone doesn't cut the music (Android). */
+export const keepAwake = persisted('noctis:keep-awake', true, isBoolean)
 export const pauseHistory = persisted('noctis:pause-history', false, isBoolean)
 
 /* Storage */

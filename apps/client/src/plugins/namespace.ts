@@ -1,5 +1,6 @@
 import * as Capacitor from '@capacitor/core'
 import * as Vue from 'vue'
+import * as accounts from '../accounts'
 import * as auth from '../auth'
 import * as back from '../back'
 import * as haptics from '../haptics'
@@ -9,6 +10,7 @@ import * as native from '../native'
 import * as navigation from '../navigation'
 import * as offline from '../offline'
 import * as player from '../player'
+import * as matching from '../matching'
 import * as playFrom from '../playFrom'
 import * as local from '../local/library'
 import * as server from '../server'
@@ -99,11 +101,13 @@ function build() {
 
     /* The app */
     libs: {
+      accounts,
       auth,
       back,
       haptics,
       http,
       library,
+      matching,
       models,
       native,
       navigation,

@@ -91,6 +91,7 @@ export class Providers {
   }
 
   list() {
-    return [...this.entries.entries()].map(([id, { provider, owner }]) => ({ id, name: provider.name, owner, clientService: provider.clientService, clientPlugin: provider.clientPlugin }))
+    // `streams`: whether the server can play its sources (an indexer like MusicBrainz can't).
+    return [...this.entries.entries()].map(([id, { provider, owner }]) => ({ id, name: provider.name, owner, streams: Boolean(provider.stream), clientService: provider.clientService, clientPlugin: provider.clientPlugin }))
   }
 }

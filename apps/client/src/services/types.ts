@@ -129,6 +129,24 @@ export interface ServiceAccount {
   readonly signInDescription?: string
   /** Re-read the account's name and picture. */
   refresh?(): Promise<unknown>
+  /**
+   * Ways to sign in, offered in Settings → Accounts; the first is the main one ("Sign
+   * in with Google", then "Paste a cookie"). Each resolves when done or throws a message.
+   */
+  readonly signInMethods?: SignInMethod[]
+  /** Sign out; Settings → Accounts asks first. */
+  signOut?(): Promise<unknown> | unknown
+}
+
+export interface SignInMethod {
+  id: string
+  label: string
+  description?: string
+  /** Material Symbols name; default "login". */
+  icon?: string
+  /** Not offered right now (e.g. a native sign-in in the browser). */
+  readonly hidden?: boolean
+  run(): Promise<unknown> | unknown
 }
 
 export type RadioSeed =

@@ -1,27 +1,51 @@
 import { request as httpRequest } from '../http'
 import { serverUrl } from '../server'
+import { md5 } from '../md5'
 import { persisted } from '../storage'
 
 /**
  * An OpenSubsonic client (https://opensubsonic.netlify.app) for the connected server:
- * a Noctis server, or any other OpenSubsonic server that supports API keys
- * (apiKeyAuthentication). Legacy Subsonic auth (passwords in URLs, or md5 tokens made
- * from them) isn't supported, so no password is ever stored or sent after sign-in.
+ * a Noctis server, or any other OpenSubsonic or Subsonic server.
+ *
+ * - API keys (apiKeyAuthentication) come first: a Noctis session token, or a key the
+ *   server issued.
+ * - Servers without them (Navidrome's demo, older ones) get Subsonic's token auth:
+ *   u, t = md5(password + salt), s. One salt is kept with its token, so the password
+ *   itself is never stored or sent. Plain `p=` passwords are never used.
  */
 
-export interface Credentials {
-  username: string
-  /** A Noctis session token, or an API key the server issued. */
-  apiKey: string
-}
+export type Credentials =
+  | {
+      username: string
+      /** A Noctis session token, or an API key the server issued. */
+      apiKey: string
+    }
+  | {
+      username: string
+      /** md5(password + salt): legacy Subsonic token auth. */
+      token: string
+      salt: string
+    }
 
 const isCredentials = (value: unknown) =>
-  value === null || (typeof value === 'object' && typeof (value as Credentials).apiKey === 'string' && !('password' in (value as object)))
+  value === null ||
+  (typeof value === 'object' &&
+    !('password' in (value as object)) &&
+    (typeof (value as { apiKey?: unknown }).apiKey === 'string' || (typeof (value as { token?: unknown }).token === 'string' && typeof (value as { salt?: unknown }).salt === 'string')))
 
 /** Older versions could keep a password here; those are dropped (sign in again). */
 export const credentials = persisted<Credentials | null>('noctis:subsonic-credentials', null, isCredentials)
 // Don't leave an old password behind in storage.
 if (localStorage.getItem('noctis:subsonic-credentials')?.includes('"password"')) localStorage.removeItem('noctis:subsonic-credentials')
+
+/**
+ * The server lets anyone in without an account (a Noctis server with guest access,
+ * NOCTIS_GUEST_ACCESS): requests without credentials act as its "guests" group.
+ */
+export const guestAccess = persisted('noctis:server-guest-access', false, (value) => typeof value === 'boolean')
+
+/** Signed in, or a guest on a server that allows guests. */
+export const canUseServer = () => credentials.value !== null || guestAccess.value
 
 const CLIENT = 'noctis'
 const VERSION = '1.16.1'
@@ -36,8 +60,16 @@ export class SubsonicError extends Error {
 }
 
 function authParams(auth = credentials.value): Record<string, string> {
+  if (!auth && guestAccess.value) return {}
   if (!auth) throw new SubsonicError(10, 'Not signed in to the server')
-  return { apiKey: auth.apiKey }
+  if ('apiKey' in auth) return { apiKey: auth.apiKey }
+  return { u: auth.username, t: auth.token, s: auth.salt }
+}
+
+/** Legacy credentials from a password: a fresh salt and its token; the password isn't kept. */
+export function tokenCredentials(username: string, password: string): Credentials {
+  const salt = Array.from(crypto.getRandomValues(new Uint8Array(8)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return { username, token: md5(password + salt), salt }
 }
 
 /** A /rest URL with auth and the given parameters (repeat a key by passing an array). */
@@ -64,7 +96,7 @@ export async function subsonic(endpoint: string, params: Record<string, string |
 
 /** Artwork URL for a coverArt id, at `size` px. */
 export function coverUrl(id: string | undefined, size = 512): string | undefined {
-  if (!id || !credentials.value || !serverUrl.value) return undefined
+  if (!id || !canUseServer() || !serverUrl.value) return undefined
   return restUrl('getCoverArt', { id, size })
 }
 

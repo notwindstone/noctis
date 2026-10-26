@@ -1,16 +1,18 @@
-import { watch } from 'vue'
+import { shallowRef, watch } from 'vue'
 import type { Album, Artist, ArtistRef, CollectionPage, Item, Playlist, Section, Song, StreamInfo } from '../models'
-import { playbackPreference, registerPlaybackOptions, type PlaybackOption } from '../playFrom'
+import { chosenOption, playbackMode, registerPlaybackOptions, registerPlaybackTargets, type PlaybackOption, type PlaybackTarget } from '../playFrom'
 import { queue } from '../player'
 import { hookRegistry } from '../plugins/hooks'
 import { writeLog } from '../plugins/log'
 import { findPlugin } from '../plugins/store'
 import { audioQuality } from '../preferences'
 import { request as serviceRequest } from '../services/api'
+import { StreamError } from '../services/stream'
 import { defineService, removeService, services } from '../services/registry'
 import type { ServiceDefinition } from '../services/types'
-import { handshake, serverKind, serverRequest, serverUrl } from '../server'
-import { coverUrl, credentials, restUrl, streamUrl, subsonic, type SubsonicPayload } from './client'
+import { handshake, serverKind, serverRequest, serverStatus, serverUrl } from '../server'
+import { serverAccount } from './account'
+import { canUseServer, coverUrl, credentials, restUrl, streamUrl, subsonic, type SubsonicPayload } from './client'
 
 /**
  * The connected server as a Noctis service: home, search, albums, artists, playlists,
@@ -130,7 +132,7 @@ const sourceCache = new Map<string, { at: number; value: SongSources }>()
 /** Sources of many songs at once (one request), into the cache. */
 async function prefetchSources(ids: string[]) {
   const missing = [...new Set(ids)].filter((id) => (sourceCache.get(id)?.at ?? 0) <= Date.now() - SOURCES_TTL).slice(0, 200)
-  if (missing.length === 0 || serverKind.value !== 'noctis' || !credentials.value) return
+  if (missing.length === 0 || serverKind.value !== 'noctis' || !canUseServer()) return
   try {
     const body = await serverRequest<{ songs: Record<string, SongSources> }>('/noctis/v1/sources', { method: 'POST', body: { ids: missing } })
     for (const [id, value] of Object.entries(body.songs)) sourceCache.set(id, { at: Date.now(), value })
@@ -190,6 +192,17 @@ async function serverOptions(song: Song): Promise<PlaybackOption[]> {
   const info = await sourcesOf(song)
   if (!info) return []
   const options: PlaybackOption[] = []
+  // Known only from an indexer (MusicBrainz): the server has nothing to stream.
+  if (!info.stream) {
+    options.push({
+      id: 'default',
+      label: `${services[SERVICE_ID]?.name ?? 'Server'} · Its best source`,
+      description: `No audio on the server; it knows this song from ${info.sources.map((source) => source.name).join(', ') || 'its catalog'}`,
+      available: false,
+      group: 'server',
+      resolve: () => Promise.reject(new StreamError('The server has no audio for this song')),
+    })
+  }
   for (const source of info.sources) {
     if (source.stream) {
       const path = source.stream
@@ -198,6 +211,8 @@ async function serverOptions(song: Song): Promise<PlaybackOption[]> {
         label: `${services[SERVICE_ID]?.name ?? 'Server'} · ${source.name}`,
         description: quality(source) || 'Streamed by the server',
         available: true,
+        target: `server:${source.provider}`,
+        group: 'server',
         resolve: (efficient) => serverStream(song, path, efficient, source),
       })
     }
@@ -214,12 +229,61 @@ async function serverOptions(song: Song): Promise<PlaybackOption[]> {
             ? `Needs the "${plugin}" plugin${source.install ? ' (the server has it)' : ''}`
             : `Turn on ${source.name} to play from it`,
         available: installed,
+        target: `own:${own}`,
+        group: 'own',
         install: !installed && plugin ? { plugin, download: source.install } : undefined,
         resolve: (efficient) => serviceRequest(own, 'streams.resolve', { song: ownSong(song, source), efficient }),
       })
     }
   }
   return options
+}
+
+/** A provider of the server's catalog (GET /noctis/v1/providers). */
+interface ServerProvider {
+  id: string
+  name: string
+  /** The server can stream its sources (absent from older servers: assume it can). */
+  streams?: boolean
+  clientService?: string | null
+  clientPlugin?: string | null
+}
+
+const serverProviders = shallowRef<ServerProvider[]>([])
+
+async function loadProviders() {
+  // Until the required plugins are in, the server answers 428; connect() attaches again after.
+  if (serverKind.value !== 'noctis' || serverStatus.value !== 'connected') return
+  try {
+    serverProviders.value = await serverRequest<ServerProvider[]>('/noctis/v1/providers')
+  } catch (error) {
+    writeLog('noctis', 'warn', "Couldn't list the server's providers:", error)
+  }
+}
+
+/**
+ * Targets for the preference: each of the server's providers, and the services that
+ * would play their songs with your own account (greyed out until their plugin runs).
+ */
+function serverTargets(): PlaybackTarget[] {
+  const server = services[SERVICE_ID]?.name ?? 'Server'
+  const offered = new Set(handshake.value?.plugins.map((plugin) => plugin.id))
+  return serverProviders.value.flatMap((provider): PlaybackTarget[] => {
+    const targets: PlaybackTarget[] =
+      provider.streams === false ? [] : [{ id: `server:${provider.id}`, label: `${server} · ${provider.name}`, group: 'server', available: true, description: 'Streamed by the server' }]
+    const own = provider.clientService
+    if (own && own !== SERVICE_ID && !services[own]?.streams) {
+      const plugin = provider.clientPlugin
+      targets.push({
+        id: `own:${own}`,
+        label: provider.name,
+        group: 'own',
+        available: false,
+        description: plugin && !findPlugin(plugin) ? `Needs the "${plugin}" plugin${offered.has(plugin) ? ' (the server has it)' : ''}` : `Turn on ${provider.name} to play from it`,
+      })
+    }
+    return targets
+  })
 }
 
 /** Play a source with one of this client's own services, if it has the right one. */
@@ -376,11 +440,15 @@ const service: ServiceDefinition = {
 
   streams: {
     async resolve({ song, efficient }): Promise<StreamInfo> {
-      if (playbackPreference.value !== 'server') {
-        const info = await sourcesOf(song)
+      // "Its best source", chosen for this song, means the server's stream.
+      const info = await sourcesOf(song)
+      if (playbackMode.value !== 'server' && chosenOption(song) !== 'default') {
         const own = info ? await playWithOwnService(song, info.sources, efficient) : null
         if (own) return own
       }
+      // Songs only an indexer knows (MusicBrainz) have no audio here: say so, and the
+      // player tries the song's other options (src/services/stream.ts).
+      if (info && !info.stream) throw new StreamError(`${services[SERVICE_ID]?.name ?? 'The server'} has no audio for this song`)
       return serverStream(song, `/rest/stream?id=${encodeURIComponent(song.id)}`, efficient)
     },
   },
@@ -398,20 +466,7 @@ const service: ServiceDefinition = {
     },
   },
 
-  account: {
-    get signedIn() {
-      return credentials.value !== null
-    },
-    get info() {
-      return credentials.value ? { name: credentials.value.username, handle: serverUrl.value.replace(/^https?:\/\//, '') } : null
-    },
-    get sessionKey() {
-      return `${serverUrl.value}|${credentials.value?.username ?? ''}`
-    },
-    section: 'server',
-    signInTitle: 'Sign in to your server',
-    signInDescription: 'Your library, playlists and recommendations',
-  },
+  account: serverAccount,
 }
 
 /* ---------------- Scrobbling ---------------- */
@@ -424,15 +479,19 @@ function scrobble({ song }: { song?: Song }) {
 
 let attached = false
 let unregisterOptions: (() => void) | null = null
+let unregisterTargets: (() => void) | null = null
 let stopPrefetch: (() => void) | null = null
 
-/** Show the server as a service (after signing in). */
+/** Show the server as a service (after signing in, or as a guest where the server allows it). */
 export function attachServerService() {
   defineService(SERVICE_ID, service)
+  // Again on every connect: the server's providers may have changed (or failed to load before plugins were installed).
+  void loadProviders()
   if (attached) return
   attached = true
   hookRegistry.points.onPlay.after.push(scrobble)
   unregisterOptions = registerPlaybackOptions(serverOptions)
+  unregisterTargets = registerPlaybackTargets(serverTargets)
   // The sources of the server's songs in the queue, in one request, before they play.
   stopPrefetch = watch(queue, (songs) => void prefetchSources(songs.filter((song) => song.source === SERVICE_ID).map((song) => song.id)), { immediate: true })
 }
@@ -442,8 +501,10 @@ export function detachServerService() {
   const index = hookRegistry.points.onPlay.after.indexOf(scrobble)
   if (index !== -1) hookRegistry.points.onPlay.after.splice(index, 1)
   unregisterOptions?.()
+  unregisterTargets?.()
   stopPrefetch?.()
-  unregisterOptions = stopPrefetch = null
+  unregisterOptions = unregisterTargets = stopPrefetch = null
+  serverProviders.value = []
   sourceCache.clear()
   attached = false
 }

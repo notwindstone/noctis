@@ -1,0 +1,15 @@
+{
+  "name": "MusicBrainz",
+  "version": "1.0.0",
+  "side": "server",
+  "authors": [
+    "Noctis"
+  ],
+  "type": "unrestricted",
+  "description": "Indexes songs, albums and artists from MusicBrainz into the server's catalog: lazily as people search, or a whole release or artist on request. Metadata and covers (Cover Art Archive) only; clients play the songs with their own services (YouTube Music, SoundCloud…).",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/musicbrainz",
+  "categories": [
+    "indexer",
+    "metadata"
+  ]
+}

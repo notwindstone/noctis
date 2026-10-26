@@ -1,5 +1,6 @@
 import { sourceOf, type Song, type StreamInfo } from '../models'
-import { resolveChosen } from '../playFrom'
+import { resolveChosen, resolveFallback } from '../playFrom'
+import { writeLog } from '../plugins/log'
 import { audioQuality } from '../preferences'
 import { request } from './api'
 
@@ -30,11 +31,18 @@ export async function resolveStream(song: Song): Promise<StreamInfo> {
   if (cached && cached.expiresAt - Date.now() > 20 * 60_000) return cached
 
   let stream: StreamInfo
+  const efficient = preferEfficient()
   try {
-    const efficient = preferEfficient()
     stream = (await resolveChosen(song, efficient)) ?? (await request(sourceOf(song), 'streams.resolve', { song, efficient }))
   } catch (error) {
-    throw error instanceof StreamError ? error : new StreamError((error as Error).message || 'This song is not available.')
+    // Its own source can't play it (a song known only from metadata, a refused stream):
+    // anything else that has it, e.g. a service that found it by searching.
+    try {
+      stream = await resolveFallback(song, efficient, error)
+      writeLog('noctis', 'info', `"${song.title}" couldn't play from its own source (${(error as Error).message}); playing it from another one`)
+    } catch {
+      throw error instanceof StreamError ? error : new StreamError((error as Error).message || 'This song is not available.')
+    }
   }
   if (!stream?.url) throw new StreamError('This song is not available.')
   streams.set(song.id, stream)

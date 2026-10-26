@@ -35,6 +35,18 @@ export async function openAuthWindow(options: { url: string; redirect: string; t
   })
 }
 
+/**
+ * A site's own sign-in page, for sites whose session is a cookie (SoundCloud's
+ * oauth_token): resolves once the site sets it, with its value and every cookie on
+ * `cookieUrl` as a Cookie header, httpOnly ones included (where refresh tokens live).
+ * Device only; in the browser, let people paste the values instead.
+ */
+export async function openCookieLogin(options: { url: string; cookieUrl: string; cookie: string; title?: string }): Promise<{ value: string; cookies: string }> {
+  if (!hasNoctisPlugin) throw new Error('Only available in the Android app')
+  const result = await Noctis.openCookieLogin(options)
+  return { value: result.value, cookies: result.cookies ?? '' }
+}
+
 /** The redirect URI that works in the browser: this origin's callback page. */
 export const AUTH_CALLBACK = `${location.origin}/auth-callback.html`
 

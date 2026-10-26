@@ -1,6 +1,6 @@
 import { CapacitorHttp } from '@capacitor/core'
-import { PluginArchiveError, readPluginArchive, sha256Hex, type PluginArchive } from '@noctis/plugin-core'
-import { isNative } from '../native'
+import { describePlatforms, PluginArchiveError, readPluginArchive, sha256Hex, supportsPlatform, type PluginArchive } from '@noctis/plugin-core'
+import { isNative, platform } from '../native'
 import { writeLog } from './log'
 import { disablePlugin, isRunning } from './runtime'
 import { findPlugin, installedPlugins, type InstalledPlugin } from './store'
@@ -8,8 +8,8 @@ import { findPlugin, installedPlugins, type InstalledPlugin } from './store'
 /**
  * Installing plugins from archives (read and validated by @noctis/plugin-core): a
  * `.zip` / `.noctis` file with metadata.json and index.js. The archive's file name,
- * minus the extension, is the plugin id. Server plugins are refused; plugins for both
- * sides install their client half.
+ * minus the extension, is the plugin id. Server plugins are refused, and so are plugins
+ * whose `platforms` don't include this app; plugins for both sides install their client half.
  */
 
 /** A plugin that can't be installed, with a message meant for people. */
@@ -38,6 +38,7 @@ export async function installFromArchive(fileName: string, bytes: Uint8Array): P
 
   const { id, manifest: metadata } = archive
   if (metadata.side === 'server') fail(`${metadata.name} is a server plugin. Install it on a Noctis server instead.`)
+  if (!supportsPlatform(metadata, platform)) fail(`${metadata.name} doesn't run here: it's made for ${describePlatforms(metadata)}.`)
   // "both" plugins bring their client half; the server half is the server's business.
   const code = archive.client ?? ''
   const hash = await sha256Hex(code)

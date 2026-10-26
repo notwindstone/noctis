@@ -1541,6 +1541,18 @@ h3 {
   opacity: 0.8;
 }
 
+/* Settings → Accounts: one per account, above its rows. */
+.account-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px 8px;
+}
+
+.account-header > .thumb {
+  flex: none;
+}
+
 .account-hero,
 .about-hero {
   display: flex;
@@ -2434,6 +2446,7 @@ h3 {
 
 .choice-list {
   display: flex;
+  flex: none;
   flex-direction: column;
   margin: 0 -24px;
   border-top: 1px solid var(--md-sys-color-outline-variant);
@@ -2477,6 +2490,74 @@ h3 {
   inset: 3px;
   border-radius: 50%;
   background: var(--md-sys-color-primary);
+}
+
+/* Play from (PlayFromDialog.vue) */
+.play-from-switch {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.play-from-switch button {
+  min-height: 40px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+
+.play-from-switch button + button {
+  border-left: 1px solid var(--md-sys-color-outline);
+}
+
+.play-from-switch button[aria-selected='true'] {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.play-from-now {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--md-sys-color-surface-container-highest);
+}
+
+.play-from-now > .m-icon {
+  flex: none;
+  color: var(--md-sys-color-primary);
+}
+
+.play-from-heading {
+  margin-bottom: -8px;
+  color: var(--md-sys-color-primary);
+}
+
+.play-from-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  vertical-align: 2px;
+}
+
+.choice-option.is-unavailable {
+  cursor: default;
+}
+
+.choice-option.is-unavailable > * {
+  opacity: 0.38;
+}
+
+.choice-option.is-unavailable:active {
+  background: none;
 }
 
 .text-field {

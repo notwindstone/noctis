@@ -1,5 +1,5 @@
 import type { PluginManifest } from './manifest'
-import { isValidPluginId } from './manifest'
+import { isValidPluginId, supportsPlatform } from './manifest'
 import { isValidVersion, satisfies } from './semver'
 
 /**
@@ -7,12 +7,15 @@ import { isValidVersion, satisfies } from './semver'
  *
  * A server lists the client plugins it wants (the client halves of its "both"
  * plugins). A client says which plugins it runs in the `x-noctis-plugins` header on
- * every request ("id@version,id@version"). The server refuses requests from clients
- * that lack a required plugin, or have a version outside the accepted range, and says
- * what to install and where to get it.
+ * every request ("id@version,id@version"), and which platform it is in
+ * `x-noctis-platform`. The server refuses requests from clients that lack a required
+ * plugin, or have a version outside the accepted range, and says what to install and
+ * where to get it. A plugin that doesn't run on the client's platform isn't required.
  */
 
 export const PLUGINS_HEADER = 'x-noctis-plugins'
+/** Which app the client is ("android", "web"…): plugins for other platforms aren't required of it. */
+export const PLATFORM_HEADER = 'x-noctis-platform'
 
 /** Bumped when the negotiation format changes. */
 export const PROTOCOL_VERSION = 1
@@ -30,6 +33,8 @@ export interface ClientPluginRequirement {
   sha256: string
   /** Where to download the client half as a .noctis archive (relative to the server). */
   download: string
+  /** Platforms the client half runs on (["*"]: all). Absent from older servers. */
+  platforms?: string[]
 }
 
 export interface ClientPlugin {
@@ -44,23 +49,30 @@ export interface NegotiationResult {
   outdated: { requirement: ClientPluginRequirement; installed: string }[]
   /** Optional plugins the client doesn't have. */
   suggested: ClientPluginRequirement[]
+  /** Plugins that don't run on the client's platform, so aren't required of it. Absent from older servers. */
+  unsupported?: ClientPluginRequirement[]
 }
 
 export function requirementFor(
   id: string,
-  manifest: Pick<PluginManifest, 'name' | 'version' | 'side' | 'client'>,
+  manifest: Pick<PluginManifest, 'name' | 'version' | 'side' | 'client'> & { platforms?: string[] },
   sha256: string,
   download: string,
 ): ClientPluginRequirement | null {
   if (manifest.side !== 'both' || !manifest.client) return null
-  return { id, name: manifest.name, version: manifest.version, versions: manifest.client.versions, required: manifest.client.required, sha256, download }
+  return { id, name: manifest.name, version: manifest.version, versions: manifest.client.versions, required: manifest.client.required, sha256, download, platforms: manifest.platforms ?? ['*'] }
 }
 
-export function checkClientPlugins(requirements: ClientPluginRequirement[], installed: ClientPlugin[]): NegotiationResult {
+/** `platform`: the client's, from PLATFORM_HEADER; unknown (older clients) requires everything. */
+export function checkClientPlugins(requirements: ClientPluginRequirement[], installed: ClientPlugin[], platform?: string | null): NegotiationResult {
   const versions = new Map(installed.map((plugin) => [plugin.id, plugin.version]))
-  const result: NegotiationResult = { ok: true, missing: [], outdated: [], suggested: [] }
+  const result: NegotiationResult = { ok: true, missing: [], outdated: [], suggested: [], unsupported: [] }
   for (const requirement of requirements) {
     const version = versions.get(requirement.id)
+    if (platform && version === undefined && !supportsPlatform(requirement, platform)) {
+      result.unsupported!.push(requirement)
+      continue
+    }
     if (version === undefined) {
       if (requirement.required) result.missing.push(requirement)
       else result.suggested.push(requirement)

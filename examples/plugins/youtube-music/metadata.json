@@ -1,10 +1,13 @@
 {
   "name": "YouTube Music",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "authors": [
     "Noctis"
   ],
   "type": "unrestricted",
+  "platforms": [
+    "*"
+  ],
   "description": "Home, search, albums, artists, radios, your library and playback from YouTube Music.",
   "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/youtube-music",
   "categories": [

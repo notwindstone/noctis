@@ -21,6 +21,16 @@ describe('negotiation', () => {
     expect(checkClientPlugins([requirement('stats', '^1.0.0')], [{ id: 'stats', version: '1.2.0' }]).ok).toBe(true)
   })
 
+  test("a plugin for other platforms isn't required", () => {
+    const androidOnly = { ...requirement('spotify', '^1.0.0'), platforms: ['android'] }
+    const web = checkClientPlugins([androidOnly], [], 'web')
+    expect(web.ok).toBe(true)
+    expect(web.unsupported?.map((item) => item.id)).toEqual(['spotify'])
+    expect(checkClientPlugins([androidOnly], [], 'android').ok).toBe(false)
+    // Clients that don't say which platform they are get every requirement.
+    expect(checkClientPlugins([androidOnly], []).ok).toBe(false)
+  })
+
   test('header round-trip drops junk', () => {
     const header = encodePluginsHeader([{ id: 'stats', version: '1.2.0' }, { id: 'old', version: '' }])
     expect(header).toBe('stats@1.2.0,old@0.0.0')

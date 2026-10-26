@@ -1,15 +1,22 @@
+import { describePlatforms } from '@noctis/plugin-core'
 import { shallowReactive, watch } from 'vue'
 import { defineSection, group, type SettingsRowDef } from '../plugins/rows'
 import { enablePlugin } from '../plugins/runtime'
 import { approvedHashes, findPlugin } from '../plugins/store'
-import { connect, disconnect, handshake, installFromServer, missingPlugins, otherServerName, serverError, serverKind, serverStatus, serverUrl, signIn, signInWithApiKey, signOut } from '../server'
-import { credentials } from '../subsonic/client'
+import { connect, disconnect, handshake, installFromServer, missingPlugins, otherServerName, serverError, serverKind, serverStatus, serverUrl } from '../server'
+import { registerAccount } from '../accounts'
+import { navigate } from '../navigation'
+import { serverAccount } from '../subsonic/account'
+import { credentials, guestAccess } from '../subsonic/client'
 import { notify } from '../snackbar'
 import { confirm, showTextDialog } from '../ui'
 
 /**
  * Settings → Server: connect to a Noctis or OpenSubsonic server, sign in, choose where
  * songs play from, and install the plugins a Noctis server requires.
+ *
+ * Connecting never pops up a sign-in: on servers with guest access it's optional, and
+ * elsewhere the "Sign in" row (and Home) say it's needed — when to do it is up to you.
  */
 
 const STATUS: Record<string, string> = {
@@ -29,9 +36,8 @@ function promptAddress() {
     async onConfirm(value) {
       try {
         const response = await connect(value)
-        if (!response) notify(`Connected to ${otherServerName.value}`)
-        else notify(response.result.ok ? `Connected to ${response.server.name}` : `${response.server.name} needs plugins to connect`)
-        if (!credentials.value && (!response || response.result.ok)) promptSignIn()
+        if (response && !response.result.ok) notify(`${response.server.name} needs plugins to connect`)
+        else notify(connectedMessage())
       } catch (error) {
         notify(error instanceof Error ? error.message : String(error))
       }
@@ -62,8 +68,7 @@ function installRequired() {
       }
       try {
         const response = await connect()
-        notify(!response || response.result.ok ? 'Connected' : 'Some plugins are still missing')
-        if (!credentials.value) promptSignIn()
+        notify(!response || response.result.ok ? connectedMessage() : 'Some plugins are still missing')
       } catch {
         /* status shows the error */
       }
@@ -71,56 +76,30 @@ function installRequired() {
   })
 }
 
-/** Noctis servers: username, then password (the text dialog has one field). Others: an API key. */
-function promptSignIn() {
-  if (serverKind.value !== 'noctis') {
-    showTextDialog({
-      title: 'Sign in with an API key',
-      description: `Create an API key in ${serverName()}'s settings and paste it here. Noctis only uses API keys (OpenSubsonic apiKeyAuthentication), never your password.`,
-      placeholder: 'API key',
-      confirmLabel: 'Sign in',
-      async onConfirm(key) {
-        try {
-          await signInWithApiKey(key)
-          notify(`Signed in to ${serverName()}`)
-        } catch (error) {
-          notify(error instanceof Error ? error.message : String(error))
-        }
-      },
-    })
-    return
-  }
-  showTextDialog({
-    title: 'Sign in',
-    description: `Your account on ${serverName()}.`,
-    placeholder: 'Username',
-    confirmLabel: 'Next',
-    onConfirm(username) {
-      if (!username.trim()) return
-      showTextDialog({
-        title: `Password for ${username.trim()}`,
-        description: 'Exchanged for a session; the password isn\'t kept on this device.',
-        placeholder: 'Password',
-        password: true,
-        confirmLabel: 'Sign in',
-        async onConfirm(password) {
-          try {
-            await signIn(username.trim(), password)
-            notify(`Signed in as ${username.trim()}`)
-          } catch (error) {
-            notify(error instanceof Error ? error.message : String(error))
-          }
-        },
-      })
-    },
-  })
-}
-
 const serverName = () => handshake.value?.server.name ?? (otherServerName.value || serverUrl.value)
+
+/** What connecting got you: everything, guest access, or a server to sign in to. */
+function connectedMessage(): string {
+  if (credentials.value) return `Connected to ${serverName()}`
+  if (guestAccess.value) return `Connected to ${serverName()} as a guest`
+  return `Connected to ${serverName()}. Sign in to use it`
+}
 
 const pluginRows = shallowReactive<SettingsRowDef[]>([])
 
 export function defineServerSettings() {
+  // The server's account is there even before signing in (when it isn't a service yet).
+  registerAccount('noctis-server', {
+    get name() {
+      return serverName()
+    },
+    icon: 'server',
+    account: serverAccount,
+    get hidden() {
+      return serverStatus.value === 'none' || serverStatus.value === 'error'
+    },
+  })
+
   defineSection(
     {
       id: 'server',
@@ -156,37 +135,17 @@ export function defineServerSettings() {
           onClick: () => void connect().catch(() => {}),
         },
       ]),
+      // Signing in and out happens in Settings → Accounts, with every other account.
       group('account', [
         {
-          id: 'sign-in',
-          icon: 'login',
-          title: 'Sign in',
-          description: 'Your library, playlists and recommendations',
-          get hidden() {
-            return credentials.value !== null
-          },
-          onClick: promptSignIn,
-        },
-        {
-          id: 'signed-in',
+          id: 'account',
           icon: 'account',
-          title: 'Signed in',
+          title: 'Account',
           get value() {
-            return credentials.value ? `${credentials.value.username} · ${serverKind.value === 'noctis' ? 'session' : 'API key'}` : ''
+            return serverAccount.signedIn ? `Signed in as ${serverAccount.info?.name ?? 'you'}` : guestAccess.value ? 'Listening as a guest · sign in' : 'Not signed in · sign in'
           },
-          get hidden() {
-            return credentials.value === null
-          },
-        },
-        {
-          id: 'sign-out',
-          icon: 'logout',
-          title: 'Sign out',
-          destructive: true,
-          get hidden() {
-            return credentials.value === null
-          },
-          onClick: () => void signOut().then(() => notify('Signed out')),
+          chevron: true,
+          onClick: () => void navigate({ name: 'settings-page', page: 'accounts' }),
         },
       ], {
         get hidden() {
@@ -230,6 +189,7 @@ export function defineServerSettings() {
     (response) => {
       const missing = new Set(response?.result.missing.map((item) => item.id))
       const outdated = new Map(response?.result.outdated.map((item) => [item.requirement.id, item.installed]))
+      const unsupported = new Set(response?.result.unsupported?.map((item) => item.id))
       pluginRows.splice(
         0,
         pluginRows.length,
@@ -238,6 +198,7 @@ export function defineServerSettings() {
           icon: 'plugin',
           title: requirement.name,
           get value() {
+            if (unsupported.has(requirement.id)) return `Not needed here · made for ${describePlatforms(requirement)}`
             if (missing.has(requirement.id)) return `Missing · ${requirement.versions}${requirement.required ? ' · required' : ''}`
             if (outdated.has(requirement.id)) return `Version ${outdated.get(requirement.id)} installed, needs ${requirement.versions}`
             const installed = findPlugin(requirement.id)

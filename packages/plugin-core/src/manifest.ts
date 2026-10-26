@@ -8,9 +8,19 @@ import { isValidRange, isValidVersion } from './semver'
  * - "server": server.js runs on a Noctis server; clients never see it.
  * - "both": both halves. Clients connecting to a server that has it must have the
  *   client half installed, unless `client.required` is false.
+ *
+ * `platforms` says which apps the client half runs in: "android", "ios", "web",
+ * "desktop", or "*" for all of them (the default). Clients refuse to install a plugin
+ * for another platform, and servers don't require it from clients it can't run on.
  */
 
 export type PluginSide = 'client' | 'server' | 'both'
+
+/** The apps a client plugin can run in. Others may be added; unknown names are kept. */
+export const PLUGIN_PLATFORMS = ['android', 'ios', 'web', 'desktop'] as const
+export type PluginPlatform = (typeof PLUGIN_PLATFORMS)[number]
+/** Every platform, including ones that don't exist yet. */
+export const ALL_PLATFORMS = '*'
 
 export interface PluginManifest {
   name: string
@@ -30,6 +40,8 @@ export interface PluginManifest {
   languages?: string[]
   /** Plugin id → semver range. Checked on each side the plugin runs on. */
   dependencies: Record<string, string>
+  /** Where the client half runs: platform names, or ["*"] (the default) for everywhere. */
+  platforms: string[]
   /** For "both" plugins: what the server asks of connecting clients. */
   client?: ClientRequirement
 }
@@ -92,6 +104,18 @@ export function parseManifest(value: unknown): PluginManifest {
     }
   }
 
+  let platforms = [ALL_PLATFORMS]
+  if (data.platforms !== undefined) {
+    // "*" on its own is fine too.
+    const raw = typeof data.platforms === 'string' ? [data.platforms] : data.platforms
+    if (!isStringArray(raw) || raw.length === 0) fail('"platforms" must be a list like ["android", "web"], or "*"')
+    const names = [...new Set(raw.map((name) => name.trim().toLowerCase()))]
+    for (const name of names) {
+      if (name !== ALL_PLATFORMS && !/^[a-z][a-z0-9-]{0,31}$/.test(name)) fail(`"${name}" in "platforms" isn't a platform name (${PLUGIN_PLATFORMS.join(', ')} or "*")`)
+    }
+    platforms = names.includes(ALL_PLATFORMS) ? [ALL_PLATFORMS] : names
+  }
+
   let client: ClientRequirement | undefined
   if (data.client !== undefined && side !== 'both') fail('"client" only applies to plugins with "side": "both"')
   if (side === 'both') {
@@ -119,8 +143,23 @@ export function parseManifest(value: unknown): PluginManifest {
     categories: isStringArray(data.categories) ? data.categories : undefined,
     languages: isStringArray(data.languages) ? data.languages : undefined,
     dependencies,
+    platforms,
     client,
   }
+}
+
+/** Whether a plugin's client half runs on `platform`. Older manifests without the field run everywhere. */
+export function supportsPlatform(manifest: { platforms?: string[] }, platform: string): boolean {
+  const platforms = manifest.platforms ?? [ALL_PLATFORMS]
+  return platforms.includes(ALL_PLATFORMS) || platforms.includes(platform)
+}
+
+/** "Android and web", "every platform". */
+export function describePlatforms(manifest: { platforms?: string[] }): string {
+  const platforms = manifest.platforms ?? [ALL_PLATFORMS]
+  if (platforms.includes(ALL_PLATFORMS)) return 'Every platform'
+  const names = platforms.map((name) => ({ android: 'Android', ios: 'iOS', web: 'Web', desktop: 'Desktop' })[name] ?? name)
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
 }
 
 export const runsOnClient = (manifest: Pick<PluginManifest, 'side'>) => manifest.side !== 'server'

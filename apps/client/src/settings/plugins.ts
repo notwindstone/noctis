@@ -1,7 +1,8 @@
-import { watch } from 'vue'
+import { nextTick, watch } from 'vue'
+import { describePlatforms } from '@noctis/plugin-core'
 import PluginLog from '../components/settings/PluginLog.vue'
 import { goBack, navigate } from '../navigation'
-import { installFromFile, installFromUrl, PluginInstallError, pickPluginFile, type InstallResult } from '../plugins/install'
+import { installFromArchive, installFromFile, installFromUrl, PluginInstallError, pickPluginFile, type InstallResult } from '../plugins/install'
 import { writeLog } from '../plugins/log'
 import { defineSection, findSection, group, removeSection, Rows, type SettingsBlock, type SettingsRowDef } from '../plugins/rows'
 import { disablePlugin, enablePlugin, removePlugin, runStates, setPluginsActive } from '../plugins/runtime'
@@ -34,7 +35,7 @@ function stateLabel(plugin: InstalledPlugin): string {
 }
 
 /** Enable, asking first if this exact code hasn't been approved before. */
-function requestEnable(plugin: InstalledPlugin) {
+export function requestEnable(plugin: InstalledPlugin) {
   const run = async () => {
     approvedHashes.value = { ...approvedHashes.value, [plugin.sha256]: true }
     const ok = await enablePlugin(plugin)
@@ -76,6 +77,24 @@ async function installFile() {
     reportInstall(await installFromFile(file))
   } catch (error) {
     reportFailure(error)
+  }
+}
+
+/**
+ * A plugin archive opened with Noctis (Android's "Open with"): install it, show its page
+ * and offer to enable it.
+ */
+export async function installOpenedFile(name: string, bytes: Uint8Array) {
+  // Downloading twice names the file "my-plugin (1).noctis"; the id is still "my-plugin".
+  const fileName = name.replace(/\s*\(\d+\)(?=\.(noctis|zip)$)/i, '') || 'plugin.noctis'
+  try {
+    const result = await installFromArchive(fileName, bytes)
+    reportInstall(result)
+    await nextTick()
+    void navigate({ name: 'settings-page', page: sectionId(result.plugin) })
+    if (!isEnabled(result.plugin)) requestEnable(result.plugin)
+  } catch (error) {
+    reportFailure(error instanceof PluginInstallError ? new PluginInstallError(`${name || 'This file'} isn't a plugin Noctis can install: ${error.message}`) : error)
   }
 }
 
@@ -153,6 +172,15 @@ function pluginBlocks(id: string): SettingsBlock[] {
         get value() {
           const plugin = current()
           return plugin ? describeAuthors(plugin.metadata) : ''
+        },
+      },
+      {
+        id: 'platforms',
+        icon: 'devices',
+        title: 'Platforms',
+        get value() {
+          const plugin = current()
+          return plugin ? describePlatforms(plugin.metadata) : ''
         },
       },
       {

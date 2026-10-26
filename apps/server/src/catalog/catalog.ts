@@ -405,17 +405,23 @@ export class Catalog {
       FROM songs WHERE genre IS NOT NULL AND genre <> '' GROUP BY lower(genre) ORDER BY lower(MIN(genre))`
   }
 
+  /**
+   * Every word has to match somewhere (title, artist or album), so "queen bohemian
+   * rhapsody" finds the song; whole-query title matches come first.
+   */
   async search(query: string, counts: { artist: [number, number]; album: [number, number]; song: [number, number] }, user = 0) {
-    const pattern = like(query.trim().replace(/^"|"$/g, ''))
+    const text = query.trim().replace(/^"|"$/g, '')
+    const whole = like(text)
+    const words = this.sql.array(text.split(/\s+/).filter(Boolean).map(like).concat(text ? [] : ['%']), 'text')
     const [artists, albums, songs] = await Promise.all([
       counts.artist[0] > 0
-        ? this.sql`${this.artistSelect(user)} WHERE ar.name ILIKE ${pattern} ORDER BY lower(ar.sort_name) LIMIT ${counts.artist[0]} OFFSET ${counts.artist[1]}`
+        ? this.sql`${this.artistSelect(user)} WHERE ar.name ILIKE ALL(${words}) ORDER BY (ar.name ILIKE ${whole}) DESC, lower(ar.sort_name) LIMIT ${counts.artist[0]} OFFSET ${counts.artist[1]}`
         : [],
       counts.album[0] > 0
-        ? this.sql`${this.albumSelect(user)} WHERE al.name ILIKE ${pattern} OR ar.name ILIKE ${pattern} ORDER BY lower(al.name) LIMIT ${counts.album[0]} OFFSET ${counts.album[1]}`
+        ? this.sql`${this.albumSelect(user)} WHERE concat_ws(' ', al.name, ar.name) ILIKE ALL(${words}) ORDER BY (al.name ILIKE ${whole}) DESC, lower(al.name) LIMIT ${counts.album[0]} OFFSET ${counts.album[1]}`
         : [],
       counts.song[0] > 0
-        ? this.sql`${this.songSelect(user)} WHERE s.title ILIKE ${pattern} OR ar.name ILIKE ${pattern} OR al.name ILIKE ${pattern} ORDER BY lower(s.title) LIMIT ${counts.song[0]} OFFSET ${counts.song[1]}`
+        ? this.sql`${this.songSelect(user)} WHERE concat_ws(' ', s.title, ar.name, al.name) ILIKE ALL(${words}) ORDER BY (s.title ILIKE ${whole}) DESC, lower(s.title) LIMIT ${counts.song[0]} OFFSET ${counts.song[1]}`
         : [],
     ])
     return { artists: artists as ArtistRow[], albums: albums as AlbumRow[], songs: songs as SongRow[] }

@@ -9,8 +9,13 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.PowerManager;
+import android.database.Cursor;
 import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
+import android.util.Base64;
 import android.os.Handler;
 import android.os.Looper;
 import android.support.v4.media.MediaMetadataCompat;
@@ -35,6 +40,7 @@ import com.getcapacitor.PermissionState;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -49,10 +55,13 @@ import java.util.concurrent.Executors;
  *   final "invoked" event);
  * - haptics: the platform's own tuned feedback constants instead of raw vibration;
  * - media session: lock screen / notification controls, backed by PlaybackService;
+ * - wake locks: the CPU and Wi-Fi stay awake while music plays with the screen off;
  * - system colours: the wallpaper-derived Material You accent (Android 12+);
  * - Google sign-in: a dedicated WebView whose cookies are handed back to the app;
  * - local music: folders the user picks (Storage Access Framework), scanned with their
- *   tags (see LocalMusic).
+ *   tags (see LocalMusic);
+ * - opened files: a .noctis plugin opened from a file manager, browser or chat app is
+ *   handed to the web layer to install.
  */
 @CapacitorPlugin(
     name = "Noctis",
@@ -91,10 +100,24 @@ public class NoctisPlugin extends Plugin {
         };
 
         getActivity().runOnUiThread(() -> getActivity().getOnBackPressedDispatcher().addCallback(getActivity(), backCallback));
+
+        // Launched by opening a file: handle it once (not again when the activity is recreated).
+        Intent launch = getActivity().getIntent();
+        if (isOpenFile(launch)) {
+            readOpenedFile(launch.getData());
+            getActivity().setIntent(new Intent(Intent.ACTION_MAIN));
+        }
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        super.handleOnNewIntent(intent);
+        if (isOpenFile(intent)) readOpenedFile(intent.getData());
     }
 
     @Override
     protected void handleOnDestroy() {
+        releaseAwake();
         releaseMediaSession();
         super.handleOnDestroy();
     }
@@ -191,6 +214,9 @@ public class NoctisPlugin extends Plugin {
         mediaSession.setCallback(new MediaSessionCompat.Callback() {
             @Override
             public void onPlay() {
+                // Paused long enough, the phone may be asleep: stay awake while the web
+                // layer fetches a fresh stream, or "play" on the lock screen does nothing.
+                holdAwake(RESUME_AWAKE_MS);
                 emitMediaAction("play", null);
             }
 
@@ -331,6 +357,70 @@ public class NoctisPlugin extends Plugin {
         session.setActive(true);
 
         PlaybackService.show(getContext(), buildNotification(session, title, artist, playing));
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Wake locks
+     * ------------------------------------------------------------------ */
+
+    /** How long a "play" from the lock screen keeps the phone awake before the web layer takes over. */
+    private static final long RESUME_AWAKE_MS = 60_000;
+
+    private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
+    private boolean awake = false;
+    private final Runnable releaseIfIdle = () -> {
+        if (!awake) releaseAwake();
+    };
+
+    /**
+     * Held while music plays (the web layer says when). Without it, a phone with the
+     * screen off can sleep between buffer refills: the stream stalls and the music stops.
+     * The Wi-Fi lock keeps the radio from dropping to power save at the same moments.
+     */
+    @PluginMethod
+    public void setKeepAwake(PluginCall call) {
+        boolean enabled = Boolean.TRUE.equals(call.getBoolean("awake", false));
+        main.post(() -> {
+            awake = enabled;
+            if (enabled) holdAwake(0);
+            else releaseAwake();
+            call.resolve();
+        });
+    }
+
+    /** Acquire both locks; with a timeout, they're let go then unless playback took them over. */
+    private void holdAwake(long timeoutMs) {
+        if (wakeLock == null) {
+            PowerManager power = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            if (power == null) return;
+            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Noctis:playback");
+            wakeLock.setReferenceCounted(false);
+        }
+        if (wifiLock == null) {
+            WifiManager wifi = (WifiManager) getContext().getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+            if (wifi != null) {
+                @SuppressWarnings("deprecation")
+                int mode = WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+                wifiLock = wifi.createWifiLock(mode, "Noctis:playback");
+                wifiLock.setReferenceCounted(false);
+            }
+        }
+        main.removeCallbacks(releaseIfIdle);
+        if (timeoutMs > 0 && !awake) {
+            wakeLock.acquire(timeoutMs);
+            main.postDelayed(releaseIfIdle, timeoutMs);
+        } else {
+            // A lock acquired without a timeout replaces the pending timed release.
+            wakeLock.acquire();
+        }
+        if (wifiLock != null && !wifiLock.isHeld()) wifiLock.acquire();
+    }
+
+    private void releaseAwake() {
+        main.removeCallbacks(releaseIfIdle);
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
     }
 
     private PendingIntent serviceIntent(String action, int requestCode) {
@@ -534,6 +624,57 @@ public class NoctisPlugin extends Plugin {
         call.resolve();
     }
 
+    /* ---------------- Opened files ---------------- */
+
+    /** Plugin archives are a few MB at most; anything far bigger isn't one. */
+    private static final int MAX_OPENED_BYTES = 32 * 1024 * 1024;
+    private final ExecutorService fileReader = Executors.newSingleThreadExecutor();
+
+    private static boolean isOpenFile(Intent intent) {
+        return intent != null && Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null;
+    }
+
+    /**
+     * Read an opened file and emit "openFile" { name, data (base64) }, or { name, error }.
+     * Retained until the web layer listens, since a cold start opens the file before the
+     * app has loaded.
+     */
+    private void readOpenedFile(Uri uri) {
+        fileReader.execute(() -> {
+            JSObject event = new JSObject();
+            String name = displayName(uri);
+            event.put("name", name);
+            try (InputStream input = getContext().getContentResolver().openInputStream(uri)) {
+                if (input == null) throw new IllegalStateException("The file couldn't be opened");
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                byte[] buffer = new byte[64 * 1024];
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, read);
+                    if (output.size() > MAX_OPENED_BYTES) throw new IllegalStateException("The file is too large to be a plugin");
+                }
+                event.put("data", Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP));
+            } catch (Exception e) {
+                event.put("error", e.getMessage() != null ? e.getMessage() : "The file couldn't be read");
+            }
+            notifyListeners("openFile", event, true);
+        });
+    }
+
+    /** The file's name as the sending app tells it ("youtube-music.noctis"), else the URI's last segment. */
+    private String displayName(Uri uri) {
+        if ("content".equals(uri.getScheme())) {
+            try (Cursor cursor = getContext().getContentResolver().query(uri, new String[] { OpenableColumns.DISPLAY_NAME }, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) return cursor.getString(0);
+            } catch (Exception ignored) {
+                // Some providers don't answer queries; fall back to the path.
+            }
+        }
+        String last = uri.getLastPathSegment();
+        if (last == null) return "";
+        return last.contains("/") ? last.substring(last.lastIndexOf('/') + 1) : last;
+    }
+
     @PluginMethod
     public void openLogin(PluginCall call) {
         Intent intent = new Intent(getContext(), LoginActivity.class);
@@ -569,6 +710,43 @@ public class NoctisPlugin extends Plugin {
         intent.putExtra(LoginActivity.EXTRA_REDIRECT, redirect);
         intent.putExtra(LoginActivity.EXTRA_TITLE, call.getString("title", "Sign in"));
         startActivityForResult(call, intent, "onAuthResult");
+    }
+
+    /**
+     * A site's own sign-in page for plugins: opens `url` and resolves with the value of
+     * the cookie `cookie` on `cookieUrl` once the site sets it, plus every cookie on
+     * `cookieUrl` as a Cookie header ({ value, cookies }): sites keep refresh tokens there.
+     */
+    @PluginMethod
+    public void openCookieLogin(PluginCall call) {
+        String url = call.getString("url");
+        String cookieUrl = call.getString("cookieUrl");
+        String cookie = call.getString("cookie");
+        if (url == null || cookieUrl == null || cookie == null || !url.startsWith("https://") || !cookieUrl.startsWith("https://")) {
+            call.reject("https url and cookieUrl, and a cookie name, are required");
+            return;
+        }
+        Intent intent = new Intent(getContext(), LoginActivity.class);
+        intent.putExtra(LoginActivity.EXTRA_URL, url);
+        intent.putExtra(LoginActivity.EXTRA_COOKIE_URL, cookieUrl);
+        intent.putExtra(LoginActivity.EXTRA_COOKIE_NAME, cookie);
+        intent.putExtra(LoginActivity.EXTRA_TITLE, call.getString("title", "Sign in"));
+        startActivityForResult(call, intent, "onCookieLoginResult");
+    }
+
+    @ActivityCallback
+    private void onCookieLoginResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        Intent data = result.getData();
+        if (result.getResultCode() == Activity.RESULT_OK && data != null) {
+            JSObject response = new JSObject();
+            response.put("value", data.getStringExtra(LoginActivity.EXTRA_COOKIE));
+            String all = data.getStringExtra(LoginActivity.EXTRA_COOKIES);
+            response.put("cookies", all != null ? all : "");
+            call.resolve(response);
+        } else {
+            call.reject("Sign-in was cancelled", "CANCELLED");
+        }
     }
 
     @ActivityCallback

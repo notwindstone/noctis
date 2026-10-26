@@ -33,10 +33,12 @@ NOCTIS_ADMIN_USER=admin NOCTIS_ADMIN_PASSWORD=change-me LOCAL_LIBRARY_DIRS=~/Mus
 ```
 
 - **Admin account:** created on the first start, in the `admins` group.
-- **Noctis client:** **Settings → Server**. Enter the address and sign in. Set
-  **Settings → Playback → Play from**, or choose per song from the player's menu.
+- **Noctis client:** **Settings → Server**. Enter the address, then sign in under
+  **Settings → Accounts**. Set **Settings → Playback → Play from**, or choose per song from
+  the player's menu.
 - **Other OpenSubsonic apps:** they need an API key. A session token from
-  `POST /noctis/v1/auth/login` is one. Password-based Subsonic logins are refused.
+  `POST /noctis/v1/auth/login` is one. Password-based Subsonic logins are refused by
+  this server (the Noctis client itself can still use them against servers that need them).
 - **Tests:** `bun test` needs PostgreSQL and Redis. Point it at them with
   `NOCTIS_TEST_DATABASE_URL` and `NOCTIS_TEST_REDIS_URL`; the defaults are the compose
   ports. Each test file gets its own throwaway database.
@@ -90,6 +92,9 @@ rate and whether it's lossless. Two kinds of client use those sources differentl
 - `version` must be semver for `"server"` and `"both"` plugins.
 - `dependencies` maps plugin ids to semver ranges. They're checked on each side the
   plugin runs on.
+- `platforms` (default `["*"]`) lists the apps the client half runs in: `android`,
+  `ios`, `web`, `desktop`. A client on another platform isn't asked for it, so a
+  required Android-only plugin doesn't lock browsers out.
 - `client` only applies to `"both"`:
   - `required` (default `true`): whether clients without the client half are refused.
   - `versions` (default `^<version>`): which client-half versions the server accepts.
@@ -166,6 +171,32 @@ export default async function ({ Plugin, Noctis }) {
   }
 }
 ```
+
+### An indexer: the MusicBrainz plugin
+
+[`examples/plugins/musicbrainz`](../examples/plugins/musicbrainz) fills the catalog with
+what MusicBrainz knows (titles, artists, albums, track numbers, years, tags, Cover Art
+Archive covers) and no audio. Its provider has no `stream()`, so `GET /noctis/v1/providers`
+lists it with `streams: false`. Noctis clients play its songs with their own services:
+the server says it has no audio, and the client falls back to a match on YouTube Music,
+SoundCloud… (see "Finding a song on your service" in PLUGINS.md).
+- **On search:** an OpenSubsonic `search3`/`search2` of three letters or more also searches
+  MusicBrainz, and waits for it up to `MUSICBRAINZ_SEARCH_TIMEOUT_MS` (2500). The
+  query is read as "artist title" in either order. Results prefer official studio
+  releases over live albums, compilations, covers and remixes. A query is looked up at
+  most once a week. `MUSICBRAINZ_INDEX_SEARCHES=false` turns this off.
+- **On request:** `POST /api/plugins/musicbrainz/import { "release": "<MBID>" }` or
+  `{ "artist": "<MBID>" }` (an artist's official studio albums, in the background). It
+  needs the `musicbrainz.import` permission, which admins have. `GET …/status` shows
+  progress.
+- **Politely:** one request a second, with back-off on 503. Set `MUSICBRAINZ_CONTACT` to a
+  URL or e-mail for your instance; it goes in the User-Agent, as MusicBrainz asks.
+
+A song MusicBrainz knows with the same artist, album and title as a file or another
+service's song becomes the same catalog song, with its MusicBrainz id as one more source.
+
+The catalog's own search matches each word of a query against the title, the artist or
+the album, so "queen bohemian rhapsody" finds the song.
 
 ### Local files: the local-library plugin
 
@@ -295,12 +326,14 @@ The design for what comes next is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md):
 ## Clients and servers agreeing on plugins
 
 1. With every request to `/noctis` and `/api`, a Noctis client says which plugins it
-   runs: `x-noctis-plugins: play-stats@1.0.0,lyrics@2.3.1`.
+   runs (`x-noctis-plugins: play-stats@1.0.0,lyrics@2.3.1`) and which platform it is
+   (`x-noctis-platform: android`).
 2. `GET /noctis/v1/handshake` answers with:
    - the client plugins this server wants (`plugins`), each with its accepted
      `versions`, whether it's `required`, the SHA-256 of its `index.js`, and a
      `download` path;
-   - what this client is missing or has in the wrong version (`result`).
+   - what this client is missing or has in the wrong version (`result`), and which
+     plugins don't run on its platform, so aren't required (`result.unsupported`).
 3. If a client lacks a required plugin, other `/noctis` and `/api` requests get **428
    Precondition Required** with the same handshake body. Turn this off with
    `NOCTIS_ENFORCE_CLIENT_PLUGINS=false`; a plugin's own routes always require its
@@ -308,7 +341,8 @@ The design for what comes next is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md):
    can't negotiate plugins.
 4. The client downloads the missing halves from
    `/noctis/v1/plugins/<id>/client.noctis`. Those archives contain the client half only,
-   with `"side": "client"`. The client then:
+   with `"side": "client"`, served as `application/x-noctis-plugin` so Android offers to
+   open a downloaded one with Noctis. The client then:
    - checks each archive's `index.js` against the announced hash;
    - asks the user once;
    - installs and enables the plugins.

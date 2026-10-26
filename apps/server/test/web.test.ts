@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { webClient } from '../src/web'
@@ -39,6 +39,15 @@ describe('web client', () => {
     expect(await get('/assets/missing.js')).toBeNull()
     for (const path of ['/rest/ping', '/noctis/v1/info', '/api/plugins/x/y', '/rest']) expect(await get(path)).toBeNull()
     expect(await get('/', 'POST')).toBeNull()
+  })
+
+  test('a rebuild is picked up without a restart', async () => {
+    expect(await (await get('/'))!.text()).toContain('<title>Noctis</title>')
+    await writeFile(join(dir, 'index.html'), '<!doctype html><html><head><title>Rebuilt</title></head><body></body></html>')
+    // Make sure the modification time moves even on coarse-grained file systems.
+    const later = new Date(Date.now() + 5000)
+    await utimes(join(dir, 'index.html'), later, later)
+    expect(await (await get('/'))!.text()).toContain('<title>Rebuilt</title>')
   })
 
   test("can't escape the build directory", async () => {

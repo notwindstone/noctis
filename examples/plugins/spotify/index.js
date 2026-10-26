@@ -316,21 +316,13 @@ async function signIn() {
   }
 }
 
-function signOut() {
-  ui.confirm({
-    title: 'Sign out of Spotify?',
-    message: 'Likes, downloads and history on this device stay where they are.',
-    confirmLabel: 'Sign out',
-    destructive: true,
-    onConfirm: async () => {
-      for (const site of ['https://open.spotify.com', 'https://accounts.spotify.com', 'https://www.spotify.com']) {
-        await auth.clearSiteCookies(site)
-      }
-      setMe(null)
-      setSession(null)
-      notify('Signed out of Spotify')
-    },
-  })
+/** Settings → Accounts asks first. */
+async function signOut() {
+  for (const site of ['https://open.spotify.com', 'https://accounts.spotify.com', 'https://www.spotify.com']) {
+    await auth.clearSiteCookies(site)
+  }
+  setMe(null)
+  setSession(null)
 }
 
 /* ------------------------------------------------------------------ *
@@ -915,6 +907,19 @@ const service = {
     signInTitle: 'Sign in to Spotify',
     signInDescription: 'Your playlists, liked songs and personal mixes',
     refresh: refreshProfile,
+    // Offered in Settings → Accounts.
+    signInMethods: [
+      {
+        id: 'web',
+        label: 'Sign in to Spotify',
+        description: "On Spotify's own page (Android app)",
+        get hidden() {
+          return !auth.canCaptureWeb
+        },
+        run: signIn,
+      },
+    ],
+    signOut,
   },
 }
 
@@ -978,35 +983,14 @@ function defineSettings() {
   Plugin.defineSection(SECTION, [
     Noctis.group('account', [
       {
-        id: 'sign-in',
+        id: 'account',
         icon: 'account',
-        title: 'Sign in to Spotify',
-        description: 'For your playlists, liked songs and personal home',
-        onClick: () => void signIn(),
-        get hidden() {
-          return signedIn.value
+        title: 'Account',
+        get value() {
+          return signedIn.value ? `Signed in as ${me.value?.name ?? 'you'}` : 'Not signed in · sign in'
         },
-      },
-      {
-        id: 'signed-in',
-        icon: 'account',
-        get title() {
-          return me.value?.name ?? 'Signed in'
-        },
-        description: 'Spotify account',
-        get hidden() {
-          return !signedIn.value
-        },
-      },
-      {
-        id: 'sign-out',
-        icon: 'logout',
-        title: 'Sign out',
-        destructive: true,
-        onClick: signOut,
-        get hidden() {
-          return !signedIn.value
-        },
+        chevron: true,
+        onClick: () => void Noctis.libs.navigation.navigate({ name: 'settings-page', page: 'accounts' }),
       },
     ]),
     {

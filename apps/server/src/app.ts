@@ -1,4 +1,4 @@
-import { decodePluginsHeader, PLUGINS_HEADER } from '@noctis/plugin-core'
+import { decodePluginsHeader, PLATFORM_HEADER, PLUGINS_HEADER } from '@noctis/plugin-core'
 import { Elysia } from 'elysia'
 import { handshakeFor, noctisRoutes, SERVER_VERSION } from './noctis/routes'
 import type { Services } from './services'
@@ -13,7 +13,7 @@ export { SERVER_VERSION }
  *   /noctis/v1/*      Noctis: plugin negotiation, accounts, sources, recommendations
  *   /api/plugins/:id  each plugin's own routes
  *
- * Noctis clients send `x-noctis-plugins: id@version,…` with every request. With
+ * Noctis clients send `x-noctis-plugins: id@version,…` (and `x-noctis-platform`) with every request. With
  * enforceClientPlugins on, /noctis and /api requests from a client that lacks a
  * required plugin get 428 Precondition Required and the handshake, saying what to
  * install. /rest is never checked: OpenSubsonic clients can't negotiate plugins.
@@ -26,6 +26,7 @@ export function createApp(services: Services) {
   const { config, plugins } = services
   const subsonic = createSubsonic(services, SERVER_VERSION)
   const clientPluginsOf = (request: Request) => decodePluginsHeader(request.headers.get(PLUGINS_HEADER))
+  const platformOf = (request: Request) => request.headers.get(PLATFORM_HEADER)
 
   return new Elysia()
     .onBeforeHandle(async ({ request }) => {
@@ -37,7 +38,7 @@ export function createApp(services: Services) {
 
       const negotiated = path.startsWith('/noctis/') || path.startsWith('/api/')
       if (config.enforceClientPlugins && negotiated && !OPEN_ROUTES.some((route) => route.test(path))) {
-        const body = await handshakeFor(services, clientPlugins)
+        const body = await handshakeFor(services, clientPlugins, platformOf(request))
         if (!body.result.ok) return Response.json(body, { status: 428 })
       }
     })
@@ -53,7 +54,7 @@ export function createApp(services: Services) {
 
       // The plugin's own routes need its client half, even with enforcement off.
       if (plugin.archive.manifest.side === 'both' && plugin.archive.manifest.client?.required) {
-        const body = await handshakeFor(services, clientPluginsOf(request))
+        const body = await handshakeFor(services, clientPluginsOf(request), platformOf(request))
         const missing = [...body.result.missing, ...body.result.outdated.map((item) => item.requirement)]
         if (missing.some((item) => item.id === params.id)) return Response.json(body, { status: 428 })
       }
@@ -68,7 +69,7 @@ export function createApp(services: Services) {
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'access-control-allow-headers': `content-type, authorization, range, ${PLUGINS_HEADER}`,
+  'access-control-allow-headers': `content-type, authorization, range, ${PLUGINS_HEADER}, ${PLATFORM_HEADER}`,
   'access-control-expose-headers': 'content-length, content-range, accept-ranges',
   'access-control-max-age': '86400',
 }

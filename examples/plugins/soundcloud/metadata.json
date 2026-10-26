@@ -1,0 +1,16 @@
+{
+  "name": "SoundCloud",
+  "version": "1.0.0",
+  "authors": [
+    "Noctis"
+  ],
+  "type": "unrestricted",
+  "platforms": [
+    "*"
+  ],
+  "description": "SoundCloud's home (its recommendations and charts), search, artists, playlists, albums and radios, and once you sign in, your likes, playlists, follows and feed. Also plays songs from other services and servers that are on SoundCloud. Sign in on SoundCloud's own page in the Android app, or paste a token anywhere.",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/soundcloud",
+  "categories": [
+    "service"
+  ]
+}

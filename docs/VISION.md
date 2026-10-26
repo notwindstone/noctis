@@ -59,6 +59,8 @@ A cross-platform app: Android, Windows, Linux, macOS, the browser, and possibly 
 - **Only OpenSubsonic clients are supported**, with API keys. Legacy Subsonic auth (a
   password in every URL, or md5 tokens that force the server to keep plaintext
   passwords) is refused, so the server never stores or receives passwords after sign-in.
+  (The Noctis *client* still signs in to other servers that only have it, like
+  Navidrome's demo, with token auth, after API keys.)
 - It's secure enough to host **public instances**, like Invidious or Monochrome. A
   public server also takes heavy work off devices with weak hardware.
 

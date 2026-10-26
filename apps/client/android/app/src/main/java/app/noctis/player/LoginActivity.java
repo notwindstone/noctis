@@ -4,6 +4,8 @@ import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
@@ -29,6 +31,10 @@ import androidx.core.view.WindowInsetsCompat;
  * - OAuth for plugins (EXTRA_URL + EXTRA_REDIRECT): load the authorization page and
  *   return the first URL that starts with the redirect URI, without loading it. Any
  *   redirect URI works, since it never has to resolve.
+ * - A site's own sign-in for plugins (EXTRA_URL + EXTRA_COOKIE_URL + EXTRA_COOKIE_NAME):
+ *   load the page and return the value of a cookie as soon as the site sets it (e.g.
+ *   SoundCloud's oauth_token). Sites that sign in inside a single-page app never
+ *   navigate anywhere a redirect could catch, so the cookie jar is checked every second.
  */
 public class LoginActivity extends AppCompatActivity {
 
@@ -37,6 +43,10 @@ public class LoginActivity extends AppCompatActivity {
     public static final String EXTRA_URL = "url";
     public static final String EXTRA_REDIRECT = "redirect";
     public static final String EXTRA_TITLE = "title";
+    public static final String EXTRA_COOKIE_URL = "cookieUrl";
+    public static final String EXTRA_COOKIE_NAME = "cookieName";
+    /** Cookie mode's result: every cookie on cookieUrl, httpOnly ones too (a refresh token…). */
+    public static final String EXTRA_COOKIES = "cookies";
 
     private static final String LOGIN_URL =
         "https://accounts.google.com/ServiceLogin?ytbTemplate=1&service=youtube&continue=https%3A%2F%2Fmusic.youtube.com";
@@ -46,13 +56,32 @@ public class LoginActivity extends AppCompatActivity {
     private boolean finished = false;
     /** OAuth mode when set. */
     private String redirect;
+    /** Cookie mode when set: wait for this cookie on cookieUrl. */
+    private String cookieUrl;
+    private String cookieName;
+    private final Handler poll = new Handler(Looper.getMainLooper());
+    private final Runnable checkCookie = new Runnable() {
+        @Override
+        public void run() {
+            if (finished) return;
+            String value = cookieValue();
+            if (value != null) {
+                finishWithCookie(value);
+                return;
+            }
+            poll.postDelayed(this, 1000);
+        }
+    };
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         redirect = getIntent().getStringExtra(EXTRA_REDIRECT);
-        String startUrl = redirect != null ? getIntent().getStringExtra(EXTRA_URL) : LOGIN_URL;
+        cookieUrl = getIntent().getStringExtra(EXTRA_COOKIE_URL);
+        cookieName = getIntent().getStringExtra(EXTRA_COOKIE_NAME);
+        boolean cookieMode = cookieUrl != null && cookieName != null;
+        String startUrl = redirect != null || cookieMode ? getIntent().getStringExtra(EXTRA_URL) : LOGIN_URL;
         String heading = getIntent().getStringExtra(EXTRA_TITLE);
 
         LinearLayout root = new LinearLayout(this);
@@ -120,7 +149,7 @@ public class LoginActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (redirect == null && url != null && url.startsWith(MUSIC_ORIGIN)) {
+                if (redirect == null && cookieName == null && url != null && url.startsWith(MUSIC_ORIGIN)) {
                     tryFinish(view);
                 }
             }
@@ -142,6 +171,29 @@ public class LoginActivity extends AppCompatActivity {
             return;
         }
         webView.loadUrl(startUrl);
+        if (cookieMode) poll.postDelayed(checkCookie, 1000);
+    }
+
+    /** Cookie mode: the cookie's value, if the site has set it (a cookie left from before counts too). */
+    private String cookieValue() {
+        String all = CookieManager.getInstance().getCookie(cookieUrl);
+        if (all == null) return null;
+        for (String part : all.split(";")) {
+            String[] pair = part.trim().split("=", 2);
+            if (pair.length == 2 && pair[0].equals(cookieName) && !pair[1].isEmpty()) return pair[1];
+        }
+        return null;
+    }
+
+    private void finishWithCookie(String value) {
+        if (finished) return;
+        finished = true;
+        CookieManager.getInstance().flush();
+        Intent result = new Intent();
+        result.putExtra(EXTRA_COOKIE, value);
+        result.putExtra(EXTRA_COOKIES, CookieManager.getInstance().getCookie(cookieUrl));
+        setResult(RESULT_OK, result);
+        finish();
     }
 
     /** OAuth mode: hand the redirect back instead of loading it. */
@@ -191,6 +243,7 @@ public class LoginActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        poll.removeCallbacks(checkCookie);
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();

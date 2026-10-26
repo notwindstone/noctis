@@ -6,6 +6,9 @@
     "Noctis"
   ],
   "type": "unrestricted",
+  "platforms": [
+    "*"
+  ],
   "description": "Charts for everyone on a Noctis server: clients report what they play, the server counts plays and serves the top songs. The server requires the client half, so everyone's plays are counted.",
   "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/play-stats",
   "categories": [
