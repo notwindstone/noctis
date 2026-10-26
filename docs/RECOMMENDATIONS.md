@@ -264,7 +264,7 @@ embeddings need.
   (`Noctis.catalog.setTags`).
 - **Placeholder recommender:** co-listening, then shared artist, genre, tags and era, then
   random songs (`apps/server/src/catalog/recommend.ts`).
-- **Recommendation API:** `/noctis/v1/recommendations`, which also backs OpenSubsonic's
+- **Recommendation API:** `/api/noctis/v1/recommendations`, which also backs OpenSubsonic's
   `getSimilarSongs2`.
 - **Hooks:** `onRecommend` (adjust or replace) and `onSources`.
 

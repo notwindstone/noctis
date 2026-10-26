@@ -7,7 +7,7 @@ import { songToChild } from '../subsonic/mappers'
 export const SERVER_VERSION = '0.3.0'
 
 /**
- * /noctis/v1: what OpenSubsonic doesn't cover.
+ * /api/noctis/v1: what OpenSubsonic doesn't cover.
  *
  *   GET    /info                          name, versions, library size, guest access
  *   GET    /handshake                     client plugins the server wants, and what's missing
@@ -74,7 +74,7 @@ export function noctisRoutes(services: Services) {
   const publicUser = (user: User) => ({ id: user.id, name: user.name, groups: user.groups, permissions: user.permissions, guest: user.guest })
 
   return (
-    new Elysia({ prefix: '/noctis/v1' })
+    new Elysia({ prefix: '/api/noctis/v1' })
       .onError(({ error }) => {
         if (error instanceof HttpError) return Response.json({ error: error.message }, { status: error.status })
         if (error instanceof AuthError) return Response.json({ error: error.message }, { status: error.code === 40 || error.code === 44 ? 401 : 400 })

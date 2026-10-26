@@ -3,7 +3,7 @@ import type { Catalog } from './catalog'
 
 /**
  * Recommendations. OpenSubsonic has no recommendation API beyond getSimilarSongs and
- * getTopSongs, so these live under /noctis/v1/recommendations (and also back
+ * getTopSongs, so these live under /api/noctis/v1/recommendations (and also back
  * getSimilarSongs2).
  *
  * The built-in algorithm is a deliberately simple placeholder: songs other listeners

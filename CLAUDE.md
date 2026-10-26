@@ -39,7 +39,7 @@ cd apps/client && bunx vite build && bunx cap sync android && cd android && ./gr
   (components `C`, actions, settings sections, services, hooks), comments that explain why.
 - The client renders everything through the component registry so plugins can replace it.
 - The server's OpenSubsonic API (`/rest`) accepts API keys only; Noctis endpoints live
-  under `/noctis/v1`, plugin routes under `/api/plugins/<id>`.
+  under `/api/noctis/v1`, plugin routes under `/api/plugins/<id>`.
 - Server plugins are trusted code installed from disk only; client plugins need consent.
 - No copyrighted audio in tests or demos: generate tones (see `apps/server/test/helpers.ts`).
 

@@ -9,18 +9,18 @@ export { SERVER_VERSION }
 /**
  * The server's HTTP surface:
  *
- *   /rest/*           OpenSubsonic, for any Subsonic/OpenSubsonic client
- *   /noctis/v1/*      Noctis: plugin negotiation, accounts, sources, recommendations
- *   /api/plugins/:id  each plugin's own routes
+ *   /rest/*               OpenSubsonic, for any Subsonic/OpenSubsonic client
+ *   /api/noctis/v1/*      Noctis: plugin negotiation, accounts, sources, recommendations
+ *   /api/plugins/:id      each plugin's own routes
  *
  * Noctis clients send `x-noctis-plugins: id@version,…` (and `x-noctis-platform`) with every request. With
- * enforceClientPlugins on, /noctis and /api requests from a client that lacks a
+ * enforceClientPlugins on, /api requests from a client that lacks a
  * required plugin get 428 Precondition Required and the handshake, saying what to
  * install. /rest is never checked: OpenSubsonic clients can't negotiate plugins.
  */
 
 /** Routes a client can call before it has the required plugins. */
-const OPEN_ROUTES = [/^\/noctis\/v1\/(info|handshake|plugins|auth\/[a-z]+)$/, /^\/noctis\/v1\/plugins\/[^/]+\/client\.noctis$/]
+const OPEN_ROUTES = [/^\/api\/noctis\/v1\/(info|handshake|plugins|auth\/[a-z]+)$/, /^\/api\/noctis\/v1\/plugins\/[^/]+\/client\.noctis$/]
 
 export function createApp(services: Services) {
   const { config, plugins } = services
@@ -36,8 +36,7 @@ export function createApp(services: Services) {
       const hooked = await plugins.hooks.runBefore<Response>('onRequest', { request, path, clientPlugins })
       if (hooked.stopped) return hooked.response
 
-      const negotiated = path.startsWith('/noctis/') || path.startsWith('/api/')
-      if (config.enforceClientPlugins && negotiated && !OPEN_ROUTES.some((route) => route.test(path))) {
+      if (config.enforceClientPlugins && path.startsWith('/api/') && !OPEN_ROUTES.some((route) => route.test(path))) {
         const body = await handshakeFor(services, clientPlugins, platformOf(request))
         if (!body.result.ok) return Response.json(body, { status: 428 })
       }

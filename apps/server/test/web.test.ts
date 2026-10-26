@@ -37,7 +37,7 @@ describe('web client', () => {
   test('unknown pages get the app; missing files and APIs are not its business', async () => {
     expect(await (await get('/some/page'))!.text()).toContain('<title>Noctis</title>')
     expect(await get('/assets/missing.js')).toBeNull()
-    for (const path of ['/rest/ping', '/noctis/v1/info', '/api/plugins/x/y', '/rest']) expect(await get(path)).toBeNull()
+    for (const path of ['/rest/ping', '/api/noctis/v1/info', '/noctis/v1/info', '/api/plugins/x/y', '/rest']) expect(await get(path)).toBeNull()
     expect(await get('/', 'POST')).toBeNull()
   })
 

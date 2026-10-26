@@ -71,7 +71,7 @@ local files. The same song found in several places becomes **one song with sever
 sources**, each with its quality: codec, bitrate, lossless or not.
 
 - **Noctis clients** get every source of a song from the server, for many songs at
-  once (`POST /noctis/v1/sources`), and **choose where to play it from** ("Play from",
+  once (`POST /api/noctis/v1/sources`), and **choose where to play it from** ("Play from",
   in Settings → Playback and in the player's menu):
   - a copy **on the device**;
   - the user's **own account** on a service, through the client plugin for it (YouTube
@@ -122,7 +122,7 @@ The agreed design is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md). In short:
 contributors to build**, on that design. What's there now is the plumbing:
 - a `tags` field per song;
 - a simple placeholder recommender;
-- `/noctis/v1/recommendations`, which also backs OpenSubsonic's `getSimilarSongs2`;
+- `/api/noctis/v1/recommendations`, which also backs OpenSubsonic's `getSimilarSongs2`;
 - the `onRecommend` hook.
 
 A lightweight on-device algorithm for picking among downloaded songs might also be
@@ -197,7 +197,7 @@ Storing music on the server and distributing it is piracy. Ideas so far:
 | Path | What |
 | --- | --- |
 | `apps/client` | The Vue + Capacitor client |
-| `apps/server` | The Bun + Elysia server: OpenSubsonic at `/rest`, Noctis at `/noctis/v1`, plugin routes at `/api/plugins` |
+| `apps/server` | The Bun + Elysia server: OpenSubsonic at `/rest`, Noctis at `/api/noctis/v1`, plugin routes at `/api/plugins` |
 | `packages/plugin-core` | Plugin code shared by both: manifests, archives, versions, dependencies, hooks, client–server negotiation |
 | `examples/plugins` | Example plugins: client-only (YouTube Music, Spotify, Liquid Glass), server-only (local library), and both (server charts) |
 | `docker-compose.yml` | PostgreSQL and Redis for the server |

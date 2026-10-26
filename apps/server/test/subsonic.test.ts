@@ -23,7 +23,7 @@ const json = async (endpoint: string, params: Record<string, string | string[]> 
 }
 const noctis = (path: string, init: RequestInit & { token?: string; json?: unknown } = {}) =>
   server.fetch(
-    new Request(`http://noctis.test/noctis/v1${path}`, {
+    new Request(`http://noctis.test/api/noctis/v1${path}`, {
       ...init,
       body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
       headers: { ...(init.json !== undefined ? { 'content-type': 'application/json' } : {}), ...(init.token !== '' ? { authorization: `Bearer ${init.token ?? key}` } : {}) },

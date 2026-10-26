@@ -31,14 +31,14 @@ import { persisted } from './storage'
  * Plugins that don't run on this platform (`x-noctis-platform`) aren't required of it.
  *
  * Signed in, the server becomes a service (src/subsonic/service.ts). Servers with guest
- * access (`/noctis/v1/info`) are a service without signing in; signing in is optional.
+ * access (`/api/noctis/v1/info`) are a service without signing in; signing in is optional.
  */
 
 export const serverUrl = persisted<string>('noctis:server-url', '', (value) => typeof value === 'string')
 
 export type ServerStatus = 'none' | 'connecting' | 'connected' | 'needs-plugins' | 'error'
 
-/** "noctis": /noctis/v1 and /rest; "opensubsonic": /rest only. */
+/** "noctis": /api/noctis/v1 and /rest; "opensubsonic": /rest only. */
 export const serverKind = persisted<'noctis' | 'opensubsonic' | null>('noctis:server-kind', null, (value) => value === null || value === 'noctis' || value === 'opensubsonic')
 /** For OpenSubsonic servers, which have no handshake: the server's name (its "type"). */
 export const otherServerName = ref('')
@@ -152,7 +152,7 @@ export async function connect(url = serverUrl.value): Promise<HandshakeResponse 
     let response: HandshakeResponse | null = null
     let unreachable: unknown = null
     try {
-      response = await serverRequest<HandshakeResponse>('/noctis/v1/handshake')
+      response = await serverRequest<HandshakeResponse>('/api/noctis/v1/handshake')
       if (typeof response?.protocol !== 'number' || !response.result) response = null
     } catch (error) {
       if (!(error instanceof ServerError)) throw error
@@ -165,7 +165,7 @@ export async function connect(url = serverUrl.value): Promise<HandshakeResponse 
     if (response) {
       serverKind.value = 'noctis'
       // An open route, so it answers even before the required plugins are installed.
-      const info = await serverRequest<{ guestAccess?: boolean }>('/noctis/v1/info').catch(() => null)
+      const info = await serverRequest<{ guestAccess?: boolean }>('/api/noctis/v1/info').catch(() => null)
       if (info) guestAccess.value = info.guestAccess === true
       handshake.value = response
       serverStatus.value = response.result.ok ? 'connected' : 'needs-plugins'
@@ -196,7 +196,7 @@ export async function connect(url = serverUrl.value): Promise<HandshakeResponse 
  */
 export async function signIn(username: string, password: string): Promise<void> {
   if (serverKind.value !== 'noctis') throw new ServerError('This server needs an API key (OpenSubsonic apiKeyAuthentication)', 0)
-  const body = await serverRequest<{ token?: string; error?: string }>('/noctis/v1/auth/login', {
+  const body = await serverRequest<{ token?: string; error?: string }>('/api/noctis/v1/auth/login', {
     method: 'POST',
     body: { username, password, label: `Noctis on ${navigator.userAgent.includes('Android') ? 'Android' : 'the web'}` },
   })
@@ -249,7 +249,7 @@ function signOutLocally() {
 
 export async function signOut() {
   if (serverKind.value === 'noctis' && credentials.value) {
-    await serverRequest('/noctis/v1/auth/logout', { method: 'POST' }).catch(() => {})
+    await serverRequest('/api/noctis/v1/auth/logout', { method: 'POST' }).catch(() => {})
   }
   signOutLocally()
 }

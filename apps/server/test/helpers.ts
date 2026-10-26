@@ -61,10 +61,10 @@ export async function startTestServer(env: Record<string, string> = {}, prepare?
   return server
 }
 
-/** Sign in through /noctis/v1/auth/login; resolves to the session token. */
+/** Sign in through /api/noctis/v1/auth/login; resolves to the session token. */
 export async function login(server: TestServer, username = 'sensei', password = 'correct-horse'): Promise<string> {
   const response = await server.fetch(
-    new Request('http://noctis.test/noctis/v1/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password }) }),
+    new Request('http://noctis.test/api/noctis/v1/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password }) }),
   )
   const body = (await response.json()) as { token?: string; error?: string }
   if (!body.token) throw new Error(`login failed: ${body.error}`)

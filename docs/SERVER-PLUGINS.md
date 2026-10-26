@@ -6,7 +6,7 @@ three parts:
 | Path | |
 | --- | --- |
 | `/rest/*` | **OpenSubsonic**, for OpenSubsonic clients (API keys only) |
-| `/noctis/v1/*` | **Noctis**: sources ("Play from"), recommendations, accounts, administration, plugin negotiation |
+| `/api/noctis/v1/*` | **Noctis**: sources ("Play from"), recommendations, accounts, administration, plugin negotiation |
 | `/api/plugins/<id>/*` | each **plugin's own routes** |
 
 Plugins extend all three. A plugin can run on one side or on both. When it runs on both,
@@ -37,7 +37,7 @@ NOCTIS_ADMIN_USER=admin NOCTIS_ADMIN_PASSWORD=change-me LOCAL_LIBRARY_DIRS=~/Mus
   **Settings → Accounts**. Set **Settings → Playback → Play from**, or choose per song from
   the player's menu.
 - **Other OpenSubsonic apps:** they need an API key. A session token from
-  `POST /noctis/v1/auth/login` is one. Password-based Subsonic logins are refused by
+  `POST /api/noctis/v1/auth/login` is one. Password-based Subsonic logins are refused by
   this server (the Noctis client itself can still use them against servers that need them).
 - **Tests:** `bun test` needs PostgreSQL and Redis. Point it at them with
   `NOCTIS_TEST_DATABASE_URL` and `NOCTIS_TEST_REDIS_URL`; the defaults are the compose
@@ -56,8 +56,8 @@ rate and whether it's lossless. Two kinds of client use those sources differentl
 
 - **OpenSubsonic clients** play `/rest/stream`. The server streams the best source it
   can play: lossless first, then by bitrate. It honours Range, so seeking works.
-- **Noctis clients** get every source, for one song (`GET /noctis/v1/songs/:id/sources`)
-  or up to 200 at once (`POST /noctis/v1/sources { ids }`). Each source carries:
+- **Noctis clients** get every source, for one song (`GET /api/noctis/v1/songs/:id/sources`)
+  or up to 200 at once (`POST /api/noctis/v1/sources { ids }`). Each source carries:
   - `stream`: a `/rest/stream?id=…&source=<provider:externalId>` URL for exactly that
     source, or `null` if the server can't stream it;
   - `clientService`: the client-side service that can play it with the user's own
@@ -176,7 +176,7 @@ export default async function ({ Plugin, Noctis }) {
 
 [`examples/plugins/musicbrainz`](../examples/plugins/musicbrainz) fills the catalog with
 what MusicBrainz knows (titles, artists, albums, track numbers, years, tags, Cover Art
-Archive covers) and no audio. Its provider has no `stream()`, so `GET /noctis/v1/providers`
+Archive covers) and no audio. Its provider has no `stream()`, so `GET /api/noctis/v1/providers`
 lists it with `streams: false`. Noctis clients play its songs with their own services:
 the server says it has no audio, and the client falls back to a match on YouTube Music,
 SoundCloud… (see "Finding a song on your service" in PLUGINS.md).
@@ -274,7 +274,7 @@ Subscribe with `Plugin.subscribe('hook::<name>::<before|after>', fn)`. Return
 ## Recommendations
 
 OpenSubsonic has no recommendation API beyond `getSimilarSongs` and `getTopSongs`, so
-recommendations live at `GET /noctis/v1/recommendations?seed=&limit=&context=`. They also
+recommendations live at `GET /api/noctis/v1/recommendations?seed=&limit=&context=`. They also
 back `getSimilarSongs2`.
 
 The built-in algorithm is a placeholder: co-listening, then shared artist, genre, tags and
@@ -302,8 +302,8 @@ The design for what comes next is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md):
   whatever plugins define. OpenSubsonic endpoints check the matching permission;
   per-user ones (stars, playlists, queues, bookmarks) also need an account.
 - **Sessions** live in Redis:
-  - `POST /noctis/v1/auth/login { username, password }` returns a token. Send it as
-    `Authorization: Bearer <token>` on `/noctis`, and as `apiKey` on `/rest`.
+  - `POST /api/noctis/v1/auth/login { username, password }` returns a token. Send it as
+    `Authorization: Bearer <token>` on `/api/noctis`, and as `apiKey` on `/rest`.
   - Redis keeps only the token's hash, with a sliding expiry (`NOCTIS_SESSION_TTL_DAYS`).
   - Logging out ends one session; a password change or deleting the user ends them all.
 - **Guest access**, for instances that don't want accounts: with
@@ -315,7 +315,7 @@ The design for what comes next is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md):
 
   Only OpenSubsonic clients with API keys work.
 - **Administration** needs `users.manage`:
-  - `GET /noctis/v1/admin/users`, `POST` to create one, `PATCH /admin/users/:name` for
+  - `GET /api/noctis/v1/admin/users`, `POST` to create one, `PATCH /admin/users/:name` for
     groups or a password, `DELETE` to remove one;
   - `GET /admin/groups`, `PUT /admin/groups/:name { permissions, description }`,
     `DELETE`;
@@ -325,22 +325,22 @@ The design for what comes next is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md):
 
 ## Clients and servers agreeing on plugins
 
-1. With every request to `/noctis` and `/api`, a Noctis client says which plugins it
+1. With every request to `/api`, a Noctis client says which plugins it
    runs (`x-noctis-plugins: play-stats@1.0.0,lyrics@2.3.1`) and which platform it is
    (`x-noctis-platform: android`).
-2. `GET /noctis/v1/handshake` answers with:
+2. `GET /api/noctis/v1/handshake` answers with:
    - the client plugins this server wants (`plugins`), each with its accepted
      `versions`, whether it's `required`, the SHA-256 of its `index.js`, and a
      `download` path;
    - what this client is missing or has in the wrong version (`result`), and which
      plugins don't run on its platform, so aren't required (`result.unsupported`).
-3. If a client lacks a required plugin, other `/noctis` and `/api` requests get **428
+3. If a client lacks a required plugin, other `/api` requests get **428
    Precondition Required** with the same handshake body. Turn this off with
    `NOCTIS_ENFORCE_CLIENT_PLUGINS=false`; a plugin's own routes always require its
    client half anyway. **`/rest` is never checked**, because OpenSubsonic clients
    can't negotiate plugins.
 4. The client downloads the missing halves from
-   `/noctis/v1/plugins/<id>/client.noctis`. Those archives contain the client half only,
+   `/api/noctis/v1/plugins/<id>/client.noctis`. Those archives contain the client half only,
    with `"side": "client"`, served as `application/x-noctis-plugin` so Android offers to
    open a downloaded one with Noctis. The client then:
    - checks each archive's `index.js` against the announced hash;
@@ -352,13 +352,13 @@ The design for what comes next is in [RECOMMENDATIONS.md](RECOMMENDATIONS.md):
 | | |
 | --- | --- |
 | `/rest/<endpoint>` | OpenSubsonic: `ping`, `getLicense`, `getOpenSubsonicExtensions`, `getMusicFolders`, `getScanStatus`, `startScan`, `getUser`, `getArtists`, `getIndexes`, `getArtist`, `getAlbum`, `getSong`, `getMusicDirectory`, `getGenres`, `getTopSongs`, `getSimilarSongs2`, `getAlbumList(2)`, `getRandomSongs`, `getSongsByGenre`, `getStarred(2)`, `getNowPlaying`, `search2`, `search3`, `getPlaylists`, `getPlaylist`, `createPlaylist`, `updatePlaylist`, `deletePlaylist`, `star`, `unstar`, `setRating`, `scrobble`, **`getPlayQueue`, `savePlayQueue`, `getPlayQueueByIndex`, `savePlayQueueByIndex`** (indexBasedQueue), **`getBookmarks`, `createBookmark`, `deleteBookmark`**, `stream` (plus Noctis's `source=`), `download`, `getCoverArt`, plus plugin endpoints. XML by default, or JSON with `f=json`; formPost accepted. |
-| `GET /noctis/v1/info` | Name, versions, library size, guest access. |
-| `GET /noctis/v1/handshake`, `/plugins`, `/plugins/:id/client.noctis` | Plugin negotiation. |
-| `POST /noctis/v1/auth/login`, `/register`, `/logout`; `GET /noctis/v1/me` | Sessions. |
-| `GET /noctis/v1/songs/:id/sources`, `POST /noctis/v1/sources` | "Play from": every source of one song, or of up to 200. |
-| `GET /noctis/v1/recommendations` | `?seed=<song id>&limit=&context=` |
-| `GET /noctis/v1/providers`, `GET`/`POST /noctis/v1/scan` | Providers; library scans. |
-| `/noctis/v1/admin/…` | Users, groups, permissions. |
+| `GET /api/noctis/v1/info` | Name, versions, library size, guest access. |
+| `GET /api/noctis/v1/handshake`, `/plugins`, `/plugins/:id/client.noctis` | Plugin negotiation. |
+| `POST /api/noctis/v1/auth/login`, `/register`, `/logout`; `GET /api/noctis/v1/me` | Sessions. |
+| `GET /api/noctis/v1/songs/:id/sources`, `POST /api/noctis/v1/sources` | "Play from": every source of one song, or of up to 200. |
+| `GET /api/noctis/v1/recommendations` | `?seed=<song id>&limit=&context=` |
+| `GET /api/noctis/v1/providers`, `GET`/`POST /api/noctis/v1/scan` | Providers; library scans. |
+| `/api/noctis/v1/admin/…` | Users, groups, permissions. |
 | `ANY /api/plugins/:id/*` | A plugin's own routes. |
 | `GET /*` (anything else) | The browser client, when `NOCTIS_WEB_CLIENT` is on. A page it serves connects to this server by itself. |
 

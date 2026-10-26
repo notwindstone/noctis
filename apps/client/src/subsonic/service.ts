@@ -17,7 +17,7 @@ import { canUseServer, coverUrl, credentials, restUrl, streamUrl, subsonic, type
 /**
  * The connected server as a Noctis service: home, search, albums, artists, playlists,
  * likes, radio and streams over OpenSubsonic. Works with any OpenSubsonic server; with
- * a Noctis server it also uses /noctis/v1 for recommendations and for choosing where
+ * a Noctis server it also uses /api/noctis/v1 for recommendations and for choosing where
  * each song plays from.
  *
  * Where a song plays from (src/playFrom.ts): the server lists every source of a song;
@@ -93,7 +93,7 @@ async function recommendations(seed: string | undefined, limit: number, context:
   const params = new URLSearchParams({ limit: String(limit), context })
   if (seed) params.set('seed', seed)
   try {
-    const body = await serverRequest<{ songs: SubsonicPayload[] }>(`/noctis/v1/recommendations?${params}`)
+    const body = await serverRequest<{ songs: SubsonicPayload[] }>(`/api/noctis/v1/recommendations?${params}`)
     return body.songs.map(toSong)
   } catch (error) {
     writeLog('noctis', 'warn', "Couldn't load recommendations:", error)
@@ -101,7 +101,7 @@ async function recommendations(seed: string | undefined, limit: number, context:
   }
 }
 
-/** One source of a song, as /noctis/v1/songs/:id/sources lists it. */
+/** One source of a song, as /api/noctis/v1/songs/:id/sources lists it. */
 interface ServerSource {
   key: string
   provider: string
@@ -134,7 +134,7 @@ async function prefetchSources(ids: string[]) {
   const missing = [...new Set(ids)].filter((id) => (sourceCache.get(id)?.at ?? 0) <= Date.now() - SOURCES_TTL).slice(0, 200)
   if (missing.length === 0 || serverKind.value !== 'noctis' || !canUseServer()) return
   try {
-    const body = await serverRequest<{ songs: Record<string, SongSources> }>('/noctis/v1/sources', { method: 'POST', body: { ids: missing } })
+    const body = await serverRequest<{ songs: Record<string, SongSources> }>('/api/noctis/v1/sources', { method: 'POST', body: { ids: missing } })
     for (const [id, value] of Object.entries(body.songs)) sourceCache.set(id, { at: Date.now(), value })
   } catch (error) {
     writeLog('noctis', 'warn', "Couldn't prefetch song sources:", error)
@@ -146,7 +146,7 @@ async function sourcesOf(song: Song): Promise<SongSources | null> {
   const cached = sourceCache.get(song.id)
   if (cached && cached.at > Date.now() - SOURCES_TTL) return cached.value
   try {
-    const value = await serverRequest<SongSources>(`/noctis/v1/songs/${encodeURIComponent(song.id)}/sources`)
+    const value = await serverRequest<SongSources>(`/api/noctis/v1/songs/${encodeURIComponent(song.id)}/sources`)
     sourceCache.set(song.id, { at: Date.now(), value })
     return value
   } catch (error) {
@@ -239,7 +239,7 @@ async function serverOptions(song: Song): Promise<PlaybackOption[]> {
   return options
 }
 
-/** A provider of the server's catalog (GET /noctis/v1/providers). */
+/** A provider of the server's catalog (GET /api/noctis/v1/providers). */
 interface ServerProvider {
   id: string
   name: string
@@ -255,7 +255,7 @@ async function loadProviders() {
   // Until the required plugins are in, the server answers 428; connect() attaches again after.
   if (serverKind.value !== 'noctis' || serverStatus.value !== 'connected') return
   try {
-    serverProviders.value = await serverRequest<ServerProvider[]>('/noctis/v1/providers')
+    serverProviders.value = await serverRequest<ServerProvider[]>('/api/noctis/v1/providers')
   } catch (error) {
     writeLog('noctis', 'warn', "Couldn't list the server's providers:", error)
   }

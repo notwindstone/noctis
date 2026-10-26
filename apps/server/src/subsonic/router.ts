@@ -10,7 +10,7 @@ import { albumToChild, albumToID3, artistToID3, indexArtists, playlistToSubsonic
  * The OpenSubsonic API, at /rest/<endpoint> (with or without ".view").
  *
  * Only OpenSubsonic clients are supported, and only API keys
- * (apiKeyAuthentication): a session token from /noctis/v1/auth/login. Legacy Subsonic
+ * (apiKeyAuthentication): a session token from /api/noctis/v1/auth/login. Legacy Subsonic
  * auth (a password in the URL as `p`, or `t` + `s` tokens built from it) is refused
  * with error 42, and JSONP isn't offered. With guest access on, requests without a key
  * act as the "guests" group.
@@ -69,7 +69,7 @@ const OWN_EXTENSIONS = [
   { name: 'apiKeyAuthentication', versions: [1] },
   { name: 'formPost', versions: [1] },
   { name: 'indexBasedQueue', versions: [1] },
-  // Noctis: /noctis/v1 (sources, recommendations, plugin negotiation).
+  // Noctis: /api/noctis/v1 (sources, recommendations, plugin negotiation).
   { name: 'noctis', versions: [1] },
 ]
 
@@ -385,7 +385,7 @@ function endpoints(services: Services): Record<string, SubsonicHandler> {
         range: context.request.headers.get('range') ?? undefined,
         maxBitRate: int(context.param('maxBitRate'), 0) || undefined,
         user: uid(context),
-        // Noctis: one specific source ("provider:externalId"), as listed by /noctis/v1/songs/:id/sources.
+        // Noctis: one specific source ("provider:externalId"), as listed by /api/noctis/v1/songs/:id/sources.
         only: context.param('source'),
       })
     },
@@ -461,7 +461,7 @@ async function authenticate(services: Services, params: Params): Promise<User> {
   if (first('u') || first('p') || first('t') || first('s')) {
     throw new SubsonicError(
       ERRORS.authMechanismUnsupported,
-      'Only API keys are accepted (apiKeyAuthentication). Get one by signing in with a Noctis client, or POST /noctis/v1/auth/login.',
+      'Only API keys are accepted (apiKeyAuthentication). Get one by signing in with a Noctis client, or POST /api/noctis/v1/auth/login.',
     )
   }
   try {

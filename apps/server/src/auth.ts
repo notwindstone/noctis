@@ -8,7 +8,7 @@ import type { Database } from './db'
  * - Users and groups live in PostgreSQL. Passwords are stored only as Argon2 hashes.
  * - What a user may do comes from their groups' permissions (below). "admins" have "*".
  * - Sessions live in Redis: a session token is what clients send (OpenSubsonic's
- *   `apiKey`, or `Authorization: Bearer` on /noctis). Redis stores only its SHA-256, with
+ *   `apiKey`, or `Authorization: Bearer` on /api/noctis). Redis stores only its SHA-256, with
  *   a sliding expiry, and revoking a session takes effect immediately.
  * - Guests: with guest access on, requests without a token act as the "guests" group
  *   (browse and stream by default). Anything per-user (stars, playlists, queues) still

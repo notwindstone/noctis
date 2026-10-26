@@ -50,12 +50,18 @@ describe('loading', () => {
 
 describe('negotiation', () => {
   test('handshake lists what a bare client is missing', async () => {
-    const response = await call('/noctis/v1/handshake', { plugins: '' })
+    const response = await call('/api/noctis/v1/handshake', { plugins: '' })
     const body = (await response.json()) as HandshakeResponse
     expect(response.status).toBe(200)
     expect(body.result.ok).toBe(false)
     expect(body.result.missing.map((item) => item.id)).toEqual(['play-stats'])
-    expect(body.plugins[0].download).toBe('/noctis/v1/plugins/play-stats/client.noctis')
+    expect(body.plugins[0].download).toBe('/api/noctis/v1/plugins/play-stats/client.noctis')
+  })
+
+  test('Noctis lives under /api/noctis/v1; the old /noctis/v1 is gone and plugin routes stay at /api/plugins', async () => {
+    expect((await call('/api/noctis/v1/info')).status).toBe(200)
+    expect((await call('/noctis/v1/info')).status).toBe(404)
+    expect((await call('/api/plugins/greeter/hello', { plugins: STATS })).status).toBe(200)
   })
 
   test('enforced: other routes answer 428 with the handshake', async () => {
@@ -77,16 +83,16 @@ describe('negotiation', () => {
   })
 
   test('the client half downloads, verifies and contains no server code', async () => {
-    const response = await call('/noctis/v1/plugins/play-stats/client.noctis')
+    const response = await call('/api/noctis/v1/plugins/play-stats/client.noctis')
     expect(response.status).toBe(200)
     // Its own type, so Android offers to open the download with Noctis.
     expect(response.headers.get('content-type')).toBe('application/x-noctis-plugin')
     const archive = readPluginArchive('play-stats.noctis', new Uint8Array(await response.arrayBuffer()))
     expect(archive.manifest.side).toBe('client')
     expect(archive.server).toBeUndefined()
-    const { plugins: requirements } = (await (await call('/noctis/v1/handshake')).json()) as HandshakeResponse
+    const { plugins: requirements } = (await (await call('/api/noctis/v1/handshake')).json()) as HandshakeResponse
     expect(await sha256Hex(archive.client!)).toBe(requirements[0].sha256)
-    expect((await call('/noctis/v1/plugins/greeter/client.noctis')).status).toBe(404)
+    expect((await call('/api/noctis/v1/plugins/greeter/client.noctis')).status).toBe(404)
   })
 })
 
@@ -109,10 +115,10 @@ describe('plugin routes', () => {
   })
 
   test('CORS preflight and headers', async () => {
-    const preflight = await call('/noctis/v1/info', { method: 'OPTIONS' })
+    const preflight = await call('/api/noctis/v1/info', { method: 'OPTIONS' })
     expect(preflight.status).toBe(204)
     expect(preflight.headers.get('access-control-allow-headers')).toContain(PLUGINS_HEADER)
-    expect((await call('/noctis/v1/info')).headers.get('access-control-allow-origin')).toBe('*')
+    expect((await call('/api/noctis/v1/info')).headers.get('access-control-allow-origin')).toBe('*')
   })
 
   test('storage survives a restart', async () => {

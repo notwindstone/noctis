@@ -28,19 +28,19 @@ afterAll(() => server.close())
 
 describe('platforms', () => {
   test('the handshake says which platforms a client half runs on', async () => {
-    const body = (await (await call('/noctis/v1/handshake')).json()) as HandshakeResponse
+    const body = (await (await call('/api/noctis/v1/handshake')).json()) as HandshakeResponse
     expect(body.plugins[0].platforms).toEqual(['android'])
   })
 
   test("a plugin isn't required of clients it can't run on", async () => {
-    const web = (await (await call('/noctis/v1/handshake', { [PLATFORM_HEADER]: 'web' })).json()) as HandshakeResponse
+    const web = (await (await call('/api/noctis/v1/handshake', { [PLATFORM_HEADER]: 'web' })).json()) as HandshakeResponse
     expect(web.result.ok).toBe(true)
     expect(web.result.unsupported?.map((item) => item.id)).toEqual(['phone-only'])
-    expect((await call('/noctis/v1/me', { [PLATFORM_HEADER]: 'web' })).status).not.toBe(428)
+    expect((await call('/api/noctis/v1/me', { [PLATFORM_HEADER]: 'web' })).status).not.toBe(428)
   })
 
   test('the platform it runs on (or an unknown one) still needs it', async () => {
-    expect((await call('/noctis/v1/me', { [PLATFORM_HEADER]: 'android' })).status).toBe(428)
-    expect((await call('/noctis/v1/me')).status).toBe(428)
+    expect((await call('/api/noctis/v1/me', { [PLATFORM_HEADER]: 'android' })).status).toBe(428)
+    expect((await call('/api/noctis/v1/me')).status).toBe(428)
   })
 })

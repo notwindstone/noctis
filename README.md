@@ -66,7 +66,7 @@ static host, connecting to any server. In browsers the YouTube Music and Spotify
 need a CORS proxy (a CORS extension); songs from servers, device folders and themes work.
 
 OpenSubsonic apps can use the same address with an API key: a session token from
-`POST /noctis/v1/auth/login`. See [docs/SERVER-PLUGINS.md](docs/SERVER-PLUGINS.md).
+`POST /api/noctis/v1/auth/login`. See [docs/SERVER-PLUGINS.md](docs/SERVER-PLUGINS.md).
 
 `bun test` runs the plugin core's and the server's tests. It needs PostgreSQL and Redis;
 see `NOCTIS_TEST_DATABASE_URL` and `NOCTIS_TEST_REDIS_URL`.
@@ -88,7 +88,7 @@ steam-run ./gradlew assembleDebug              # NixOS: gradle's binaries need a
 | `apps/server/src/subsonic/` | the OpenSubsonic API: endpoints, auth, XML/JSON, plugin endpoints and hooks |
 | `apps/server/src/catalog/` | the catalog in PostgreSQL (songs with several sources, queues, bookmarks), providers and scanners, streaming with Range, "Play from" sources, recommendations |
 | `apps/server/src/auth.ts` | users, groups and permissions (PostgreSQL), sessions (Redis), guests |
-| `apps/server/src/noctis/` | `/noctis/v1`: negotiation, accounts, song sources, recommendations |
+| `apps/server/src/noctis/` | `/api/noctis/v1`: negotiation, accounts, song sources, recommendations |
 | `apps/server/src/plugins/` | server plugins: loading, routes, providers, OpenSubsonic extensions, storage (see [docs/SERVER-PLUGINS.md](docs/SERVER-PLUGINS.md)) |
 
 Client paths below are in `apps/client/`.

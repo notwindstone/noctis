@@ -5,7 +5,7 @@ import type { SongRow, SourceRow } from './catalog'
  * the local-library plugin for files on the server, service plugins for the rest. A provider streams the songs it added to the catalog, so
  * the server can play them to any client, including OpenSubsonic apps that know
  * nothing about Noctis. Noctis clients also see each source and may play it from their
- * own client-side service instead (see /noctis/v1/songs/:id/sources).
+ * own client-side service instead (see /api/noctis/v1/songs/:id/sources).
  */
 
 export interface StreamRequest {

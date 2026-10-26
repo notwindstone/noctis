@@ -25,7 +25,7 @@ export interface ServerConfig {
   sessionTtlDays: number
   /** Creates this admin on first start, when there are no users yet. */
   admin: { name: string; password: string } | null
-  /** Anyone can create an account (POST /noctis/v1/auth/register). */
+  /** Anyone can create an account (POST /api/noctis/v1/auth/register). */
   openRegistration: boolean
   /**
    * Requests without a session act as the "guests" group (browse and stream, by

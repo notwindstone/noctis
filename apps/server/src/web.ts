@@ -9,8 +9,12 @@ import { extname, join, resolve, sep } from 'node:path'
  * from a server connects to that server without asking.
  */
 
-/** Paths that belong to the server, never to the web client. */
-const API = /^\/(rest|noctis|api)(\/|$)/
+/**
+ * Paths that belong to the server, never to the web client. The old Noctis prefix
+ * (/noctis/v1, before /api/noctis/v1) stays reserved so an out-of-date client gets a 404,
+ * not the app's HTML with a 200 that looks like a different kind of server.
+ */
+const API = /^\/(rest|api|noctis\/v1)(\/|$)/
 
 const MARKER = '<meta name="noctis-server" content="same-origin">'
 

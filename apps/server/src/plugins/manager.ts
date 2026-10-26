@@ -218,7 +218,7 @@ export class PluginManager {
     const requirements: ClientPluginRequirement[] = []
     for (const [id, plugin] of this.plugins) {
       if (plugin.state !== 'running' || !plugin.clientSha256) continue
-      const requirement = requirementFor(id, plugin.archive.manifest, plugin.clientSha256, `/noctis/v1/plugins/${id}/client.noctis`)
+      const requirement = requirementFor(id, plugin.archive.manifest, plugin.clientSha256, `/api/noctis/v1/plugins/${id}/client.noctis`)
       if (requirement) requirements.push(requirement)
     }
     return requirements

@@ -74,7 +74,7 @@ export class Sources {
         stream: streamable.has(key) ? `/rest/stream?id=${id}&source=${encodeURIComponent(key)}` : null,
         clientService: provider?.clientService ?? null,
         clientPlugin,
-        install: clientPlugin && this.plugins.clientArchive(clientPlugin) ? `/noctis/v1/plugins/${clientPlugin}/client.noctis` : null,
+        install: clientPlugin && this.plugins.clientArchive(clientPlugin) ? `/api/noctis/v1/plugins/${clientPlugin}/client.noctis` : null,
         contentType: row.content_type,
         suffix: row.suffix,
         bitRate: row.bitrate,
