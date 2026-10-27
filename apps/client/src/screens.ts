@@ -16,6 +16,7 @@ const SCREENS: Record<string, BuiltInComponentName> = {
   'library-playlists': 'LibraryItemsScreen',
   'library-artists': 'LibraryItemsScreen',
   'settings-page': 'SettingsPageScreen',
+  'downloads-queue': 'DownloadQueueScreen',
 }
 
 /**

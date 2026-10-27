@@ -1,0 +1,19 @@
+{
+  "name": "Material 2",
+  "version": "1.0.0",
+  "authors": [
+    "Noctis"
+  ],
+  "type": "unrestricted",
+  "platforms": [
+    "*"
+  ],
+  "description": "A Material Design 2 (2014) skin: Roboto typography, a coloured app bar, crisp corners, elevation shadows, flat lists, underlined fields and classic switches. Pick a palette in Settings → Material 2.",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/material-2",
+  "categories": [
+    "theme"
+  ],
+  "languages": [
+    "en"
+  ]
+}

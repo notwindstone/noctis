@@ -40,6 +40,9 @@ cd apps/client && bunx vite build && bunx cap sync android && cd android && ./gr
 - The client renders everything through the component registry so plugins can replace it.
 - The server's OpenSubsonic API (`/rest`) accepts API keys only; Noctis endpoints live
   under `/api/noctis/v1`, plugin routes under `/api/plugins/<id>`.
+- System notifications go through `Noctis.libs.notifications` (`apps/client/src/notifications.ts`):
+  Android shade or the Notifications API, never `new Notification` directly. Downloads run through
+  the queue in `offline.ts`; don't download songs by hand.
 - Server plugins are trusted code installed from disk only; client plugins need consent.
 - No copyrighted audio in tests or demos: generate tones (see `apps/server/test/helpers.ts`).
 
@@ -50,6 +53,8 @@ cd apps/client && bunx vite build && bunx cap sync android && cd android && ./gr
   use `(${JSON.stringify(x)}::text)::jsonb`. Bind arrays with `sql.array(list, 'text')`;
   `IN ${sql(list)}` for lists. Read BIGINT columns as `::float8`. The jsonb `?` operator
   doesn't work inside templates.
+- **CSS class names are global:** prefix a screen's classes (`downloads-*`). A bare `queue-row` already
+  belongs to the player's queue panel and restyled it when a new page reused the name.
 - **Glass CSS:** `backdrop-filter` silently does nothing under an ancestor with
   transform/will-change/contain, or with a mix-blend-mode sibling in the same stacking
   context; round the blur layer itself.

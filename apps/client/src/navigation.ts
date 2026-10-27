@@ -23,6 +23,7 @@ export type Route =
   | { name: 'library-playlists' }
   | { name: 'library-artists' }
   | { name: 'settings-page'; page: SettingsPage }
+  | { name: 'downloads-queue' }
 
 export interface Entry {
   key: number

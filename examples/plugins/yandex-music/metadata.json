@@ -1,0 +1,16 @@
+{
+  "name": "Yandex Music",
+  "version": "1.0.0",
+  "authors": [
+    "Noctis"
+  ],
+  "type": "unrestricted",
+  "platforms": [
+    "*"
+  ],
+  "description": "Home, search, albums, artists, playlists, radios and playback from Yandex Music. Sign in with a one-time code (OAuth device flow) or by pasting a token to get your likes, playlists and personalised home. Also plays songs from other services and servers that are on Yandex Music.",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/yandex-music",
+  "categories": [
+    "service"
+  ]
+}

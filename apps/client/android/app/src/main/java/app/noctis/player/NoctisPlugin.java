@@ -919,17 +919,20 @@ public class NoctisPlugin extends Plugin {
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NEW_TASK)
             .putExtra(EXTRA_NOTIFICATION, id);
         int code = id.hashCode();
+        String body = call.getString("body");
         NotificationCompat.Builder builder = new NotificationCompat.Builder(
             getContext(),
             Boolean.TRUE.equals(call.getBoolean("quiet", false)) ? CHANNEL_QUIET : CHANNEL_GENERAL
         )
             .setSmallIcon(R.drawable.ic_stat_noctis)
             .setContentTitle(call.getString("title", ""))
-            .setContentText(call.getString("body"))
+            .setContentText(firstLine(body))
             .setContentIntent(PendingIntent.getActivity(getContext(), code, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
             .setOngoing(Boolean.TRUE.equals(call.getBoolean("ongoing", false)))
             .setAutoCancel(true)
             .setOnlyAlertOnce(true);
+        // A body with several lines is shown in full when the notification is expanded.
+        if (body != null && body.contains("\n")) builder.setStyle(new NotificationCompat.BigTextStyle().bigText(body));
 
         Double progress = call.getDouble("progress");
         if (progress != null) {
@@ -961,6 +964,12 @@ public class NoctisPlugin extends Plugin {
 
         manager.notify(id, 0, builder.build());
         call.resolve();
+    }
+
+    private static String firstLine(String text) {
+        if (text == null) return null;
+        int end = text.indexOf('\n');
+        return end < 0 ? text : text.substring(0, end);
     }
 
     @PluginMethod

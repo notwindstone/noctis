@@ -2623,6 +2623,81 @@ h3 {
   transform: translateY(12px);
 }
 
+/* Download queue page */
+
+.downloads-summary {
+  margin: 0 16px 8px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.downloads-actions {
+  display: flex;
+  padding: 0 16px 8px;
+}
+
+.downloads-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 20px 0 16px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  cursor: pointer;
+}
+
+.downloads-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 16px 4px;
+  color: var(--md-sys-color-primary);
+}
+
+.downloads-link {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Side padding and gaps live on the list, so rows never touch the screen edges or each other. */
+.downloads-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+/* Plain rows, like the song lists elsewhere (see .item-row-main). */
+.downloads-row {
+  gap: 14px;
+  padding: 8px 4px 8px 8px;
+}
+
+.downloads-row .item-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.downloads-bar {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--md-sys-color-surface-variant);
+}
+
+.downloads-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--md-sys-color-primary);
+  transition: width 0.3s linear;
+}
+
 /* ------------------------------------------------------------------ *
  * Keyframes and motion preferences
  * ------------------------------------------------------------------ */

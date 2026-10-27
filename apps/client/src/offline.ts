@@ -1,8 +1,9 @@
 import { Capacitor } from '@capacitor/core'
 import { Directory, Filesystem } from '@capacitor/filesystem'
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, shallowReactive, shallowRef, watch } from 'vue'
 import { haptic } from './haptics'
 import { isNative } from './native'
+import { navigate } from './navigation'
 import * as notifications from './notifications'
 import { cacheEnabled, downloadConcurrency, downloadNotifications, maxCacheMb } from './preferences'
 import { writeLog } from './plugins/log'
@@ -192,6 +193,15 @@ interface Job {
 
 const pending: Job[] = []
 const running = new Map<string, Job>()
+/** `running`, but reactive, for the notifications. */
+export const nowRunning = shallowReactive(new Map<string, Song>())
+/** Songs waiting for their turn, in order (for the download queue page). */
+export const waiting = shallowRef<Song[]>([])
+/** Songs that failed, with why, until retried or cleared. */
+export const failures = shallowRef<{ song: Song; message: string }[]>([])
+export const clearFailures = () => {
+  failures.value = []
+}
 /** Songs waiting or downloading, kept so a killed app picks the queue up again on the next start. */
 const savedQueue = persisted<Song[]>('noctis:download-queue', [], (value) => Array.isArray(value))
 
@@ -205,6 +215,7 @@ window.addEventListener('pageshow', () => {
 })
 
 const saveQueue = () => {
+  waiting.value = pending.map((job) => job.song)
   if (closing) return
   savedQueue.value = [...running.values(), ...pending].map((job) => job.song)
 }
@@ -212,16 +223,8 @@ const lastStart = new Map<string, number>()
 let wakeTimer: number | undefined
 
 /** What the download notification shows: the current run of downloads, from the first queued song until the queue empties. */
-export const batch = reactive({ total: 0, done: 0, failed: 0, active: false, finished: false, current: '' })
+export const batch = reactive({ total: 0, done: 0, failed: 0, active: false, finished: false })
 
-/** What's downloading now, for the notification's second line: "Title · Artist", or the titles when several run at once. */
-const syncCurrent = () => {
-  const songs = [...running.values()].map((job) => job.song)
-  batch.current =
-    songs.length === 1
-      ? [songs[0].title, songs[0].artists[0]?.name].filter(Boolean).join(' · ')
-      : songs.map((song) => song.title).join(', ')
-}
 
 /** 0..1 across the whole run; songs in flight count by their own progress. */
 export const batchFraction = computed(() => {
@@ -231,8 +234,11 @@ export const batchFraction = computed(() => {
   return Math.min(1, (batch.done + batch.failed + partial) / batch.total)
 })
 
+/** "3 out of 12": the second line, which is what a collapsed notification shows, so it stays readable whatever the song names. */
+export const batchPosition = computed(() => `${Math.min(batch.done + batch.failed + 1, batch.total)} out of ${batch.total}`)
+
 export const batchText = computed(() => {
-  if (batch.active) return `Downloading ${Math.min(batch.done + batch.failed + 1, batch.total)} of ${batch.total}`
+  if (batch.active) return 'Downloading'
   const songs = `${batch.done} ${batch.done === 1 ? 'song' : 'songs'}`
   return batch.failed > 0 ? `Downloaded ${songs}, ${batch.failed} failed` : `Downloaded ${songs}`
 })
@@ -240,13 +246,13 @@ export const batchText = computed(() => {
 const NOTIFICATION = 'noctis-downloads'
 
 /**
- * The download progress as a system notification, in the foreground too: its Cancel button
- * is the way to stop a run. With notifications off, pressing a song's download button
- * again cancels it instead.
+ * The download progress as a system notification, in the foreground too; tapping it opens the
+ * download queue page, where a run is cancelled or retried. With notifications off, that page
+ * (Settings → Storage) or pressing a song's download button again does the same.
  */
 watch(
-  () => [batch.active, batch.finished, batchText.value, batchFraction.value, batch.current] as const,
-  ([active, finished, text, fraction, current]) => {
+  () => [batch.active, batch.finished, batchText.value, batchFraction.value, batchPosition.value] as const,
+  ([active, finished, text, fraction, position]) => {
     if (!active && !finished) {
       notifications.close(NOTIFICATION)
       return
@@ -255,21 +261,18 @@ watch(
     void notifications.show({
       id: NOTIFICATION,
       title: text,
-      body: active ? current || undefined : undefined,
+      body: active ? position : undefined,
       progress: active ? fraction : undefined,
       ongoing: active,
       quiet: true,
-      actions: active ? [{ id: 'cancel', label: 'Cancel' }] : undefined,
-      onAction: (action) => {
-        if (action === 'cancel') cancelDownloads()
-        else if (!batch.active) notifications.close(NOTIFICATION)
-      },
+      // What to do with the downloads (cancel one or all, retry) is on that page.
+      onAction: () => navigate({ name: 'downloads-queue' }),
     })
   },
 )
 
 function startRun() {
-  if (!batch.active) Object.assign(batch, { total: 0, done: 0, failed: 0, active: true, finished: false, current: '' })
+  if (!batch.active) Object.assign(batch, { total: 0, done: 0, failed: 0, active: true, finished: false })
 }
 
 function endRun() {
@@ -297,9 +300,10 @@ function pump() {
       i++
     } else {
       pending.splice(i, 1)
+      waiting.value = pending.map((job) => job.song)
       lastStart.set(job.source, Date.now())
       running.set(job.song.id, job)
-      syncCurrent()
+      nowRunning.set(job.song.id, job.song)
       void run(job)
     }
   }
@@ -318,12 +322,13 @@ async function run(job: Job) {
       batch.total--
     } else {
       batch.failed++
+      failures.value = [...failures.value.filter((entry) => entry.song.id !== song.id), { song, message: (error as Error).message }]
       writeLog('noctis', 'warn', `Couldn't download "${song.title}": ${(error as Error).message}`)
     }
   } finally {
     transfers.delete(song.id)
     running.delete(song.id)
-    syncCurrent()
+    nowRunning.delete(song.id)
     finish()
     saveQueue()
     if (pending.length === 0 && running.size === 0) endRun()
@@ -341,6 +346,7 @@ function enqueue(song: Song): Promise<void> {
   })
   startRun()
   batch.total++
+  failures.value = failures.value.filter((entry) => entry.song.id !== song.id)
   transfers.set(song.id, { kind: 'download', progress: 0 })
   pending.push({ song, source: sourceOf(song), done, finish, cancelled: false })
   saveQueue()

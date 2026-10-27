@@ -4,7 +4,8 @@ import AboutHero from '../components/settings/AboutHero.vue'
 import SeedSwatches from '../components/settings/SeedSwatches.vue'
 import StorageMeter from '../components/settings/StorageMeter.vue'
 import { clearHistory, clearSearchHistory, history, searchHistory } from '../library'
-import { cached, clearCache, clearDownloads, downloads, formatBytes, usage } from '../offline'
+import { navigate } from '../navigation'
+import { batch, batchPosition, cached, clearCache, clearDownloads, downloads, formatBytes, usage } from '../offline'
 import { preferenceLabel } from '../playFrom'
 import { defineSection, group, type SettingsBlock } from '../plugins/rows'
 import {
@@ -336,6 +337,15 @@ const storageBlocks: SettingsBlock[] = [
       },
     },
     {
+      id: 'download-queue',
+      icon: 'downloading',
+      title: 'Download queue',
+      get value() {
+        return batch.active ? batchPosition.value : 'Nothing downloading'
+      },
+      onClick: () => navigate({ name: 'downloads-queue' }),
+    },
+    {
       id: 'download-concurrency',
       icon: 'downloading',
       title: 'Simultaneous downloads',
@@ -355,7 +365,7 @@ const storageBlocks: SettingsBlock[] = [
       id: 'download-notifications',
       icon: 'notifications',
       title: 'Download notifications',
-      description: 'Show progress, with a Cancel button, in a notification. Without it, press a song\'s download button again to cancel.',
+      description: 'Show progress in a notification; tapping it opens the download queue.',
       toggle: bool(downloadNotifications),
     },
     {

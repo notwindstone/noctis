@@ -24,6 +24,7 @@ import AlbumScreen from '../screens/AlbumScreen.vue'
 import ArtistScreen from '../screens/ArtistScreen.vue'
 import BrowseScreen from '../screens/BrowseScreen.vue'
 import CollectionScreen from '../screens/CollectionScreen.vue'
+import DownloadQueueScreen from '../screens/DownloadQueueScreen.vue'
 import HomeScreen from '../screens/HomeScreen.vue'
 import LibraryItemsScreen from '../screens/LibraryItemsScreen.vue'
 import LibraryScreen from '../screens/LibraryScreen.vue'
@@ -74,6 +75,7 @@ type BuiltInComponentName =
   | 'CollectionScreen'
   | 'LibraryItemsScreen'
   | 'SettingsPageScreen'
+  | 'DownloadQueueScreen'
 
 // Annotated explicitly: screens import `C` and `C` imports screens, which would otherwise
 // make TypeScript's inference circular.
@@ -114,6 +116,7 @@ const BUILT_IN: Record<BuiltInComponentName, Component> = {
   CollectionScreen,
   LibraryItemsScreen,
   SettingsPageScreen,
+  DownloadQueueScreen,
 }
 
 export type { BuiltInComponentName }

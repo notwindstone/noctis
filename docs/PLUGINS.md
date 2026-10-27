@@ -237,12 +237,17 @@ Downloads fetch `contentLength` bytes in ranges from `fetchUrl ?? url` (with
 `fetchHeaders` on a device); `blob:` and `data:` URLs work too.
 
 `Noctis.libs.offline.download(song)` (also what the Download buttons call) puts the song in
-the download queue and resolves when it's done or failed; the app shows one notification
-("Downloading 3 of 12", with Cancel) rather than a message per song. `offline.cancelDownload(id)`
-and `cancelDownloads()` stop songs; a Download button pressed while its song downloads cancels it. How many run at once is the user's
-setting (Settings → Storage). The queue survives the app being closed or killed and resumes at the next start. A service that throttles clients can lower that with
-`downloads: { concurrency, minIntervalMs }` in its definition: at most `concurrency` of
-its songs at once, and at least `minIntervalMs` between two starts.
+the download queue and resolves when it's done or failed. The queue is saved, so a killed app
+resumes it at the next start. How many songs run at once is the user's setting (Settings →
+Storage); a service that throttles clients can lower that with `downloads: { concurrency,
+minIntervalMs }` in its definition: at most `concurrency` of its songs at once, and at least
+`minIntervalMs` between two starts.
+
+The app shows one notification ("Downloading", "3 out of 12", a progress bar) instead of a
+message per song. Tapping it opens the Downloading page (route `downloads-queue`, also under
+Settings → Storage), where the user sees what is downloading and waiting, cancels one song or
+all, and retries failures. `offline.cancelDownload(id)` and `cancelDownloads()` do the same from
+code, and a Download button pressed while its song downloads cancels it.
 
 ### Notifications
 
@@ -268,7 +273,8 @@ notifications.close('my-sync')
 `show` asks for permission the first time (Android 13+, browsers), so call it from something
 the user did; it resolves `false` if notifications aren't allowed. `permission()` and
 `requestPermission()` return `'granted' | 'denied' | 'prompt'`. Progress updates are
-throttled to a few a second. Downloads use this for their progress ("Downloading 3 of 12").
+throttled to a few a second. A `body` with several lines shows its first line collapsed and all
+of them when expanded on Android. Downloads use this for their progress.
 
 ### Signing in with OAuth
 
