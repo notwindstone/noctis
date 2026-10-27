@@ -6,7 +6,7 @@ import { formatTotal, songCount } from '../format'
 import { haptic, tap } from '../haptics'
 import type { IconName } from '../icons'
 import { navigate } from '../navigation'
-import { download, offlineState } from '../offline'
+import { download, isOnDevice, offlineState } from '../offline'
 import { playSongs, shufflePlay } from '../player'
 import { notify } from '../snackbar'
 import { schemeStyle } from '../theme'
@@ -79,7 +79,9 @@ const meta = computed(() => {
   return [songCount(props.songs.length), total > 0 ? formatTotal(total) : ''].filter(Boolean).join(' • ')
 })
 
-const allOffline = computed(() => props.songs.length > 0 && props.songs.every((song) => offlineState(song.id) === 'downloaded'))
+/** Songs that are files on this device, or already downloaded: nothing left to fetch. */
+const haveOffline = (song: Song) => isOnDevice(song) || offlineState(song.id) === 'downloaded'
+const allOffline = computed(() => props.songs.length > 0 && props.songs.every(haveOffline))
 
 function play() {
   haptic('press')
@@ -93,8 +95,8 @@ function shuffle() {
 
 function downloadAll() {
   tap()
-  const missing = props.songs.filter((song) => offlineState(song.id) !== 'downloaded')
-  if (missing.length === 0) return notify('Everything here is already downloaded')
+  const missing = props.songs.filter((song) => !haveOffline(song))
+  if (missing.length === 0) return notify(props.songs.every(isOnDevice) ? 'These songs are already on this device' : 'Everything here is already downloaded')
   // The queue paces them (Settings → Storage, and each service's own limits).
   for (const song of missing) void download(song, 'download')
 }

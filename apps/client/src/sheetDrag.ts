@@ -8,12 +8,19 @@ export interface SheetDragOptions {
   scrollSelector: string
   /** Elements whose touches must never drag the sheet (e.g. reorder handles). */
   ignoreSelector?: string
-  /** Fraction of the sheet's height past which releasing closes it. */
+  /** Fraction of the sheet's height (or width, sliding sideways) past which releasing closes it. */
   closeAt?: number
+  /**
+   * Which way it's dragged to close, read each time a drag starts: "y" pulls a bottom
+   * sheet down, "x" pushes a side panel to the right. Sideways drags only start on
+   * `handleSelector`, since the panel's own content needs the pointer.
+   */
+  axis?: () => 'x' | 'y'
+  handleSelector?: string
 }
 
 /**
- * Drag-to-dismiss for bottom sheets: the sheet follows the finger when pulled down from
+ * Drag-to-dismiss for bottom sheets (and, with `axis`, side panels): the sheet follows the finger when pulled down from
  * its header, or from its list once that's scrolled to the top; released past
  * `closeAt` (or flung) it closes, otherwise it springs back.
  *
@@ -28,18 +35,25 @@ export function useSheetDrag(panel: Ref<HTMLElement | null>, options: SheetDragO
   const closeAt = options.closeAt ?? 0.3
 
   let tracking = false
+  let sideways = false
   let startY = 0
   let height = 400
   let scroller: HTMLElement | null = null
   let samples: { t: number; y: number }[] = []
 
-  function begin(y: number, target: EventTarget | null, time: number) {
+  /** The coordinate that matters: x for a panel dragged sideways, y otherwise. */
+  const along = (point: { clientX: number; clientY: number }) => (sideways ? point.clientX : point.clientY)
+
+  function begin(point: { clientX: number; clientY: number }, target: EventTarget | null, time: number) {
     const element = target as Element | null
     if (options.ignoreSelector && element?.closest(options.ignoreSelector)) return
+    sideways = options.axis?.() === 'x'
+    if (sideways && !element?.closest(options.handleSelector ?? '*')) return
+    const y = along(point)
     tracking = true
     startY = y
-    height = panel.value?.offsetHeight || 400
-    scroller = element?.closest<HTMLElement>(options.scrollSelector) ?? null
+    height = (sideways ? panel.value?.offsetWidth : panel.value?.offsetHeight) || 400
+    scroller = sideways ? null : (element?.closest<HTMLElement>(options.scrollSelector) ?? null)
     samples = [{ t: time, y }]
     threshold.reset()
   }
@@ -83,18 +97,18 @@ export function useSheetDrag(panel: Ref<HTMLElement | null>, options: SheetDragO
   }
 
   function onTouchStart(event: TouchEvent) {
-    if (event.touches.length === 1) begin(event.touches[0].clientY, event.target, event.timeStamp)
+    if (event.touches.length === 1) begin(event.touches[0], event.target, event.timeStamp)
   }
   function onTouchMove(event: TouchEvent) {
     const touch = event.touches[0]
-    if (touch && move(touch.clientY, event.timeStamp) && event.cancelable) event.preventDefault()
+    if (touch && move(along(touch), event.timeStamp) && event.cancelable) event.preventDefault()
   }
   function onTouchEnd(event: TouchEvent) {
     end(event.type === 'touchcancel')
   }
 
   function onPointerMove(event: PointerEvent) {
-    move(event.clientY, event.timeStamp)
+    move(along(event), event.timeStamp)
   }
   function onPointerUp() {
     window.removeEventListener('pointermove', onPointerMove)
@@ -102,7 +116,7 @@ export function useSheetDrag(panel: Ref<HTMLElement | null>, options: SheetDragO
   }
   function onPointerDown(event: PointerEvent) {
     if (event.pointerType !== 'mouse' || event.button !== 0) return
-    begin(event.clientY, event.target, event.timeStamp)
+    begin(event, event.target, event.timeStamp)
     if (!tracking) return
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerUp, { once: true })

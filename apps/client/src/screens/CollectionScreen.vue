@@ -6,6 +6,8 @@ import { relativeTime } from '../format'
 import type { IconName } from '../icons'
 import { clearHistory, history, likedSongs } from '../library'
 import type { CollectionId, Route } from '../navigation'
+import { loadLocalLibrary, localTracks } from '../local/library'
+import { toSong } from '../local/service'
 import { cached, clearCache, downloads, formatBytes, usage } from '../offline'
 import { confirm } from '../ui'
 import { getLikedSongs, loadMoreLikedSongs } from '../services/api'
@@ -21,6 +23,7 @@ const META: Record<CollectionId, { title: string; icon: IconName; empty: string 
   downloads: { title: 'Downloads', icon: 'downloaded', empty: 'Download songs to listen without a connection.' },
   cached: { title: 'Cached', icon: 'cached', empty: 'Songs you play are cached here automatically.' },
   history: { title: 'Recently played', icon: 'history', empty: 'Songs you play will show up here.' },
+  local: { title: 'Local music', icon: 'device-music', empty: 'Add music in Settings → Local music.' },
 }
 
 const meta = computed(() => META[id.value])
@@ -65,7 +68,10 @@ async function loadMore() {
   }
 }
 
-onMounted(loadRemote)
+onMounted(() => {
+  void loadRemote()
+  void loadLocalLibrary()
+})
 onSessionChange(loadRemote)
 
 const songs = computed<Song[]>(() => {
@@ -82,6 +88,10 @@ const songs = computed<Song[]>(() => {
       return cached.value.map((entry) => entry.song)
     case 'history':
       return history.value.map((entry) => entry.song)
+    case 'local':
+      return [...localTracks.value]
+        .sort((a, b) => a.artist.localeCompare(b.artist) || a.album.localeCompare(b.album) || (a.disc ?? 1) - (b.disc ?? 1) || (a.track ?? 999) - (b.track ?? 999) || a.title.localeCompare(b.title))
+        .map(toSong)
   }
   return []
 })
@@ -95,6 +105,7 @@ const subtitle = computed(() => {
     case 'cached':
       return `${formatBytes(usage.value.cache)} · cleared automatically when full`
     case 'history':
+    case 'local':
       return 'On this device'
   }
   return ''

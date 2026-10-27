@@ -22,6 +22,11 @@ export const HOOK_NAMES = [
   'onRequest',
   // A song is about to play: before { song, index } ("stop" skips it); after, once it plays.
   'onPlay',
+  // The app's language changed: after { language, previous } (codes like "en", "ru"; see libs.i18n).
+  'onLanguageChange',
+  // The desktop tray icon was clicked with the left button: before {} — "stop" keeps the
+  // window where it is (the plugin handles the click); otherwise Noctis shows the window.
+  'onTrayClick',
 ] as const
 
 export type HookName = (typeof HOOK_NAMES)[number]

@@ -2,8 +2,9 @@
 import { tap } from '../haptics'
 import { navigate, type Route } from '../navigation'
 import { C } from '../plugins/components'
-import { Sections } from '../plugins/rows'
+import { isMainSection, Sections } from '../plugins/rows'
 import { accountEntries, signedInCount } from '../accounts'
+import { t } from '../i18n'
 import { account, openAccountSettings, signedIn, signInTitle } from '../services/session'
 
 defineProps<{ route: Route; screenKey: number; isRoot: boolean }>()
@@ -21,8 +22,8 @@ function openAccount() {
 
 <template>
   <div class="screen settings-screen">
-    <C.TopAppBar title="Settings" :reveal-at="56" />
-    <h1 class="screen-headline type-headline-large">Settings</h1>
+    <C.TopAppBar :title="t('Settings')" :reveal-at="56" />
+    <h1 class="screen-headline type-headline-large">{{ t('Settings') }}</h1>
 
     <button v-if="accountEntries.length > 0" class="account-card" type="button" @click="openAccount">
       <C.Thumb v-if="account?.photo" :src="account.photo" :size="56" shape="circle" icon="account" />
@@ -40,7 +41,7 @@ function openAccount() {
       <template v-for="section in Sections" :key="section.id">
         <component
           :is="C.SettingsRow"
-          v-if="!section.hidden"
+          v-if="!section.hidden && isMainSection(section)"
           :icon="section.icon"
           :title="section.title"
           :description="section.description"

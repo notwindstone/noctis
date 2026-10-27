@@ -3,9 +3,11 @@ import { C } from '../plugins/components'
 import { computed, onMounted, ref } from 'vue'
 import { songCount } from '../format'
 import { tap } from '../haptics'
+import { t } from '../i18n'
 import type { IconName } from '../icons'
 import { useItemDelegation } from '../itemActions'
 import { history, likedSongs, listenedArtists } from '../library'
+import { canAddFolders, localTracks, loadLocalLibrary } from '../local/library'
 import { navigate, type CollectionId, type Route } from '../navigation'
 import { cached, downloads, formatBytes, usage } from '../offline'
 import { readPageCache, writePageCache } from '../pageCache'
@@ -68,6 +70,7 @@ const { pull, dragging, refreshing } = usePullToRefresh(root, () =>
 
 // Open straight into the last fetched library; only fetch when there's nothing cached.
 onMounted(async () => {
+  void loadLocalLibrary()
   await servicesReady()
   const cached = hasLibrary.value ? readPageCache<LibraryCache>('library') : null
   if (cached) {
@@ -116,6 +119,17 @@ const tiles = computed<Tile[]>(() => [
     detail: history.value.length ? songCount(history.value.length) : 'Nothing yet',
     icon: 'history',
   },
+  // Only where there's music, or a way to add some.
+  ...(localTracks.value.length > 0 || canAddFolders
+    ? [
+        {
+          id: 'local' as const,
+          title: 'Local music',
+          detail: localTracks.value.length ? songCount(localTracks.value.length) : 'Add music',
+          icon: 'device-music' as const,
+        },
+      ]
+    : []),
 ])
 
 const recent = computed<Item[]>(() => history.value.slice(0, 12).map((entry) => entry.song))
@@ -128,6 +142,8 @@ const recentActions = useItemDelegation(() => ({ items: recent.value }))
 
 function open(id: CollectionId) {
   tap()
+  // Nothing to show yet: go where music is added.
+  if (id === 'local' && localTracks.value.length === 0) return void navigate({ name: 'settings-page', page: 'local-music' })
   void navigate({ name: 'collection', id })
 }
 </script>
@@ -135,7 +151,7 @@ function open(id: CollectionId) {
 <template>
   <div ref="root" class="screen library-screen">
     <C.RefreshIndicator :pull="pull" :dragging="dragging" :refreshing="refreshing" />
-    <C.TopAppBar title="Library" :reveal-at="56">
+    <C.TopAppBar :title="t('Library')" :reveal-at="56">
       <template #actions>
         <button v-if="hasAccounts" class="avatar-button" type="button" aria-label="Account" @click="openAccountSettings">
           <C.Thumb v-if="account?.photo" :src="account.photo" :size="32" shape="circle" icon="account" />
@@ -143,13 +159,13 @@ function open(id: CollectionId) {
         </button>
       </template>
     </C.TopAppBar>
-    <h1 class="screen-headline type-headline-large">Library</h1>
+    <h1 class="screen-headline type-headline-large">{{ t('Library') }}</h1>
 
     <div class="library-tiles">
       <button v-for="tile in tiles" :key="tile.id" class="library-tile" :class="`tile-${tile.id}`" type="button" @click="open(tile.id)">
         <span class="library-tile-icon"><C.MIcon :name="tile.icon" filled /></span>
         <span class="library-tile-text">
-          <strong class="type-title-medium">{{ tile.title }}</strong>
+          <strong class="type-title-medium">{{ t(tile.title) }}</strong>
           <span class="type-body-small">{{ tile.detail }}</span>
         </span>
       </button>
@@ -158,7 +174,7 @@ function open(id: CollectionId) {
     <section v-if="hasLibrary || (hasAccounts && !signedIn)" class="home-section">
       <header class="section-header">
         <button class="section-header-text" type="button" :disabled="!hasLibrary" @click="navigate({ name: 'library-playlists' })">
-          <span class="section-title type-title-large">Your playlists</span>
+          <span class="section-title type-title-large">{{ t('Your playlists') }}</span>
         </button>
         <button v-if="hasLibrary" class="icon-button" type="button" aria-label="All playlists" @click="navigate({ name: 'library-playlists' })">
           <C.MIcon name="chevron-right" />
@@ -189,7 +205,7 @@ function open(id: CollectionId) {
       <header class="section-header">
         <button class="section-header-text" type="button" @click="navigate({ name: 'library-artists' })">
           <span v-if="!fromAccount" class="section-strapline type-label-medium">From your listening</span>
-          <span class="section-title type-title-large">Your artists</span>
+          <span class="section-title type-title-large">{{ t('Your artists') }}</span>
         </button>
         <button class="icon-button" type="button" aria-label="All artists" @click="navigate({ name: 'library-artists' })">
           <C.MIcon name="chevron-right" />
@@ -203,7 +219,7 @@ function open(id: CollectionId) {
     <section v-if="recent.length > 0" class="home-section">
       <header class="section-header">
         <button class="section-header-text" type="button" @click="open('history')">
-          <span class="section-title type-title-large">Recently played</span>
+          <span class="section-title type-title-large">{{ t('Recently played') }}</span>
         </button>
         <button class="icon-button" type="button" aria-label="All recently played" @click="open('history')">
           <C.MIcon name="chevron-right" />

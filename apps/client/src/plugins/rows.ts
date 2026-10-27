@@ -60,6 +60,12 @@ export interface SettingsSection {
   title: string
   description?: string
   hidden?: boolean
+  /**
+   * Where the section is listed. A plugin's sections go under Settings → Plugins; a plugin
+   * that wants one next to Noctis's own (Appearance, Playback…) must say `'main'`. Noctis's
+   * own sections are always in the main list.
+   */
+  placement?: 'main' | 'plugins'
 }
 
 /** Settings home: the list of sections, in order. */
@@ -97,6 +103,13 @@ export function defineSection(section: SettingsSection, blocks: SettingsBlock[],
   const about = Sections.findIndex((item) => item.id === 'about')
   const index = position ?? (about === -1 ? Sections.length : about)
   Sections.splice(index, 0, section)
+}
+
+/** Whether a section is listed on the Settings home (otherwise under Settings → Plugins). */
+export function isMainSection(section: SettingsSection): boolean {
+  if (section.placement) return section.placement === 'main'
+  const owner = owners.get(section.id)
+  return owner === undefined || owner === 'noctis'
 }
 
 export function removeSection(id: string) {

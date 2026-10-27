@@ -2,7 +2,7 @@ import type { ServiceAccount, SignInMethod } from '../services/types'
 import { handshake, otherServerName, serverKind, serverUrl, signIn, signInWithApiKey, signInWithPassword, signOut } from '../server'
 import { notify } from '../snackbar'
 import { showTextDialog } from '../ui'
-import { credentials, guestAccess } from './client'
+import { connectionEpoch, credentials, guestAccess } from './client'
 
 /**
  * The connected server's account, for Settings → Accounts and for the server as a
@@ -108,7 +108,7 @@ export const serverAccount: ServiceAccount = {
     return { name: auth.username, handle: `${serverUrl.value.replace(/^https?:\/\//, '')} · ${how}` }
   },
   get sessionKey() {
-    return `${serverUrl.value}|${credentials.value?.username ?? ''}`
+    return `${serverUrl.value}|${credentials.value?.username ?? ''}|${connectionEpoch.value}`
   },
   section: 'server',
   get signInTitle() {

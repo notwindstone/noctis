@@ -16,6 +16,7 @@ import {
   scanWholeDevice,
 } from '../local/library'
 import { defineSection, group, type SettingsRowDef } from '../plugins/rows'
+import { navigate } from '../navigation'
 import { notify } from '../snackbar'
 import { confirm } from '../ui'
 
@@ -58,6 +59,19 @@ export function defineLocalSettings() {
       },
     },
     [
+      group('view', [
+        {
+          id: 'view',
+          icon: 'device-music',
+          title: 'View local music',
+          description: 'Open it in the Library',
+          chevron: true,
+          get hidden() {
+            return localTracks.value.length === 0
+          },
+          onClick: () => void navigate({ name: 'collection', id: 'local' }),
+        },
+      ]),
       // Android: the whole device.
       group('device', [
         {

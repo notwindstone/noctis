@@ -9,6 +9,12 @@ export const hapticsEnabled = persisted('noctis:haptics', true, isBoolean)
 export const audioQuality = persisted<AudioQuality>('noctis:quality', 'auto', oneOf('auto', 'high', 'low'))
 export const repeatMode = persisted<RepeatMode>('noctis:repeat-mode', 'off', oneOf('off', 'all', 'one'))
 export const shuffleEnabled = persisted('noctis:shuffle', false, isBoolean)
+/**
+ * How far into a song "Previous" restarts it instead of going back a song: "off" always goes
+ * back, a number of seconds, or "full" (restarts from anywhere past the first second).
+ */
+export type PreviousRestart = 'off' | '3' | '5' | '10' | 'full'
+export const previousRestart = persisted<PreviousRestart>('noctis:previous-restart', '3', oneOf('off', '3', '5', '10', 'full'))
 export const autoplayRelated = persisted('noctis:autoplay', true, isBoolean)
 export const persistentQueue = persisted('noctis:persistent-queue', true, isBoolean)
 /** Media notification with lock-screen controls (Android). */
@@ -30,6 +36,11 @@ export const downloadNotifications = persisted('noctis:download-notifications', 
 export const contentLanguage = persisted('noctis:hl', 'en', (value) => typeof value === 'string')
 export const contentCountry = persisted('noctis:gl', 'US', (value) => typeof value === 'string')
 
+/** Desktop: closing the window keeps Noctis running in the system tray. */
+export const minimizeToTray = persisted('noctis:minimize-to-tray', false, isBoolean)
+
 /* Appearance */
+/** "full" keeps the app's animations even when the system asks for none (see main.css). */
+export const motion = persisted<'system' | 'full'>('noctis:motion', 'system', oneOf('system', 'full'))
 export const playerArtworkColors = persisted('noctis:player-art-colors', true, isBoolean)
 export const pureBlack = persisted('noctis:pure-black', false, isBoolean)

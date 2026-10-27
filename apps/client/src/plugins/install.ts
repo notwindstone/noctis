@@ -3,7 +3,7 @@ import { describePlatforms, PluginArchiveError, readPluginArchive, sha256Hex, su
 import { isNative, platform } from '../native'
 import { writeLog } from './log'
 import { disablePlugin, isRunning } from './runtime'
-import { findPlugin, installedPlugins, type InstalledPlugin } from './store'
+import { findPlugin, forgetPluginConsent, installedPlugins, type InstalledPlugin } from './store'
 
 /**
  * Installing plugins from archives (read and validated by @noctis/plugin-core): a
@@ -47,6 +47,10 @@ export async function installFromArchive(fileName: string, bytes: Uint8Array): P
   const sameCode = existing?.sha256 === hash
   // New code under the same id: stop the old one; the new code needs approving again.
   if (existing && !sameCode && isRunning(existing)) await disablePlugin(existing)
+
+  // Nothing installed under this id: whatever consent is left over from an earlier install
+  // (before removal forgot it) doesn't carry over to this one.
+  if (!existing) forgetPluginConsent(hash)
 
   const plugin: InstalledPlugin = { id, code, sha256: hash, metadata, installedAt: Date.now() }
   installedPlugins.value = existing

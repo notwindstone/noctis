@@ -385,7 +385,11 @@ savedQueue.value = [...running.values(), ...pending].map((job) => job.song)
  * Save a song on the device. Resolves when it's done (or failed); a download waits its turn
  * in the queue, a cache fill (`kind: 'cache'`, from playback) starts right away.
  */
+/** A song that's already a file on this device (Settings → Local music): nothing to download. */
+export const isOnDevice = (song: Pick<Song, 'source'>) => song.source === 'device'
+
 export async function download(song: Song, kind: OfflineKind = 'download') {
+  if (isOnDevice(song)) return
   const existing = offline.value[song.id]
   if (existing) {
     // Promote a cached song to a download without fetching it again.

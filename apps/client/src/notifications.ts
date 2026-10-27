@@ -1,5 +1,10 @@
 import { App as NativeApp } from '@capacitor/app'
-import { hasNoctisPlugin, Noctis } from './native'
+import {
+  isPermissionGranted,
+  requestPermission as requestDesktopPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification'
+import { hasNoctisPlugin, isDesktop, Noctis } from './native'
 
 /**
  * System notifications for the app and its plugins: Android's notification shade, the
@@ -90,7 +95,29 @@ const webBackend: Backend = {
   },
 }
 
-const backend: Backend = hasNoctisPlugin ? androidBackend : webBackend
+/** Desktop notifications can't be updated in place, so a progress one is shown once and again when it finishes. */
+const desktopShown = new Map<string, number>()
+
+const desktopBackend: Backend = {
+  async permission() {
+    return (await isPermissionGranted()) ? 'granted' : 'prompt'
+  },
+  async requestPermission() {
+    return normalize(await requestDesktopPermission())
+  },
+  async show({ id, title, body, progress, quiet }) {
+    const last = desktopShown.get(id)
+    const finished = typeof progress === 'number' && progress >= 1
+    if (last !== undefined && !finished && typeof progress === 'number') return
+    desktopShown.set(id, typeof progress === 'number' ? progress : 1)
+    sendNotification({ title, body, silent: quiet })
+  },
+  async close(id) {
+    desktopShown.delete(id)
+  },
+}
+
+const backend: Backend = hasNoctisPlugin ? androidBackend : isDesktop ? desktopBackend : webBackend
 
 const handlers = new Map<string, (action: string) => void>()
 /** What the caller last asked for; what's on screen is derived from it and the app's visibility. */

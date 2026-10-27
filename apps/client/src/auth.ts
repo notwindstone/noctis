@@ -1,10 +1,11 @@
-import { hasNoctisPlugin, Noctis } from './native'
+import { invoke } from '@tauri-apps/api/core'
+import { hasNoctisPlugin, isDesktop, Noctis } from './native'
 
 /**
  * OAuth for plugins: open an authorization page and resolve with the URL it redirects
  * to (the one starting with `redirect`), e.g. to read `?code=` in a PKCE flow.
  *
- * - On a device, a WebView screen catches the redirect before loading it, so any
+ * - On a device or desktop, a window catches the redirect before loading it, so any
  *   redirect URI works — it never has to resolve.
  * - In the browser (development), a popup ends on /auth-callback.html, which passes its
  *   URL back over a BroadcastChannel. The redirect must then be this origin's
@@ -12,6 +13,7 @@ import { hasNoctisPlugin, Noctis } from './native'
  */
 export async function openAuthWindow(options: { url: string; redirect: string; title?: string }): Promise<string> {
   if (hasNoctisPlugin) return (await Noctis.openAuth(options)).url
+  if (isDesktop) return invoke<string>('open_auth', options)
 
   return new Promise<string>((resolve, reject) => {
     const channel = new BroadcastChannel('noctis-auth')
@@ -39,10 +41,11 @@ export async function openAuthWindow(options: { url: string; redirect: string; t
  * A site's own sign-in page, for sites whose session is a cookie (SoundCloud's
  * oauth_token): resolves once the site sets it, with its value and every cookie on
  * `cookieUrl` as a Cookie header, httpOnly ones included (where refresh tokens live).
- * Device only; in the browser, let people paste the values instead.
+ * Device and desktop only; in the browser, let people paste the values instead.
  */
 export async function openCookieLogin(options: { url: string; cookieUrl: string; cookie: string; title?: string }): Promise<{ value: string; cookies: string }> {
-  if (!hasNoctisPlugin) throw new Error('Only available in the Android app')
+  if (isDesktop) return invoke('open_cookie_login', options)
+  if (!hasNoctisPlugin) throw new Error('Only available in the apps, not the browser')
   const result = await Noctis.openCookieLogin(options)
   return { value: result.value, cookies: result.cookies ?? '' }
 }
@@ -66,4 +69,5 @@ export async function clearSiteCookies(url: string) {
   if (hasNoctisPlugin) await Noctis.clearCookies({ url })
 }
 
-export const canCaptureWeb = hasNoctisPlugin
+/** Whether openCookieLogin works here (captureWebResponse is Android only). */
+export const canCaptureWeb = hasNoctisPlugin || isDesktop

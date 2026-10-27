@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { request as httpRequest } from '../http'
 import { serverUrl } from '../server'
 import { md5 } from '../md5'
@@ -50,6 +51,18 @@ export const canUseServer = () => credentials.value !== null || guestAccess.valu
 const CLIENT = 'noctis'
 const VERSION = '1.16.1'
 
+/**
+ * Bumped when the server answers again after being unreachable: it's part of the account's
+ * session key, so screens that failed refetch and cached pages from before are dropped.
+ */
+export const connectionEpoch = ref(0)
+
+let onNetworkError: (() => void) | null = null
+/** server.ts hears about requests that never got an answer, to start reconnecting. */
+export function setNetworkErrorHandler(handler: () => void) {
+  onNetworkError = handler
+}
+
 export class SubsonicError extends Error {
   constructor(
     readonly code: number,
@@ -87,8 +100,12 @@ export type SubsonicPayload = Record<string, any>
 
 /** Call an endpoint; resolves to the "subsonic-response" payload, or throws SubsonicError. */
 export async function subsonic(endpoint: string, params: Record<string, string | number | string[] | undefined> = {}, auth = credentials.value): Promise<SubsonicPayload> {
-  const response = await httpRequest(restUrl(endpoint, { ...params, f: 'json' }, auth))
+  const response = await httpRequest(restUrl(endpoint, { ...params, f: 'json' }, auth)).catch((error) => {
+    onNetworkError?.()
+    throw error
+  })
   const body = (response.data as { 'subsonic-response'?: SubsonicPayload } | null)?.['subsonic-response']
+  if (!body && [502, 503, 504].includes(response.status)) onNetworkError?.()
   if (!body) throw new SubsonicError(0, `The server answered HTTP ${response.status}, not OpenSubsonic`)
   if (body.status !== 'ok') throw new SubsonicError(body.error?.code ?? 0, body.error?.message ?? 'The server refused the request')
   return body

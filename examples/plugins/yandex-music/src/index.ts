@@ -552,18 +552,6 @@ const SECTION = {
 
 function defineSettings(Plugin: PluginScope['Plugin']) {
   Plugin.defineSection(SECTION, [
-    Noctis.group('account', [
-      {
-        id: 'account',
-        icon: 'account',
-        title: 'Account',
-        get value() {
-          return signedIn.value ? `Signed in as ${me.value?.name ?? 'you'}` : 'Not signed in · sign in'
-        },
-        chevron: true,
-        onClick: () => void Noctis.libs.navigation.navigate({ name: 'settings-page', page: 'accounts' }),
-      },
-    ]),
     Noctis.group('device', [
       {
         id: 'device-name',

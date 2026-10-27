@@ -93,6 +93,8 @@ import i_storage from '@material-symbols/svg-400/rounded/storage.svg?raw'
 import i_storageFill from '@material-symbols/svg-400/rounded/storage-fill.svg?raw'
 import i_info from '@material-symbols/svg-400/rounded/info.svg?raw'
 import i_infoFill from '@material-symbols/svg-400/rounded/info-fill.svg?raw'
+import i_translate from '@material-symbols/svg-400/rounded/translate.svg?raw'
+import i_translateFill from '@material-symbols/svg-400/rounded/translate-fill.svg?raw'
 import i_language from '@material-symbols/svg-400/rounded/language.svg?raw'
 import i_languageFill from '@material-symbols/svg-400/rounded/language-fill.svg?raw'
 import i_delete from '@material-symbols/svg-400/rounded/delete.svg?raw'
@@ -217,6 +219,7 @@ const RAW = {
   'storage': [i_storage, i_storageFill],
   'info': [i_info, i_infoFill],
   'language': [i_language, i_languageFill],
+  'translate': [i_translate, i_translateFill],
   'delete': [i_delete, i_deleteFill],
   'logout': [i_logout, i_logoutFill],
   'login': [i_login, i_loginFill],

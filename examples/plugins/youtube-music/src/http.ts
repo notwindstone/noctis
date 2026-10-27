@@ -6,6 +6,8 @@ import { Noctis } from './host'
  *
  * - On a device, requests go through Capacitor's native HTTP stack: no CORS, and
  *   headers such as Cookie, Origin and User-Agent are sent as given.
+ * - On desktop, through the app's own HTTP client (Noctis.libs.http.nativeFetch): the
+ *   same freedom, with a real fetch() to hand to youtubei.js.
  * - In the browser (development), they are rewritten to the Vite proxy in
  *   vite.config.ts. Headers the browser refuses to send are smuggled as
  *   `x-noctis-<name>` and restored by the proxy.
@@ -14,7 +16,7 @@ import { Noctis } from './host'
 export const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
 
-const { isNative } = Noctis.libs.native
+const { isNative, isDesktop } = Noctis.libs.native
 
 const FORBIDDEN_HEADERS = ['cookie', 'origin', 'referer', 'user-agent']
 
@@ -27,7 +29,7 @@ function headersToObject(headers: HeadersInit | undefined): Record<string, strin
 }
 
 export function proxiedUrl(url: string): string {
-  return isNative ? url : url.replace(/^https:\/\//, '/__yt/')
+  return isNative || isDesktop ? url : url.replace(/^https:\/\//, '/__yt/')
 }
 
 /** Whether a URL can be fetched directly (native) or needs the dev proxy (browser). */
@@ -46,6 +48,11 @@ export async function ytFetch(input: RequestInfo | URL, init?: RequestInit): Pro
   if (host.endsWith('youtube.com')) {
     headers['origin'] ??= `https://${host}`
     headers['referer'] ??= `https://${host}/`
+  }
+
+  if (isDesktop) {
+    headers['user-agent'] ??= DESKTOP_UA
+    return Noctis.libs.http.nativeFetch(url, { method, headers, body })
   }
 
   if (isNative) {

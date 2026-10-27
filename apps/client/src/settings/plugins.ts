@@ -4,7 +4,7 @@ import PluginLog from '../components/settings/PluginLog.vue'
 import { goBack, navigate } from '../navigation'
 import { installFromArchive, installFromFile, installFromUrl, PluginInstallError, pickPluginFile, type InstallResult } from '../plugins/install'
 import { writeLog } from '../plugins/log'
-import { defineSection, findSection, group, removeSection, Rows, type SettingsBlock, type SettingsRowDef } from '../plugins/rows'
+import { defineSection, findSection, group, isMainSection, removeSection, Rows, Sections, type SettingsBlock, type SettingsRowDef } from '../plugins/rows'
 import { disablePlugin, enablePlugin, removePlugin, runStates, setPluginsActive } from '../plugins/runtime'
 import {
   approvedHashes,
@@ -233,9 +233,12 @@ function pluginBlocks(id: string): SettingsBlock[] {
  * ------------------------------------------------------------------ */
 
 const installedRows: SettingsRowDef[] = []
+/** Settings sections that plugins added (and didn't ask to put on the main list). */
+const pluginSectionRows: SettingsRowDef[] = []
 
 export function definePluginSettings() {
   const installedGroup = group('installed', installedRows)
+  const pluginSectionsGroup = group('plugin-sections', pluginSectionRows)
 
   defineSection(
     {
@@ -276,6 +279,8 @@ export function definePluginSettings() {
           return installedPlugins.value.length > 0
         },
       },
+      { id: 'sections-header', type: 'header', title: 'Plugin settings', get hidden() { return pluginSectionRows.length === 0 } },
+      pluginSectionsGroup,
       group('log', [
         { id: 'log', icon: 'terminal', title: 'Log', description: 'Messages from plugins and the plugin system', chevron: true, onClick: () => void navigate({ name: 'settings-page', page: 'plugins-log' }) },
       ]),
@@ -286,6 +291,32 @@ export function definePluginSettings() {
   defineSection({ id: 'plugins-log', icon: 'terminal', title: 'Plugin log', hidden: true }, [
     { id: 'log', type: 'component', component: PluginLog },
   ], 'noctis')
+
+  // Plugins' own settings sections live here, unless they asked for the main list.
+  watch(
+    () => Sections.filter((section) => !section.hidden && !isMainSection(section)).map((section) => section.id),
+    (ids) => {
+      pluginSectionRows.splice(
+        0,
+        pluginSectionRows.length,
+        ...ids.map((id): SettingsRowDef => ({
+          id,
+          get icon() {
+            return findSection(id)?.icon ?? 'plugin'
+          },
+          get title() {
+            return findSection(id)?.title ?? id
+          },
+          get description() {
+            return findSection(id)?.description
+          },
+          chevron: true,
+          onClick: () => void navigate({ name: 'settings-page', page: id }),
+        })),
+      )
+    },
+    { immediate: true },
+  )
 
   // Keep the installed list and the per-plugin sections in step with what's installed.
   watch(

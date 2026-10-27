@@ -22,3 +22,7 @@ apps/server/data/
 # Packed plugin archives (scripts/pack-plugin.mjs) and uploaded builds
 dist-plugins/
 builds/
+
+# Desktop (Tauri) build output
+apps/client/src-tauri/target/
+apps/client/src-tauri/gen/

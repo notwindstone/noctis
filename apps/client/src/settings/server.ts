@@ -5,7 +5,6 @@ import { enablePlugin } from '../plugins/runtime'
 import { approvedHashes, findPlugin } from '../plugins/store'
 import { connect, disconnect, handshake, installFromServer, missingPlugins, otherServerName, serverError, serverKind, serverStatus, serverUrl } from '../server'
 import { registerAccount } from '../accounts'
-import { navigate } from '../navigation'
 import { serverAccount } from '../subsonic/account'
 import { credentials, guestAccess } from '../subsonic/client'
 import { notify } from '../snackbar'
@@ -135,23 +134,6 @@ export function defineServerSettings() {
           onClick: () => void connect().catch(() => {}),
         },
       ]),
-      // Signing in and out happens in Settings → Accounts, with every other account.
-      group('account', [
-        {
-          id: 'account',
-          icon: 'account',
-          title: 'Account',
-          get value() {
-            return serverAccount.signedIn ? `Signed in as ${serverAccount.info?.name ?? 'you'}` : guestAccess.value ? 'Listening as a guest · sign in' : 'Not signed in · sign in'
-          },
-          chevron: true,
-          onClick: () => void navigate({ name: 'settings-page', page: 'accounts' }),
-        },
-      ], {
-        get hidden() {
-          return serverStatus.value !== 'connected'
-        },
-      }),
       { id: 'plugins-header', type: 'header', title: 'Plugins the server uses', get hidden() { return pluginRows.length === 0 } },
       group('plugins', pluginRows),
       group('install', [

@@ -52,6 +52,18 @@ export function setEnabledFlag(plugin: InstalledPlugin, enabled: boolean) {
   enabledHashes.value = { ...enabledHashes.value, [plugin.sha256]: enabled }
 }
 
+/**
+ * Forget that this code was ever enabled or approved. Removing a plugin does this, so
+ * installing it again (the same file, or a copy someone else hands over) starts disabled
+ * and asks before it runs.
+ */
+export function forgetPluginConsent(sha256: string) {
+  const { [sha256]: _enabled, ...enabled } = enabledHashes.value
+  const { [sha256]: _approved, ...approved } = approvedHashes.value
+  enabledHashes.value = enabled
+  approvedHashes.value = approved
+}
+
 export function findPlugin(id: string): InstalledPlugin | undefined {
   return installedPlugins.value.find((plugin) => plugin.id === id)
 }

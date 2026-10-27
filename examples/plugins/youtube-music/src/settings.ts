@@ -55,18 +55,6 @@ export const accountActions = {
 }
 
 export const blocks: SettingsBlock[] = [
-  group('account', [
-    {
-      id: 'account',
-      icon: 'account',
-      title: 'Account',
-      get value() {
-        return signedIn.value ? `Signed in${account.value ? ` as ${account.value.name}` : ''}` : 'Not signed in · sign in'
-      },
-      chevron: true,
-      onClick: () => void Noctis.libs.navigation.navigate({ name: 'settings-page', page: 'accounts' }),
-    },
-  ]),
   group(
     'signed-in',
     [

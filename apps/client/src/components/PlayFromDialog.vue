@@ -53,13 +53,20 @@ interface Section {
 const song = computed<Song | null>(() => playFromDialog.value?.song ?? null)
 const scope = ref<Scope>('song')
 const options = shallowRef<PlaybackOption[] | null>(null)
+/** Sources (plugins, the server…) that haven't said yet whether they have the song. */
+const pending = ref(0)
 
+// Options show up as each source answers, so a slow one doesn't hold back the rest.
 watch(playFromDialog, async (request) => {
   options.value = null
+  pending.value = 0
   scope.value = request?.song ? 'song' : 'all'
   if (!request?.song) return
-  const list = await playbackOptions(request.song)
-  if (playFromDialog.value === request) options.value = list
+  await playbackOptions(request.song, (list, left) => {
+    if (playFromDialog.value !== request) return
+    options.value = list
+    pending.value = left
+  })
 })
 
 const isCurrent = computed(() => {
@@ -80,7 +87,7 @@ const picked = computed(() => (song.value && options.value ? shown(pickOption(so
 const pickedOption = computed(() => options.value?.find((option) => option.id === picked.value) ?? null)
 
 /** Every option is unavailable: say so instead of naming one. */
-const nothingPlays = computed(() => Boolean(options.value) && available.value.length === 0)
+const nothingPlays = computed(() => Boolean(options.value) && pending.value === 0 && available.value.length === 0)
 
 /** "AAC", "MP3", "OPUS"… from a MIME type; HLS playlists are SoundCloud's AAC. */
 function formatName(mimeType: string): string {
@@ -135,10 +142,16 @@ const songSections = computed<Section[]>(() => {
   for (const group of ['server', 'own'] as PlaybackGroup[]) {
     const rows = list.filter((option) => groupOf(option) === group).map(optionRow)
     for (const missing of playbackTargets().filter((item) => item.group === group && !present.has(item.id))) {
-      rows.push({ value: `missing:${missing.id}`, label: missing.label, description: missing.available ? 'Not available for this song' : missing.description, disabled: true })
+      rows.push({
+        value: `missing:${missing.id}`,
+        label: missing.label,
+        description: !missing.available ? missing.description : pending.value > 0 ? 'Loading…' : 'Not available for this song',
+        disabled: true,
+      })
     }
     if (rows.length > 0) sections.push({ id: group, title: groupTitle[group], rows })
   }
+  if (pending.value > 0) sections.push({ id: 'loading', rows: [{ value: 'loading', label: 'Loading…', description: 'Asking your other sources', disabled: true }] })
   return sections
 })
 
@@ -168,7 +181,7 @@ const allSections = computed<Section[]>(() => {
           value: item.id,
           label: item.label,
           description: item.description,
-          detail: !target || !list || !item.available ? undefined : option ? `This song: ${option.description || option.label}` : 'Not available for this song, so Automatic',
+          detail: !target || !list || !item.available ? undefined : option ? `This song: ${option.description || option.label}` : pending.value > 0 ? 'Loading…' : 'Not available for this song, so Automatic',
           disabled: !item.available,
         }
       })
@@ -224,7 +237,7 @@ function choose(row: Row) {
         <C.MIcon :name="pickedOption?.group === 'server' ? 'server' : 'device-music'" />
         <span class="choice-text">
           <span class="type-label-medium muted">{{ isCurrent ? 'Playing from' : 'Would play from' }}</span>
-          <span class="type-body-large">{{ !options ? 'Looking for sources…' : nothingPlays ? 'Nowhere yet' : (pickedOption?.label ?? 'Its own service') }}</span>
+          <span class="type-body-large">{{ !options || (pending > 0 && available.length === 0) ? 'Looking for sources…' : nothingPlays ? 'Nowhere yet' : (pickedOption?.label ?? 'Its own service') }}</span>
           <span v-if="nowQuality && !nothingPlays" class="type-body-medium muted">{{ nowQuality }}</span>
         </span>
       </div>
@@ -233,7 +246,7 @@ function choose(row: Row) {
         Nothing here can play "{{ song.title }}". A service that has it (YouTube Music, SoundCloud…) or a copy in your music folders
         would show up here.
       </p>
-      <p v-else-if="options && available.length === 1" class="type-body-medium muted dialog-description">
+      <p v-else-if="options && pending === 0 && available.length === 1" class="type-body-medium muted dialog-description">
         Only {{ available[0].label }} can play "{{ song.title }}"{{ song.artists.length ? ` by ${artistNames(song.artists)}` : '' }}. More
         sources show up here when your server, plugins or music folders have it.
       </p>

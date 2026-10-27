@@ -4,7 +4,8 @@ import { haptic } from './haptics'
 import { runAfterHooks, runBeforeHooks } from './plugins/hooks'
 import { recordPlay } from './library'
 import { download, localSource, offline } from './offline'
-import { autoplayRelated, cacheEnabled, persistentQueue, repeatMode, shuffleEnabled } from './preferences'
+import { autoplayRelated, cacheEnabled, persistentQueue, previousRestart, repeatMode, shuffleEnabled } from './preferences'
+import { writeLog } from './plugins/log'
 import { notify } from './snackbar'
 import { readJson, writeJson } from './storage'
 import { artworkHue as themeArtworkHue } from './theme'
@@ -44,6 +45,9 @@ let fetchingMore = false
 let loadToken = 0
 let pendingSeek: number | null = null
 let retriedExpired = false
+/** Times the current song's stream was cut off and loaded again (see the 'ended' handler). */
+let cutOffRetries = 0
+const MAX_CUT_OFF_RETRIES = 3
 /** The stream the current song plays from; null for downloads, local files and nothing loaded. */
 let currentStream: StreamInfo | null = null
 let pausedAt = 0
@@ -87,12 +91,14 @@ async function load(index: number, autoplay = true, reload = false) {
   }
 
   const token = ++loadToken
+  writeLog('noctis', 'info', `Loading "${song.title}" (${index + 1}/${queue.value.length}) from ${song.source ?? 'its service'}${reload ? ' again' : ''}`)
   currentIndex.value = index
   position.value = 0
   duration.value = song.duration ?? 0
   playbackError.value = null
   isLoading.value = true
   retriedExpired = false
+  if (!reload) cutOffRetries = 0
   currentStream = null
   nowPlayingFrom.value = null
   pausedAt = Date.now()
@@ -256,19 +262,37 @@ export function playSongs(songs: Song[], startIndex = 0, title = '') {
   setQueue(songs, Math.min(Math.max(startIndex, 0), songs.length - 1), title)
 }
 
-/** Play one song, followed by its radio. */
+/**
+ * Play one song, followed by its radio. If the song is the one playing, it keeps playing
+ * where it is (restarting it would throw away its progress) and only what follows changes.
+ */
 export async function playSong(song: Song) {
-  setQueue([song], 0, `Radio · ${song.title}`)
+  const current = currentSong.value
+  if (current && current.id === song.id && current.source === song.source && audio.src) {
+    unshuffled = null
+    continuation = {}
+    queueTitle.value = `Radio · ${song.title}`
+    queue.value = [current]
+    currentIndex.value = 0
+  } else {
+    setQueue([song], 0, `Radio · ${song.title}`)
+  }
   const token = loadToken
   try {
     const page = await radioFor(song)
     if (token !== loadToken && currentSong.value?.id !== song.id) return
     const rest = page.songs.filter((item) => item.id !== song.id)
-    queue.value = [...queue.value, ...rest]
+    if (rest.length === 0) {
+      notify(`No radio for "${song.title}"`)
+      return
+    }
+    // Whatever the queue held meanwhile (autoplay may have added songs) is replaced by the radio.
+    queue.value = [...queue.value.slice(0, currentIndex.value + 1), ...rest]
     continuation = { token: page.continuation, playlistId: page.playlistId, source: song.source }
     savePlaybackState()
-  } catch {
-    /* the song still plays on its own */
+  } catch (error) {
+    writeLog('noctis', 'warn', `Couldn't start a radio from "${song.title}":`, error)
+    notify(`Couldn't start a radio from "${song.title}"`)
   }
 }
 
@@ -439,7 +463,10 @@ export function next() {
 }
 
 export function previous() {
-  if (audio.currentTime > 3 || currentIndex.value <= 0) {
+  // Past the configured point (Settings → Playback) Previous starts the song over.
+  const limit = previousRestart.value
+  const restarts = limit === 'off' ? false : audio.currentTime > (limit === 'full' ? 1 : Number(limit))
+  if (restarts || currentIndex.value <= 0) {
     seek(0)
     return
   }
@@ -536,6 +563,19 @@ audio.addEventListener('canplay', () => {
 })
 
 audio.addEventListener('ended', () => {
+  // A stream that stops well before its own length was cut off by the server (a dropped or
+  // throttled connection looks like a clean end to the player). Don't treat it as the song
+  // being over: load the stream again from where it stopped, a few times at most.
+  const song = currentSong.value
+  const length = audio.duration
+  if (song && currentStream && Number.isFinite(length) && length > 0 && audio.currentTime < length - 3) {
+    writeLog('noctis', 'warn', `"${song.title}" ended at ${Math.round(audio.currentTime)}s of ${Math.round(length)}s${cutOffRetries < MAX_CUT_OFF_RETRIES ? '; loading it again' : ''}`)
+    if (cutOffRetries < MAX_CUT_OFF_RETRIES) {
+      cutOffRetries++
+      void reloadCurrent(true)
+      return
+    }
+  }
   if (repeatMode.value === 'one') return
   if (currentIndex.value < queue.value.length - 1 || repeatMode.value === 'all') {
     next()

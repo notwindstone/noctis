@@ -13,7 +13,7 @@ plugin APIs are in [docs/PLUGINS.md](docs/PLUGINS.md) (client) and
 | Client UI | Vue 3.5 + TypeScript 6 (vue-tsc), Vite 8, Material Symbols icons; plain CSS (`src/styles/main.css`), no UI framework | `apps/client` |
 | Android | Capacitor 8 (minSdk 24, target/compile 36), Java in `NoctisPlugin.java` (predictive back, media session, login WebViews, local music via MediaStore + SAF) | `apps/client/android` |
 | Browser | The same Vite build (`bun run build:web` → `apps/client/dist`, relative paths). Served by Noctis servers at `/` (`NOCTIS_WEB_CLIENT`, `apps/server/src/web.ts`; the page auto-connects to its server) or from any static host. YouTube/Spotify plugins need a CORS proxy in browsers (Vite dev proxy in development; a CORS extension otherwise) — deliberately not solved | `apps/client` |
-| Desktop | **Planned: Tauri** (not set up yet) | — |
+| Desktop | Tauri 2 shell around the same Vite build (`bun run dev:desktop`, `bun run build:desktop`; Windows from Linux with `cargo-xwin`, `--target x86_64-pc-windows-msvc` — the MinGW target needs a loose `WebView2Loader.dll` and crashes without it). Requests go through `plugin-http` (`Noctis.libs.http.nativeFetch`/`request`): no CORS, any header. Sign-in windows (`auth.rs`), system notifications, single instance, `window.__TAURI__` for plugins (as in Kaede). Launch options (`launch.rs`): `--no-plugins`, `--new-instance` (own throwaway profile, no hand-over), `--data-dir <path>`; a `portable.txt` or `data/` next to the exe keeps all data there (path from the exe, not the working directory). Windows ≥ 840px wide gets a navigation rail, centred content and a docked mini player (CSS in `main.css`, geometry in `PlayerSheet.vue`). Linux needs webkit2gtk-4.1 + libsoup dev packages. Not done yet: local music folders, tray, auto-update | `apps/client/src-tauri` |
 | iOS | Maybe later (Capacitor) | — |
 | Server | Bun + **Elysia 2.0.0-rc.0** (pinned), PostgreSQL 18 via `Bun.SQL`, Redis 8 via `Bun.RedisClient` (sessions), music-metadata in the local-library plugin | `apps/server` |
 | Shared plugin system | Plain TypeScript (no Vue/Bun APIs), fflate for archives | `packages/plugin-core` |
@@ -29,6 +29,8 @@ bun run dev:server          # server at :4747 (needs PostgreSQL + Redis)
 bun run typecheck           # every workspace
 bun test                    # plugin-core + server; needs NOCTIS_TEST_DATABASE_URL / NOCTIS_TEST_REDIS_URL
 bun run pack-plugin examples/plugins/<name>     # → dist-plugins/<name>.noctis
+bun run dev:desktop         # Tauri window around the dev server (needs Rust + system webview libs)
+bun run build:desktop       # installers in apps/client/src-tauri/target/release/bundle
 # Android APK:
 cd apps/client && bunx vite build && bunx cap sync android && cd android && ./gradlew assembleDebug --offline
 ```

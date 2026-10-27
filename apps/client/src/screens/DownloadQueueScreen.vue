@@ -50,7 +50,7 @@ const summary = computed(() => {
       <h2 class="downloads-heading type-title-small">Downloading now</h2>
       <div class="downloads-list">
         <div v-for="song in running" :key="song.id" class="item-row downloads-row">
-          <span class="item-row-art"><C.Thumb :src="song.thumbnail" :size="48" shape="rounded" icon="music" /></span>
+          <span class="item-row-art"><C.Thumb :src="song.thumbnail" :size="52" shape="rounded" icon="music" /></span>
           <span class="item-row-text">
             <span class="item-row-title type-body-large">{{ song.title }}</span>
             <span class="item-row-subtitle type-body-medium"><span>{{ artistNames(song.artists) }}</span></span>
@@ -67,7 +67,7 @@ const summary = computed(() => {
       <h2 class="downloads-heading type-title-small">Waiting · {{ waiting.length }}</h2>
       <div class="downloads-list">
         <div v-for="song in waiting" :key="song.id" class="item-row downloads-row">
-          <span class="item-row-art"><C.Thumb :src="song.thumbnail" :size="48" shape="rounded" icon="music" /></span>
+          <span class="item-row-art"><C.Thumb :src="song.thumbnail" :size="52" shape="rounded" icon="music" /></span>
           <span class="item-row-text">
             <span class="item-row-title type-body-large">{{ song.title }}</span>
             <span class="item-row-subtitle type-body-medium"><span>{{ artistNames(song.artists) }}</span></span>
@@ -86,7 +86,7 @@ const summary = computed(() => {
       </h2>
       <div class="downloads-list">
         <div v-for="{ song, message } in failures" :key="song.id" class="item-row downloads-row">
-          <span class="item-row-art"><C.Thumb :src="song.thumbnail" :size="48" shape="rounded" icon="music" /></span>
+          <span class="item-row-art"><C.Thumb :src="song.thumbnail" :size="52" shape="rounded" icon="music" /></span>
           <span class="item-row-text">
             <span class="item-row-title type-body-large">{{ song.title }}</span>
             <span class="item-row-subtitle type-body-medium"><span>{{ message }}</span></span>

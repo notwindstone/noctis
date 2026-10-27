@@ -8,8 +8,8 @@ import { confirm } from '../ui'
 
 /**
  * Settings → Accounts: every account, the same way. Each shows who's signed in, the
- * service's sign-in methods while signed out, "Sign out", and the service's own
- * settings page if it has more. Services describe this in `account` (signInMethods,
+ * service's own settings page if it has one (first, so it's easy to find), its sign-in
+ * methods while signed out, and "Sign out". Services describe this in `account` (signInMethods,
  * signOut); nothing here is service-specific.
  */
 
@@ -37,6 +37,20 @@ function blocksFor(id: string, entry: AccountEntry): SettingsBlock[] {
     }),
   )
   const rows: SettingsRowDef[] = [
+    {
+      id: 'settings',
+      icon: 'settings',
+      description: 'Playback, content and everything else about this service',
+      // The name can change after the page is built (a server's, once it answers).
+      get title() {
+        return `${entry.name} settings`
+      },
+      chevron: true,
+      get hidden() {
+        return !account.section || account.section === ACCOUNTS_SECTION
+      },
+      onClick: () => void navigate({ name: 'settings-page', page: account.section! }),
+    },
     ...methods,
     {
       id: 'no-methods',
@@ -68,19 +82,6 @@ function blocksFor(id: string, entry: AccountEntry): SettingsBlock[] {
           },
         })
       },
-    },
-    {
-      id: 'settings',
-      icon: 'settings',
-      // The name can change after the page is built (a server's, once it answers).
-      get title() {
-        return `${entry.name} settings`
-      },
-      chevron: true,
-      get hidden() {
-        return !account.section || account.section === ACCOUNTS_SECTION
-      },
-      onClick: () => void navigate({ name: 'settings-page', page: account.section! }),
     },
   ]
   return [

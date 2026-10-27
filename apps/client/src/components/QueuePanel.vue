@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { C } from '../plugins/components'
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { formatTime } from '../format'
 import { haptic, tap } from '../haptics'
 import { currentIndex, isPlaying, jumpTo, moveInQueue, queue, queueTitle, removeFromQueue } from '../player'
@@ -19,8 +19,14 @@ const panelEl = ref<HTMLElement | null>(null)
 const settling = ref(false)
 
 // Drag the panel down to dismiss; touches on the reorder handles never move it.
+/** The desktop layout puts the queue beside the player: it slides in from the right and is pushed back out. */
+const WIDE = '(min-width: 900px) and (min-aspect-ratio: 6 / 5)'
+const sideways = () => window.matchMedia(WIDE).matches
+
 const sheet = useSheetDrag(panelEl, {
   onClose: () => emit('close'),
+  axis: () => (sideways() ? 'x' : 'y'),
+  handleSelector: '.sheet-handle, .queue-grip',
   scrollSelector: '.queue-list',
   ignoreSelector: '.queue-handle',
 })
@@ -74,6 +80,17 @@ const dragOffset = ref(0)
 let dragStartY = 0
 let rowHeight = 64
 let lastTarget = 0
+
+/** Clicking outside the side panel closes it, like the player's own sheets (not the chip that toggles it). */
+function onOutsidePointerDown(event: PointerEvent) {
+  if (!sideways() || sheet.dragging.value) return
+  const target = event.target as Element | null
+  if (!target || panelEl.value?.contains(target) || target.closest('.full-player-actions, .dialog-root, .sheet-root')) return
+  emit('close')
+}
+
+onMounted(() => document.addEventListener('pointerdown', onOutsidePointerDown, true))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutsidePointerDown, true))
 
 onMounted(async () => {
   await nextTick()
@@ -167,13 +184,14 @@ function play(index: number) {
     ref="panelEl"
     class="queue-panel"
     :class="{ 'is-dragging': sheet.dragging.value }"
-    :style="{ transform: sheet.offset.value > 0 ? `translate3d(0, ${sheet.offset.value}px, 0)` : undefined }"
+    :style="{ transform: sheet.offset.value > 0 ? (sideways() ? `translate3d(${sheet.offset.value}px, 0, 0)` : `translate3d(0, ${sheet.offset.value}px, 0)`) : undefined }"
     aria-label="Up next"
     @touchstart.passive="sheet.onTouchStart"
     @touchend="sheet.onTouchEnd"
     @touchcancel="sheet.onTouchEnd"
     @pointerdown="sheet.onPointerDown"
   >
+    <span class="queue-grip" aria-hidden="true" />
     <header class="queue-header">
       <span class="sheet-handle" aria-hidden="true" />
       <div class="queue-title">

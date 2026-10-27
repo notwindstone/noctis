@@ -6,7 +6,7 @@ import type { BrowseTarget, Item } from './models'
 
 export type TabId = 'home' | 'library' | 'settings'
 
-export type CollectionId = 'liked' | 'downloads' | 'cached' | 'history'
+export type CollectionId = 'liked' | 'downloads' | 'cached' | 'history' | 'local'
 /** Settings section id: built-in ('account', 'appearance', …) or added by a plugin. */
 export type SettingsPage = string
 

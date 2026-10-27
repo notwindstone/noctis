@@ -201,12 +201,17 @@ export function deviceOption(song: Song): PlaybackOption | null {
   }
 }
 
-/** Every way to play `song`, the default first. */
-export async function playbackOptions(song: Song): Promise<PlaybackOption[]> {
+/** The song's own option and its copy on this device: what's known without asking providers. */
+function baseOptions(song: Song): PlaybackOption[] {
   const options: PlaybackOption[] = [defaultOption(song)]
   const device = deviceOption(song)
   if (device) options.push(device)
-  const lists = await Promise.all([...providers].map((provider) => provider(song).catch(() => [])))
+  return options
+}
+
+/** `base` plus what providers have answered so far, as the song's options. */
+function mergeOptions(base: PlaybackOption[], lists: PlaybackOption[][]): PlaybackOption[] {
+  const options = [...base]
   const seen = new Set(options.map((option) => option.id))
   // A provider may say more about the default (the server: "no audio here").
   const flat = lists.flat().filter((option) => {
@@ -221,6 +226,28 @@ export async function playbackOptions(song: Song): Promise<PlaybackOption[]> {
     options.push(option)
   }
   return options
+}
+
+/**
+ * Every way to play `song`, the default first. `onProgress` is called with the list so
+ * far each time a provider answers (a slow one doesn't hold back the rest), and `pending`
+ * says how many haven't.
+ */
+export async function playbackOptions(song: Song, onProgress?: (options: PlaybackOption[], pending: number) => void): Promise<PlaybackOption[]> {
+  const base = baseOptions(song)
+  const running = [...providers]
+  // One slot per provider, so the order doesn't depend on who answers first.
+  const answered: PlaybackOption[][] = running.map(() => [])
+  let pending = running.length
+  onProgress?.(mergeOptions(base, answered), pending)
+  await Promise.all(
+    running.map(async (provider, index) => {
+      answered[index] = await provider(song).catch(() => [])
+      pending--
+      onProgress?.(mergeOptions(base, answered), pending)
+    }),
+  )
+  return mergeOptions(base, answered)
 }
 
 /**

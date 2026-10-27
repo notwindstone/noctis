@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { haptic } from '../haptics'
 import type { IconName } from '../icons'
 import { selectTab, tab, type TabId } from '../navigation'
+import { t } from '../i18n'
 import { playerExpansion } from '../ui'
 
 const items: { id: TabId; label: string; icon: IconName }[] = [
@@ -37,7 +38,7 @@ function select(id: TabId) {
       <span class="bottom-nav-indicator">
         <C.MIcon :name="item.icon" :filled="tab === item.id" />
       </span>
-      <span class="bottom-nav-label">{{ item.label }}</span>
+      <span class="bottom-nav-label">{{ t(item.label) }}</span>
     </button>
   </nav>
 </template>

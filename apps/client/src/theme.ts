@@ -2,7 +2,7 @@ import { Capacitor } from '@capacitor/core'
 import { StatusBar, Style } from '@capacitor/status-bar'
 import { computed, ref, watchEffect } from 'vue'
 import { hasNoctisPlugin, Noctis } from './native'
-import { pureBlack } from './preferences'
+import { motion, pureBlack } from './preferences'
 import { oneOf, persisted } from './storage'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
@@ -318,6 +318,8 @@ let initialized = false
 export function initTheme() {
   if (initialized) return
   initialized = true
+
+  watchEffect(() => (document.documentElement.dataset.motion = motion.value))
 
   window
     .matchMedia('(prefers-color-scheme: dark)')

@@ -125,6 +125,12 @@ export const Noctis = registerPlugin<NoctisPlugin>('Noctis')
 export const isNative = Capacitor.isNativePlatform()
 export const hasNoctisPlugin = isNative && Capacitor.isPluginAvailable('Noctis')
 
-/** Which app this is, for plugins' "platforms" (metadata.json). Desktop means Tauri, once it exists. */
+/** Which app this is, for plugins' "platforms" (metadata.json). Desktop means the Tauri app. */
 export const platform: PluginPlatform =
   Capacitor.getPlatform() === 'android' ? 'android' : Capacitor.getPlatform() === 'ios' ? 'ios' : '__TAURI_INTERNALS__' in window ? 'desktop' : 'web'
+
+/**
+ * The Tauri app: a webview like the browser's, but with requests that skip CORS
+ * (`nativeFetch` in http.ts) and a few windows of its own (sign-in pages).
+ */
+export const isDesktop = platform === 'desktop'

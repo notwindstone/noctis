@@ -102,8 +102,7 @@ const dropping = ref(false)
 
 function travelDistance(): number {
   const height = sheet.value?.clientHeight ?? window.innerHeight
-  const nav = document.querySelector('.bottom-nav')?.getBoundingClientRect().height ?? 80
-  return Math.max(200, height - nav - 72)
+  return Math.max(200, height - viewport.value.nav - 72)
 }
 
 function onPointerDown(event: PointerEvent) {
@@ -274,17 +273,36 @@ const MINI_GAP = 8
 const MINI_SIDE = 10
 const MINI_RADIUS = 20
 
-/** Viewport and bottom bar size, measured rather than derived from CSS. */
-const viewport = ref({ width: window.innerWidth, height: window.innerHeight, nav: 80 })
+/** The desktop layout (main.css, same breakpoint): a navigation rail instead of a bottom bar. */
+const WIDE_QUERY = '(min-width: 840px)'
+const MINI_MAX_WIDTH = 680
+const MINI_BOTTOM_WIDE = 16
+
+/** Viewport, the bottom bar's height and the rail's width, measured rather than derived from CSS. */
+const viewport = ref({ width: window.innerWidth, height: window.innerHeight, nav: 80, rail: 0 })
 
 function measure() {
   const root = sheet.value
+  const wide = window.matchMedia(WIDE_QUERY).matches
+  const bar = document.querySelector('.bottom-nav')?.getBoundingClientRect()
   viewport.value = {
     width: root?.clientWidth || window.innerWidth,
     height: root?.clientHeight || window.innerHeight,
-    nav: document.querySelector('.bottom-nav')?.getBoundingClientRect().height ?? 80,
+    nav: wide ? 0 : (bar?.height ?? 80),
+    rail: wide ? (bar?.width ?? 88) : 0,
   }
 }
+
+/**
+ * Where the mini player rests: its left edge, width and distance from the bottom. On a
+ * phone it floats above the bar; on a desktop it's centred in the content next to the rail.
+ */
+const miniBox = computed(() => {
+  const { width: W, nav, rail } = viewport.value
+  if (rail === 0) return { left: MINI_SIDE, width: W - 2 * MINI_SIDE, bottom: nav + MINI_GAP }
+  const width = Math.min(MINI_MAX_WIDTH, W - rail - 32)
+  return { left: rail + (W - rail - width) / 2, width, bottom: MINI_BOTTOM_WIDE }
+})
 
 let resizeObserver: ResizeObserver | null = null
 onMounted(() => window.addEventListener('resize', measure))
@@ -304,14 +322,17 @@ const e = computed(() => playerExpansion.value)
 
 /** The sheet's on-screen rectangle for the current expansion (and back-gesture pull). */
 const rect = computed(() => {
-  const { width: W, height: H, nav } = viewport.value
+  const { width: W, height: H } = viewport.value
   const inv = 1 - e.value
   const pull = backPull.value
-  const miniTop = H - nav - MINI_GAP - MINI_HEIGHT
+  const mini = miniBox.value
+  const miniTop = H - mini.bottom - MINI_HEIGHT
 
-  const x = MINI_SIDE * inv + 14 * pull
+  // Both edges move from the mini player's to the window's; a back gesture pulls them in.
+  const x = mini.left * inv + 14 * pull
+  const right = W - (W - (mini.left + mini.width)) * inv - 14 * pull
   const y = miniTop * inv
-  const width = Math.max(1, W - 2 * x)
+  const width = Math.max(1, right - x)
   const height = Math.max(1, H - inv * (H - MINI_HEIGHT))
   return {
     x,
@@ -361,10 +382,12 @@ const backdropStyle = computed(() => {
 const tintStyle = computed(() => ({ opacity: String(e.value) }))
 
 const miniStyle = computed(() => ({
+  // As wide as the frame it grows into, so dragging it up doesn't leave it narrower than the sheet.
+  width: `${viewport.value.width * rect.value.sx}px`,
   opacity: String(Math.max(0, 1 - e.value * 3)),
   pointerEvents: e.value > 0.3 ? ('none' as const) : undefined,
   visibility: e.value > 0.4 ? ('hidden' as const) : undefined,
-  transform: `translate3d(${MINI_SIDE * (1 - e.value) + skipOffset.value * 0.6}px, ${rect.value.y}px, 0)`,
+  transform: `translate3d(${rect.value.x + skipOffset.value * 0.6}px, ${rect.value.y}px, 0)`,
 }))
 
 const fullStyle = computed(() => ({

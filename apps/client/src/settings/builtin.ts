@@ -1,4 +1,3 @@
-import { Capacitor } from '@capacitor/core'
 import { version as vueVersion } from 'vue'
 import AboutHero from '../components/settings/AboutHero.vue'
 import SeedSwatches from '../components/settings/SeedSwatches.vue'
@@ -18,16 +17,21 @@ import {
   contentLanguage,
   hapticsEnabled,
   maxCacheMb,
+  minimizeToTray,
   keepAwake,
   mediaControls,
   pauseHistory,
   persistentQueue,
+  motion,
   playerArtworkColors,
+  previousRestart,
   pureBlack,
   type AudioQuality,
+  type PreviousRestart,
 } from '../preferences'
 import { colorSource, effectiveColorSource, isDark, mode, supportsSystemColor, type ColorSource, type ThemeMode } from '../theme'
-import { hasNoctisPlugin } from '../native'
+import { language, languageName, languageOptions, languagePreference, t } from '../i18n'
+import { hasNoctisPlugin, isDesktop, platform } from '../native'
 import { confirm, showPlayFrom } from '../ui'
 import { activeService, activeServiceId, services } from '../services/registry'
 
@@ -57,6 +61,64 @@ const THEME_LABELS: Record<ThemeMode, string> = { system: 'Follow system', light
 const SOURCE_LABELS: Record<ColorSource, string> = { system: 'Wallpaper', artwork: 'Album art', seed: 'Preset colour' }
 
 const appearanceBlocks: SettingsBlock[] = [
+  group('app-language', [
+    {
+      id: 'app-language',
+      icon: 'translate',
+      get title() {
+        return t('Language')
+      },
+      description: 'What Noctis itself is written in',
+      select: {
+        title: 'Language',
+        get options() {
+          return languageOptions.value
+        },
+        get value() {
+          return languagePreference.value
+        },
+        set(value) {
+          languagePreference.value = value
+        },
+      },
+      get value() {
+        return languagePreference.value === 'system' ? `${t('Use system language')} · ${languageName(language.value)}` : undefined
+      },
+    },
+  ]),
+  group('tray', [
+    {
+      id: 'minimize-to-tray',
+      icon: 'tune',
+      title: 'Minimize to tray',
+      description: 'Closing the window keeps Noctis (and the music) running in the system tray',
+      toggle: bool(minimizeToTray),
+    },
+  ], {
+    get hidden() {
+      return !isDesktop
+    },
+  }),
+  group('motion', [
+    {
+      id: 'motion',
+      icon: 'tune',
+      title: 'Animations',
+      description: 'Some systems switch animations off for every app; "Always on" keeps Noctis\'s',
+      select: {
+        options: [
+          { value: 'system', label: 'Follow the system' },
+          { value: 'full', label: 'Always on' },
+        ],
+        get value() {
+          return motion.value
+        },
+        set(value) {
+          motion.value = value as 'system' | 'full'
+        },
+      },
+    },
+  ]),
   group('theme', [
     {
       id: 'theme',
@@ -163,6 +225,28 @@ const playbackBlocks: SettingsBlock[] = [
         },
         set(value) {
           audioQuality.value = value as AudioQuality
+        },
+      },
+    },
+    {
+      id: 'previous-restart',
+      icon: 'previous',
+      title: 'Previous restarts the song',
+      description: 'Pressing Previous after this long starts the song over; before it, goes back a song',
+      select: {
+        title: 'Previous restarts the song',
+        options: [
+          { value: 'off', label: 'Never', description: 'Previous always goes back a song' },
+          { value: '3', label: 'After 3 seconds' },
+          { value: '5', label: 'After 5 seconds' },
+          { value: '10', label: 'After 10 seconds' },
+          { value: 'full', label: 'Always', description: 'Goes back a song only in the first second' },
+        ],
+        get value() {
+          return previousRestart.value
+        },
+        set(value) {
+          previousRestart.value = value as PreviousRestart
         },
       },
     },
@@ -286,7 +370,9 @@ const contentBlocks: SettingsBlock[] = [
     {
       id: 'language',
       icon: 'language',
-      title: 'Language',
+      get title() {
+        return t('Content language')
+      },
       select: {
         title: 'Content language',
         options: options(LANGUAGES),
@@ -452,14 +538,15 @@ const storageBlocks: SettingsBlock[] = [
  * About
  * ------------------------------------------------------------------ */
 
-const platform = Capacitor.getPlatform()
+/** What wraps the web app on each platform; the browser has no shell. */
+const shell: Partial<Record<typeof platform, string>> = { android: 'Capacitor 8', ios: 'Capacitor 8', desktop: 'Tauri 2' }
 const platformLabel = platform === 'web' ? 'Web preview' : platform.charAt(0).toUpperCase() + platform.slice(1)
 
 const aboutBlocks: SettingsBlock[] = [
   { id: 'hero', type: 'component', component: AboutHero },
   group('about', [
     { id: 'version', icon: 'info', title: 'Version', value: '0.2.0' },
-    { id: 'built-with', icon: 'code', title: 'Built with', value: `Vue ${vueVersion} · Capacitor 8` },
+    { id: 'built-with', icon: 'code', title: 'Built with', value: `Vue ${vueVersion}${shell[platform] ? ` · ${shell[platform]}` : ''}` },
     { id: 'platform', icon: 'tune', title: 'Platform', value: platformLabel },
   ]),
   { id: 'note', type: 'note', text: 'Noctis is not affiliated with YouTube or Google. Inspired by InnerTune and ArchiveTune.' },
@@ -467,20 +554,20 @@ const aboutBlocks: SettingsBlock[] = [
 
 export function defineBuiltInSettings() {
   defineSection(
-    { id: 'appearance', icon: 'palette', title: 'Appearance', description: 'Theme, dynamic colour, player' },
+    { id: 'appearance', icon: 'palette', get title() { return t('Appearance') }, description: 'Language, theme, dynamic colour, player' },
     appearanceBlocks,
     'noctis',
   )
   defineSection(
-    { id: 'playback', icon: 'equalizer', title: 'Playback', description: 'Audio quality, queue, autoplay' },
+    { id: 'playback', icon: 'equalizer', get title() { return t('Playback') }, description: 'Audio quality, queue, autoplay' },
     playbackBlocks,
     'noctis',
   )
-  defineSection({ id: 'content', icon: 'language', title: 'Content', description: 'Service, language and region' }, contentBlocks, 'noctis')
+  defineSection({ id: 'content', icon: 'language', get title() { return t('Content') }, description: 'Service, content language and region' }, contentBlocks, 'noctis')
   defineSection(
-    { id: 'storage', icon: 'storage', title: 'Storage', description: 'Downloads, cache and history' },
+    { id: 'storage', icon: 'storage', get title() { return t('Storage') }, description: 'Downloads, cache and history' },
     storageBlocks,
     'noctis',
   )
-  defineSection({ id: 'about', icon: 'info', title: 'About', description: 'Version and credits' }, aboutBlocks, 'noctis')
+  defineSection({ id: 'about', icon: 'info', get title() { return t('About') }, description: 'Version and credits' }, aboutBlocks, 'noctis')
 }

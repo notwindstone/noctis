@@ -1,5 +1,6 @@
 import { CapacitorHttp } from '@capacitor/core'
-import { isNative } from './native'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
+import { isDesktop, isNative } from './native'
 
 export interface HttpResponse {
   status: number
@@ -12,9 +13,15 @@ export interface HttpResponse {
 const PROXIED = /^https:\/\/(api-partner\.spotify\.com|clienttoken\.spotify\.com|open\.spotify\.com|open\.spotifycdn\.com|api-v2\.soundcloud\.com|secure\.soundcloud\.com|soundcloud\.com|a-v2\.sndcdn\.com|tracks\.monochrome\.st|monochrome\.st|monochrome-api\.samidy\.com)\//
 
 /**
- * An HTTP request without CORS: Capacitor's native HTTP on a device; in the browser,
- * plain fetch (through the dev proxy for hosts that need it). For plugins talking to
- * services that don't allow cross-origin requests.
+ * fetch() without CORS or forbidden headers (Cookie, Origin, User-Agent…) on desktop,
+ * where the request is made by the app's Rust side; plain fetch elsewhere.
+ */
+export const nativeFetch: typeof fetch = (input, init) => (isDesktop ? tauriFetch(input, init) : fetch(input, init))
+
+/**
+ * An HTTP request without CORS: Capacitor's native HTTP on a device, the app's own HTTP
+ * client on desktop; in the browser, plain fetch (through the dev proxy for hosts that
+ * need it). For plugins talking to services that don't allow cross-origin requests.
  */
 export async function request(
   url: string,
@@ -45,8 +52,8 @@ export async function request(
     return { status: response.status, headers: response.headers, data }
   }
 
-  const target = PROXIED.test(url) ? url.replace(/^https:\/\//, '/__yt/') : url
-  const response = await fetch(target, { method, headers, body: body as string | undefined })
+  const target = !isDesktop && PROXIED.test(url) ? url.replace(/^https:\/\//, '/__yt/') : url
+  const response = await nativeFetch(target, { method, headers, body: body as string | undefined })
   const text = await response.text()
   let data: unknown = text
   try {
@@ -80,7 +87,7 @@ export async function fetchRange(
     return { status: response.status, base64: typeof response.data === 'string' ? response.data : undefined }
   }
 
-  const response = await fetch(url, { headers: { range } })
+  const response = await nativeFetch(url, { headers: isDesktop && /^https?:/.test(url) ? { ...headers, range } : { range } })
   // blob: and data: URLs ignore Range and answer 200 with everything.
   if (response.ok && response.status === 200 && !/^https?:/.test(url)) {
     const bytes = await response.arrayBuffer()

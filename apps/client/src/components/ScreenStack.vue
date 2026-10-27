@@ -50,7 +50,7 @@ function layer(key: number): HTMLElement | null {
   return root.value?.querySelector<HTMLElement>(`[data-screen-key="${key}"]`) ?? null
 }
 
-const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const reducedMotion = () => document.documentElement.dataset.motion !== 'full' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const EMPHASIZED_DECEL = 'cubic-bezier(0.05, 0.7, 0.1, 1)'
 const EMPHASIZED_ACCEL = 'cubic-bezier(0.3, 0, 0.8, 0.15)'
@@ -199,12 +199,13 @@ const animator: StackAnimator = {
     const oldEl = layer(from)
     const newEl = layer(to)
     await Promise.all([
-      animate(oldEl, [{ opacity: 1 }, { opacity: 0 }], { duration: 90, easing: 'linear' }),
+      // The two overlap a little, so there's never a frame with neither on screen.
+      animate(oldEl, [{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: 'linear' }),
       animate(newEl, [
-        { opacity: 0, transform: 'scale(0.94)' },
-        { opacity: 0, transform: 'scale(0.94)', offset: 0.3 },
+        { opacity: 0, transform: 'scale(0.96)' },
+        { opacity: 0, transform: 'scale(0.96)', offset: 0.15 },
         { opacity: 1, transform: 'none' },
-      ], { duration: 300, easing: STANDARD }),
+      ], { duration: 240, easing: STANDARD }),
     ])
   },
 

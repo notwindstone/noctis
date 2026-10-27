@@ -5,7 +5,7 @@ import { writeLog } from './log'
 import { setServicesReady } from '../services/registry'
 import { noctisNamespace, type NoctisNamespace } from './namespace'
 import { PluginAPI } from './plugin-api'
-import { installedPlugins, isEnabled, pluginsActive, setEnabledFlag, type InstalledPlugin } from './store'
+import { forgetPluginConsent, installedPlugins, isEnabled, pluginsActive, setEnabledFlag, type InstalledPlugin } from './store'
 
 /**
  * Runs plugins. There's no sandbox: a plugin's `index.js` is the body of an async
@@ -103,6 +103,9 @@ export async function disablePlugin(plugin: InstalledPlugin) {
 export async function removePlugin(plugin: InstalledPlugin) {
   await disablePlugin(plugin)
   installedPlugins.value = installedPlugins.value.filter((item) => item.id !== plugin.id)
+  executed.delete(plugin.sha256)
+  delete runStates[plugin.sha256]
+  forgetPluginConsent(plugin.sha256)
 }
 
 /**
@@ -111,8 +114,12 @@ export async function removePlugin(plugin: InstalledPlugin) {
  * start once the dependency is fixed). Called once at startup; content requests wait
  * for it (see servicesReady).
  */
-export async function startPlugins() {
+export async function startPlugins(options: { skip?: boolean } = {}) {
   try {
+    if (options.skip) {
+      writeLog('noctis', 'info', 'Started without plugins (--no-plugins); nothing was switched off for good')
+      return
+    }
     if (!pluginsActive.value) {
       writeLog('noctis', 'info', 'Plugins are switched off; none were started')
       return

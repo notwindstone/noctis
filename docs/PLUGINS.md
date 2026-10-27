@@ -61,6 +61,8 @@ type Metadata = {
 
 `platforms` says which apps a plugin works in. The Spotify example lists `["android"]`
 (it needs the app's hidden WebView); most plugins can leave it out, or say `"*"`.
+On `desktop` (the Tauri app) plugins get `Noctis.libs.http.nativeFetch`, a `fetch` without CORS that can set
+Cookie, Origin and User-Agent, plus `Noctis.packages.tauri` and `window.__TAURI__`.
 Noctis refuses to install a plugin made for another platform, and a Noctis server doesn't
 require one from clients it can't run on.
 
@@ -229,8 +231,9 @@ account, region…): screens refetch and cached pages are dropped when it change
 Accounts are managed in one place, **Settings → Accounts**: every service's account and
 the connected server's. A service doesn't add its own sign-in buttons. It lists
 `signInMethods` instead (`{ id, label, description?, icon?, hidden?, run() }`, main one
-first) and a `signOut()`; Accounts shows them, asks before signing out, and links to the
-service's `section` for its other settings. `Noctis.libs.accounts.registerAccount(id, { name,
+first) and a `signOut()`; Accounts shows them, asks before signing out, and puts a link to
+the service's `section` right under its name. Don't add an "Account" row to that section:
+Accounts is the one place for it (the section's `description` can say who's signed in). `Noctis.libs.accounts.registerAccount(id, { name,
 account })` adds an account that isn't a service's (the server's, before you sign in).
 
 Downloads fetch `contentLength` bytes in ranges from `fetchUrl ?? url` (with
@@ -316,13 +319,15 @@ await api.getAlbum(id, 'spotify')
 
 ## Hooks
 
-Hooks intercept named points in the app, Kaede-style. There are only two: services do
+Hooks intercept named points in the app, Kaede-style. There are only four: services do
 the rest.
 
 | Hook | `before` receives | `after` receives |
 | --- | --- | --- |
 | `onRequest` | `{ service, endpoint, input }` for **every** service call (`endpoint` is `'albums.get'`, `'streams.resolve'`, …) | `{ service, endpoint, input, result }` |
 | `onPlay` | `{ song, index }` before a song loads — `stop` skips it | `{ song, index }` once it plays |
+| `onLanguageChange` | — | `{ language, previous }` after the app's language changed (see [Language](#language)) |
+| `onTrayClick` | `{}` when the desktop tray icon is left-clicked — `stop` keeps the window as it is (the plugin handles the click) | — |
 
 - a **`before`** hook may change what it receives — for `onRequest`, rerouting the call
   to another `service`, or rewriting `input`. Returning `{ status: 'stop', response }`
@@ -346,6 +351,36 @@ Plugin.subscribe('hook::onRequest::before', async (request) => {
   return { status: 'stop', response: await Noctis.api.request('youtube-music', 'streams.resolve', { ...request.input, song: match }) }
 })
 ```
+
+## Language
+
+`Noctis.libs.i18n` tells a plugin which language the app is in (Settings → Appearance →
+Language: "Use system language", or one of the app's languages). It's the app's own
+language, separate from the content language services are asked for. Translating the
+plugin is up to it: use whichever i18n library you like.
+
+```js
+const { language, languageName } = Noctis.libs.i18n
+language.value // "en", "ru"… (a ref)
+languageName('ru') // "Русский"
+
+// React to changes with a hook, or `watch(language, …)`:
+Plugin.subscribe('hook::onLanguageChange::after', ({ language, previous }) => i18n.changeLanguage(language))
+```
+
+## Tray (desktop)
+
+In the desktop app, Settings → Appearance → "Minimize to tray" keeps Noctis in the system
+tray when its window is closed. Plugins can add items to the tray menu and take over left
+clicks on the icon:
+
+```js
+const remove = Noctis.libs.tray.registerTrayItem({ id: 'my-action', label: 'Do my thing', onClick: () => doIt() })
+// Take the click for yourself (the window stays hidden):
+Plugin.subscribe('hook::onTrayClick::before', () => ({ status: 'stop' }))
+```
+
+Call `remove()` when the plugin is disabled. Items only show while "Minimize to tray" is on.
 
 ## Play from
 
@@ -522,7 +557,10 @@ Plugin.defineSection({ id: 'my-plugin', icon: 'plugin', title: 'My plugin' }, [
 ])
 ```
 
-The section appears in Settings (before About) with the app's own rows, switches and
+The section is listed under **Settings → Plugins** ("Plugin settings"), so Noctis's own
+settings stay easy to find. A plugin that really belongs next to them (a service, say)
+must ask for it with `placement: 'main'` in the section, and then it appears on the
+Settings home before About. Either way the page has the app's own rows, switches and
 choice dialogs. Row fields: `id`, `title`, `icon`, `description`, `value`, `chevron`,
 `destructive`, `disabled`, `hidden`, `onClick`, `toggle` (`{ value, set }`) and
 `select` (`{ title?, options, value, set }`). Blocks are `group` (rows), `header`,
@@ -543,4 +581,4 @@ rows into them.
 | `hooks`, `hookNames`, `withHooks` | Hooks |
 | `icons`, `registerIcon` | Icons |
 | `log`, `writeLog` | The plugin log |
-| `libs` | `auth`, `player`, `navigation`, `library`, `offline`, `notifications`, `session`, `ui`, `snackbar`, `theme`, `preferences`, `http`, `stream`, `models`, `thumbnails`, `haptics`, `back` |
+| `libs` | `auth`, `player`, `navigation`, `library`, `offline`, `notifications`, `session`, `ui`, `snackbar`, `theme`, `preferences`, `http`, `stream`, `models`, `thumbnails`, `haptics`, `i18n`, `tray`, `back` |

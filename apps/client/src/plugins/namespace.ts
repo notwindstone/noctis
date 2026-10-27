@@ -1,9 +1,12 @@
 import * as Capacitor from '@capacitor/core'
+import * as TauriCore from '@tauri-apps/api/core'
+import * as TauriHttp from '@tauri-apps/plugin-http'
 import * as Vue from 'vue'
 import * as accounts from '../accounts'
 import * as auth from '../auth'
 import * as back from '../back'
 import * as haptics from '../haptics'
+import * as i18n from '../i18n'
 import { registerIcon, ICONS } from '../icons'
 import * as library from '../library'
 import * as native from '../native'
@@ -19,6 +22,7 @@ import * as preferences from '../preferences'
 import * as snackbar from '../snackbar'
 import * as storage from '../storage'
 import * as theme from '../theme'
+import * as tray from '../tray'
 import * as ui from '../ui'
 import * as http from '../http'
 import * as models from '../models'
@@ -51,10 +55,11 @@ function build() {
   return {
     version: '0.2.0',
     /**
-     * The app's own Vue (so plugin components share its reactivity) and Capacitor (so
-     * native plugins like CapacitorHttp are the app's instances).
+     * The app's own Vue (so plugin components share its reactivity), Capacitor (so
+     * native plugins like CapacitorHttp are the app's instances) and Tauri's API (desktop
+     * only: `window.__TAURI__` has the rest of it; calling it elsewhere fails).
      */
-    packages: { vue: Vue, capacitor: Capacitor },
+    packages: { vue: Vue, capacitor: Capacitor, tauri: { core: TauriCore, http: TauriHttp } },
 
     /* Component registry */
     C,
@@ -106,6 +111,8 @@ function build() {
       auth,
       back,
       haptics,
+      /** The app's language (a ref: "en", "ru"…) and its name; changes also fire the onLanguageChange hook. */
+      i18n: { language: i18n.language, languageName: i18n.languageName },
       http,
       library,
       matching,
@@ -124,6 +131,8 @@ function build() {
       storage,
       stream,
       theme,
+      /** Desktop: `registerTrayItem({ id, label, onClick })`; the `onTrayClick` hook handles clicks on the icon. */
+      tray,
       thumbnails,
       ui,
     },

@@ -11,7 +11,7 @@ import {
 import { computed, ref, shallowRef } from 'vue'
 import { request as httpRequest, type HttpResponse } from './http'
 import { platform } from './native'
-import { canUseServer, credentials, guestAccess, hasExtension, subsonic, tokenCredentials } from './subsonic/client'
+import { canUseServer, connectionEpoch, credentials, guestAccess, hasExtension, setNetworkErrorHandler, subsonic, tokenCredentials } from './subsonic/client'
 import { attachServerService, detachServerService } from './subsonic/service'
 import { downloadBytes, installFromArchive, PluginInstallError, type InstallResult } from './plugins/install'
 import { writeLog } from './plugins/log'
@@ -63,6 +63,9 @@ export class ServerError extends Error {
   }
 }
 
+/** A proxy in front of the server answering for it while it's down or restarting. */
+const GATEWAY_ERRORS = [502, 503, 504]
+
 /** Plugins this client runs, as the server sees them. */
 export function clientPlugins(): ClientPlugin[] {
   // Starting counts: a plugin's first requests happen while its code runs.
@@ -109,8 +112,10 @@ export async function serverRequest<T = unknown>(path: string, init: { method?: 
       },
     })
   } catch (error) {
+    lostServer()
     throw new ServerError(`Couldn't reach the server: ${error instanceof Error ? error.message : String(error)}`, 0)
   }
+  if (GATEWAY_ERRORS.includes(response.status)) lostServer()
   if (response.status === 428) {
     handshake.value = response.data as HandshakeResponse
     serverStatus.value = 'needs-plugins'
@@ -134,6 +139,66 @@ async function probeOpenSubsonic(base: string): Promise<string | null> {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * Reconnecting
+ * ------------------------------------------------------------------ */
+
+/** Seconds between attempts: 5, 10, 20, 40, then every minute. */
+const RETRY_STEPS = [5, 10, 20, 40, 60]
+let retryTimer: ReturnType<typeof setTimeout> | undefined
+let retries = 0
+/** The server stopped answering since the last time it did: when it's back, screens refetch. */
+let wasLost = false
+
+function stopRetrying() {
+  clearTimeout(retryTimer)
+  retryTimer = undefined
+  retries = 0
+}
+
+/**
+ * A server we've talked to before didn't answer (no network, the server restarting…):
+ * keep trying, with growing pauses, and at once when the device is back online or the app
+ * comes back to the foreground. Servers that were never reachable (a mistyped address)
+ * aren't retried: they'd be asked forever.
+ */
+function scheduleReconnect() {
+  if (retryTimer !== undefined || !serverUrl.value || serverKind.value === null) return
+  wasLost = true
+  const wait = RETRY_STEPS[Math.min(retries, RETRY_STEPS.length - 1)] * 1000
+  retries++
+  retryTimer = setTimeout(() => {
+    retryTimer = undefined
+    if (!serverUrl.value) return
+    void connect().catch(() => {})
+  }, wait)
+}
+
+/** A request got no answer at all: the server is unreachable, whatever it was before. */
+function lostServer() {
+  if (serverStatus.value === 'connected') {
+    serverStatus.value = 'error'
+    serverError.value = "Couldn't reach the server"
+  }
+  scheduleReconnect()
+}
+
+setNetworkErrorHandler(lostServer)
+
+function retryNow() {
+  if (serverStatus.value !== 'error' || !serverUrl.value || serverKind.value === null) return
+  stopRetrying()
+  wasLost = true
+  void connect().catch(() => {})
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', retryNow)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) retryNow()
+  })
+}
+
 /**
  * Check in with the server (and remember it). Resolves to the handshake for Noctis
  * servers, or null for other OpenSubsonic servers.
@@ -141,10 +206,15 @@ async function probeOpenSubsonic(base: string): Promise<string | null> {
 export async function connect(url = serverUrl.value): Promise<HandshakeResponse | null> {
   serverStatus.value = 'connecting'
   serverError.value = ''
+  clearTimeout(retryTimer)
+  retryTimer = undefined
   try {
     const base = normalize(url)
     if (base !== serverUrl.value) {
       guestAccess.value = false
+      serverKind.value = null
+      stopRetrying()
+      wasLost = false
       signOutLocally()
     }
     serverUrl.value = base
@@ -182,10 +252,18 @@ export async function connect(url = serverUrl.value): Promise<HandshakeResponse 
     }
     if (canUseServer()) attachServerService()
     else detachServerService()
+    stopRetrying()
+    if (wasLost) {
+      wasLost = false
+      connectionEpoch.value++
+      writeLog('noctis', 'info', 'The server is reachable again')
+    }
     return response
   } catch (error) {
     serverStatus.value = 'error'
     serverError.value = error instanceof Error ? error.message : String(error)
+    // Unreachable (status 0), as opposed to answering with an error: try again later.
+    if (!(error instanceof ServerError) || error.status === 0 || GATEWAY_ERRORS.includes(error.status)) scheduleReconnect()
     throw error
   }
 }
@@ -255,6 +333,8 @@ export async function signOut() {
 }
 
 export function disconnect() {
+  stopRetrying()
+  wasLost = false
   void signOut()
   guestAccess.value = false
   detachServerService()

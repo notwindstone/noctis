@@ -1,6 +1,6 @@
 import { isLiked, toggleLike } from '../library'
 import { navigate } from '../navigation'
-import { cancelDownload, download, offlineState, removeOffline, transfers } from '../offline'
+import { cancelDownload, download, isOnDevice, offlineState, removeOffline, transfers } from '../offline'
 import { addToQueue, currentSong, playNext, playRadio, playSongs, removeFromQueue, shufflePlay, startRadio } from '../player'
 import { notify } from '../snackbar'
 import { closePlayer, confirm, openPlayer, queueOpen, showChoice, showPlayFrom, type ItemMenuRequest } from '../ui'
@@ -167,7 +167,7 @@ function defineBuiltInEntries() {
         return state === 'downloading' ? 'Cancel download' : state === 'cached' ? 'Keep offline' : 'Download'
       },
       action: 'song.download',
-      visible: ({ item }) => offlineState(item.id) !== 'downloaded',
+      visible: ({ item }) => !isOnDevice(item) && offlineState(item.id) !== 'downloaded',
     },
     {
       id: 'remove-download',
@@ -266,6 +266,7 @@ function defineBuiltInEntries() {
       filled: ({ song }) => offlineState(song.id) === 'downloaded',
       progress: ({ song }) => (offlineState(song.id) === 'downloading' ? (transfers.get(song.id)?.progress ?? 0) : undefined),
       action: 'player.download',
+      visible: ({ song }) => !isOnDevice(song),
     },
   ]
 
