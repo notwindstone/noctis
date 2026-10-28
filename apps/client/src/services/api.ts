@@ -16,7 +16,7 @@ import {
 } from '../models'
 import { hooks, runHooks } from '../plugins/hooks'
 import { activeService, servicesReady, services } from './registry'
-import type { EndpointInput, EndpointName, EndpointResult, RadioSeed, ServiceDefinition } from './types'
+import type { Chapter, EndpointInput, EndpointName, EndpointResult, RadioSeed, ServiceDefinition } from './types'
 
 /**
  * What screens and the player call. Each function picks a service and an endpoint and
@@ -174,6 +174,13 @@ export async function queueMore(continuation: string, playlistId: string | undef
   const service = sourceOf({ source })
   if (!supports(service, 'queue.more')) return EMPTY_QUEUE
   return request(service, 'queue.more', { continuation, playlistId })
+}
+
+/** Chapters of a song, if its service knows any (none otherwise, and when asking fails). */
+export async function getChapters(song: Song): Promise<Chapter[]> {
+  const service = sourceOf(song)
+  if (!supports(service, 'chapters.get')) return []
+  return request(service, 'chapters.get', { song })
 }
 
 /** A radio from a song, album or playlist; empty when its service has no radios. */

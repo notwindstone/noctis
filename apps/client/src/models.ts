@@ -28,6 +28,14 @@ export interface AlbumRef {
   name: string
 }
 
+/**
+ * Length from which a "song" is a station: a placeholder (some services list live radio streams
+ * as tracks, with lengths like 289 hours) that plays a few seconds of real audio and then ends.
+ * Noctis skips them and never downloads them.
+ */
+export const STATION_SECONDS = 12 * 3600
+export const isStation = (song: Pick<Song, 'duration'>) => (song.duration ?? 0) >= STATION_SECONDS
+
 export interface Song {
   type: 'song'
   /** Service id; undefined = YouTube Music. */
@@ -43,6 +51,8 @@ export interface Song {
   explicit?: boolean
   /** A music video (16:9 artwork) rather than an audio track. */
   isVideo?: boolean
+  /** Times played / viewed, when the service tells (it enables "Most played" when sorting a list). */
+  plays?: number
 }
 
 export interface Album {

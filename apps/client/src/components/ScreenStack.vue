@@ -12,6 +12,8 @@ import {
   type StackAnimator,
 } from '../navigation'
 import { screenFor } from '../screens'
+import { animationsOff } from '../preferences'
+import { isNative } from '../native'
 import { ACTIVE_KEY } from './screen-context'
 
 /**
@@ -32,6 +34,9 @@ const layers = computed(() => TABS.flatMap((id) => stacks[id].map((entry, depth)
  * and on its own layer, so a gesture doesn't start by painting it from scratch.
  */
 const underlayKey = computed<number | null>(() => {
+  // Only the phone's back gesture reveals it. Elsewhere it would be a second screen painted under
+  // every tab switch (and its layer made and dropped on each one) for nothing.
+  if (!isNative) return null
   const stack = stacks[tab.value]
   if (stack.length > 1) return stack[stack.length - 2].key
   if (tab.value !== 'home') return stacks.home[stacks.home.length - 1].key
@@ -50,7 +55,7 @@ function layer(key: number): HTMLElement | null {
   return root.value?.querySelector<HTMLElement>(`[data-screen-key="${key}"]`) ?? null
 }
 
-const reducedMotion = () => document.documentElement.dataset.motion !== 'full' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const reducedMotion = animationsOff
 
 const EMPHASIZED_DECEL = 'cubic-bezier(0.05, 0.7, 0.1, 1)'
 const EMPHASIZED_ACCEL = 'cubic-bezier(0.3, 0, 0.8, 0.15)'
@@ -283,7 +288,7 @@ onBeforeUnmount(() => setAnimator(null))
 </script>
 
 <template>
-  <div ref="root" class="screen-stack">
+  <div ref="root" class="screen-stack" :class="{ 'has-gestures': isNative }">
     <div
       v-for="layer in layers"
       :key="layer.entry.key"

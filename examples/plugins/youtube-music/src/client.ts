@@ -34,8 +34,14 @@ export const sessionVersion = ref(0)
 let browseSession: Promise<Innertube> | null = null
 let playerSession: Promise<Innertube> | null = null
 
-/** Persisted across launches so recommendations stay consistent for signed-out users. */
-const visitorData = persisted<string>('noctis:visitor', '', (value) => typeof value === 'string')
+/**
+ * Persisted across launches so recommendations stay consistent for signed-out users. A visitor
+ * id carries the region it was made in, and YouTube keeps recommending to that one: it is only
+ * reused for the language and region it was created for, so changing them starts afresh.
+ */
+const visitorData = persisted<{ key: string; id: string }>('noctis:visitor-region', { key: '', id: '' }, (value) => typeof value === 'object' && value !== null)
+const regionKey = () => `${contentLanguage.value}|${contentCountry.value}`
+const storedVisitor = () => (visitorData.value.key === regionKey() ? visitorData.value.id : '')
 
 function create(retrievePlayer: boolean): Promise<Innertube> {
   const cookie = signedIn.value && useAccountForContent.value ? auth.value?.cookie : undefined
@@ -45,7 +51,7 @@ function create(retrievePlayer: boolean): Promise<Innertube> {
     lang: contentLanguage.value,
     location: contentCountry.value,
     cookie,
-    visitor_data: auth.value?.visitorData || visitorData.value || undefined,
+    visitor_data: auth.value?.visitorData || storedVisitor() || undefined,
     retrieve_player: retrievePlayer,
     cache: retrievePlayer ? new UniversalCache(true) : undefined,
     generate_session_locally: false,
@@ -54,7 +60,7 @@ function create(retrievePlayer: boolean): Promise<Innertube> {
   session
     .then((yt) => {
       const fresh = yt.session.context.client.visitorData
-      if (fresh && !visitorData.value) visitorData.value = fresh
+      if (fresh && !storedVisitor()) visitorData.value = { key: regionKey(), id: fresh }
     })
     .catch(() => {})
 

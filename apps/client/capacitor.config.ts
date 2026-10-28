@@ -8,6 +8,10 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: false,
   },
+  ios: {
+    // The web layer reads env(safe-area-inset-*) itself, so the web view must not inset too.
+    contentInset: 'never',
+  },
   plugins: {
     App: {
       // Back is owned by the Noctis plugin so predictive back can be driven from the web

@@ -25,10 +25,17 @@ fn parse(url: &str) -> Result<Url, String> {
 
 fn open_window(app: &AppHandle, url: Url, title: Option<String>) -> Result<tauri::WebviewWindowBuilder<'_, tauri::Wry, AppHandle>, String> {
     let label = format!("auth-{}", NEXT_WINDOW.fetch_add(1, Ordering::Relaxed));
-    Ok(WebviewWindowBuilder::new(app, label, WebviewUrl::External(url))
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::External(url))
         .title(title.unwrap_or_else(|| "Sign in".into()))
         .inner_size(520.0, 760.0)
-        .incognito(true))
+        .incognito(true);
+    // A webview sharing the profile must start with the same browser arguments as the main one.
+    #[cfg(windows)]
+    let builder = match crate::media::browser_args() {
+        Some(args) => builder.additional_browser_args(args),
+        None => builder,
+    };
+    Ok(builder)
 }
 
 /// Opens `url` and resolves with the first address starting with `redirect`, which is

@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { formatTime } from '../format'
 import { haptic } from '../haptics'
 
-const props = defineProps<{ position: number; duration: number; disabled?: boolean }>()
+const props = defineProps<{ position: number; duration: number; disabled?: boolean; /** Seconds where a chapter starts: drawn as small gaps in the bar. */ marks?: number[] }>()
 const emit = defineEmits<{ seek: [seconds: number] }>()
 
 const track = ref<HTMLElement | null>(null)
@@ -69,6 +69,13 @@ function onKey(event: KeyboardEvent) {
     >
       <span class="seek-active" :style="{ width: `max(0px, calc(${percent}% - 6px))` }" />
       <span class="seek-inactive" :style="{ left: `min(100%, calc(${percent}% + 6px))` }" />
+      <span
+        v-for="mark in marks ?? []"
+        v-show="mark > 0 && duration > 0 && mark < duration"
+        :key="mark"
+        class="seek-mark"
+        :style="{ left: `${(mark / duration) * 100}%` }"
+      />
       <span class="seek-handle" :style="{ left: `${percent}%` }" />
     </div>
     <div class="seek-times type-label-medium">

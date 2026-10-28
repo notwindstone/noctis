@@ -26,3 +26,10 @@ builds/
 # Desktop (Tauri) build output
 apps/client/src-tauri/target/
 apps/client/src-tauri/gen/
+
+# iOS (xtool) build output
+apps/client/ios/.build/
+apps/client/ios/xtool/
+apps/client/ios/App/App/public
+apps/client/ios/App/App/capacitor.config.json
+apps/client/ios/App/App/config.xml

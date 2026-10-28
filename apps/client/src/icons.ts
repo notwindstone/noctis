@@ -129,6 +129,8 @@ import i_error from '@material-symbols/svg-400/rounded/error.svg?raw'
 import i_errorFill from '@material-symbols/svg-400/rounded/error-fill.svg?raw'
 import i_external from '@material-symbols/svg-400/rounded/open_in_new.svg?raw'
 import i_externalFill from '@material-symbols/svg-400/rounded/open_in_new-fill.svg?raw'
+import i_sort from '@material-symbols/svg-400/rounded/sort.svg?raw'
+import i_sortFill from '@material-symbols/svg-400/rounded/sort-fill.svg?raw'
 import i_cookie from '@material-symbols/svg-400/rounded/cookie.svg?raw'
 import i_cookieFill from '@material-symbols/svg-400/rounded/cookie-fill.svg?raw'
 import i_explicit from '@material-symbols/svg-400/rounded/explicit.svg?raw'
@@ -236,6 +238,7 @@ const RAW = {
   'offline': [i_offline, i_offlineFill],
   'error': [i_error, i_errorFill],
   'external': [i_external, i_externalFill],
+  'sort': [i_sort, i_sortFill],
   'cookie': [i_cookie, i_cookieFill],
   'explicit': [i_explicit, i_explicitFill],
   'play-next': [i_play_next, i_play_nextFill],

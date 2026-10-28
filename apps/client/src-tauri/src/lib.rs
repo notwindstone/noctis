@@ -1,10 +1,12 @@
 mod auth;
+mod files;
 mod launch;
+mod media;
 mod tray;
 
 use std::sync::atomic::Ordering;
 
-use tauri::{Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
+use tauri::{Manager, WebviewWindowBuilder, WindowEvent};
 
 /// The desktop shell is thin on purpose: the app is the same Vue build as the browser and
 /// Android ones. What the shell adds is what a webview can't do — requests without CORS
@@ -14,17 +16,16 @@ use tauri::{Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let options = launch::parse();
-    launch::redirect_profile(&options);
+    launch::prepare(&options);
 
     let mut builder = tauri::Builder::default();
     // Opening Noctis again (or a .noctis file with it) focuses the running window, unless
-    // this one was asked to be its own instance.
-    if !options.new_instance {
+    // this one was asked for a new window or has a profile of its own (`--data-dir`).
+    if !options.new_window && !options.own_profile {
         // (Also brings it back from the tray.)
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_window(app)));
     }
 
-    let throwaway = options.new_instance.then(|| options.data_dir.clone()).flatten();
     let webview_dir = launch::webview_dir(&options);
 
     builder
@@ -46,27 +47,35 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             auth::open_auth,
             auth::open_cookie_login,
+            files::offline_delete,
+            files::offline_dir,
+            files::offline_move,
+            files::offline_read,
+            files::offline_write,
             launch::launch_options,
+            media::set_media_controls,
             tray::set_tray,
             tray::show_main_window
         ])
         .setup(move |app| {
             // The window is made here (not from the config alone) so its profile can be elsewhere.
             let config = app.config().app.windows.first().cloned().expect("a window in tauri.conf.json");
+            media::init(app.handle(), &app.state::<launch::LaunchOptions>());
             let mut window = WebviewWindowBuilder::from_config(app.handle(), &config)?;
+            #[cfg(windows)]
+            if let Some(args) = media::browser_args() {
+                window = window.additional_browser_args(args);
+            }
             if let Some(dir) = &webview_dir {
                 let _ = std::fs::create_dir_all(dir);
                 window = window.data_directory(dir.clone());
             }
             let window = window.build()?;
             let _ = window.set_focus();
+            media::register_keys(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building Noctis")
-        .run(move |_app, event| {
-            if let (RunEvent::Exit, Some(dir)) = (&event, &throwaway) {
-                let _ = std::fs::remove_dir_all(dir);
-            }
-        });
+        .run(|_app, _event| {});
 }

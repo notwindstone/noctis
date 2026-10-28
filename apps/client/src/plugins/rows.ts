@@ -26,6 +26,20 @@ export interface SelectControl {
   /** Current value; usually a getter. Its label is shown under the row title. */
   readonly value: string
   set(value: string): void
+  /**
+   * Adds a "Custom…" choice that asks for a value typed by the user. A current value that
+   * isn't one of `options` is shown through `label` and counts as the custom one.
+   */
+  custom?: {
+    /** Text field dialog title; defaults to the select's. */
+    title?: string
+    description?: string
+    placeholder?: string
+    /** How a value that isn't in `options` reads under the row title. */
+    label(value: string): string
+    /** Typed text → the value to `set`, or null when it isn't usable. */
+    parse(text: string): string | null
+  }
 }
 
 export interface SettingsRowDef {

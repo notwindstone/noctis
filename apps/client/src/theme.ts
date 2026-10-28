@@ -18,6 +18,8 @@ interface Seed {
  * Material You seeds, expressed as OKLCH hues. Picking one regenerates every
  * colour role in the scheme, similar to Android's wallpaper-based dynamic colour.
  */
+export const CUSTOM_SEED = 'custom'
+
 export const SEEDS: Seed[] = [
   { id: 'lunar', name: 'Lunar', hue: 300 },
   { id: 'tide', name: 'Tide', hue: 245 },
@@ -28,9 +30,15 @@ export const SEEDS: Seed[] = [
 ]
 
 export const mode = persisted<ThemeMode>('noctis:mode', 'system', oneOf('system', 'light', 'dark'))
-export const seedId = persisted('noctis:seed', 'lunar', (value) => SEEDS.some((seed) => seed.id === value))
+export const seedId = persisted('noctis:seed', 'lunar', (value) => value === CUSTOM_SEED || SEEDS.some((seed) => seed.id === value))
+/** The colour picked with the colour chooser (Settings → Appearance); only its hue is used, like the presets. */
+export const customColor = persisted('noctis:custom-color', '#b388eb', (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value))
 export const colorSource = persisted<ColorSource>('noctis:color-source', 'system', oneOf('system', 'seed', 'artwork'))
-export const seed = computed(() => SEEDS.find((item) => item.id === seedId.value) ?? SEEDS[0])
+export const seed = computed<Seed>(() =>
+  seedId.value === CUSTOM_SEED
+    ? { id: CUSTOM_SEED, name: 'Custom', hue: hexToHue(customColor.value) ?? SEEDS[0].hue }
+    : (SEEDS.find((item) => item.id === seedId.value) ?? SEEDS[0]),
+)
 
 /** Hue of the wallpaper accent on Android 12+, when the device exposes one. */
 export const systemHue = ref<number | null>(null)
@@ -68,6 +76,13 @@ export function setSeed(value: string) {
     seedId.value = value
     colorSource.value = 'seed'
   }
+}
+
+export function setCustomColor(hex: string) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return
+  customColor.value = hex.toLowerCase()
+  seedId.value = CUSTOM_SEED
+  colorSource.value = 'seed'
 }
 
 /* ------------------------------------------------------------------ *

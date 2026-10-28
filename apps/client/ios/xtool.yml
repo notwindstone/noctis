@@ -1,0 +1,4 @@
+version: 1
+bundleID: app.noctis.player
+infoPath: Info.plist
+iconPath: Icon.png

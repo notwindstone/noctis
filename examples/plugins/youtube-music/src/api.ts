@@ -6,6 +6,7 @@ import {
   type Helpers,
   type YTMusic,
 } from 'youtubei.js'
+import { getChapters } from './chapters'
 import { innertube } from './client'
 import type {
   Artist,
@@ -508,6 +509,7 @@ export const content = {
     more: ({ continuation, playlistId }) => ytGetQueueContinuation(continuation, playlistId),
     radio: (seed) => ytRadio(seed),
   },
+  chapters: { get: getChapters },
   links: { share: link },
 } satisfies Partial<ServiceDefinition>
 

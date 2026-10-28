@@ -60,7 +60,7 @@ export const AUTH_CALLBACK = `${location.origin}/auth-callback.html`
  * app's cookies, so a session signed in with openAuthWindow carries over. Device only.
  */
 export async function captureWebResponse(options: { url: string; match: string; userAgent?: string; timeoutMs?: number }) {
-  if (!hasNoctisPlugin) throw new Error('Only available in the Android app')
+  if (!hasNoctisPlugin) throw new Error('Only available in the apps')
   return Noctis.captureResponse(options)
 }
 

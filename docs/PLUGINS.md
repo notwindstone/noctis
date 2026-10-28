@@ -28,6 +28,10 @@ a plugin you install. Examples:
   Spotify through the same GraphQL API its web player uses (session from a hidden web
   player, operation hashes read from its scripts), with audio matched on YouTube Music
   through `Noctis.api.request('youtube-music', …)`;
+- [`examples/plugins/lyrics`](../examples/plugins/lyrics) — synced lyrics in the player with
+  several sources (LRCLIB, NetEase, QQ Music, Musixmatch, Genius, your own files), Apple
+  Music-style animation, translation and romanization. It replaces `PlayerArt` (the cover)
+  and exposes `Noctis.lyrics` for other plugins to add sources;
 - [`examples/plugins/demo-source`](../examples/plugins/demo-source):
 a fake "demo" streaming service with a hook, a song-menu action, a settings page and a
 screen.
@@ -206,6 +210,7 @@ required; leave out what a service can't do and the app hides or disables what n
 | `queue` | `start({ playlistId?, videoId?, params? })`, `more({ continuation, playlistId? })`, `radio(seed)` → `{ songs, continuation?, playlistId? }`; `seed` is `{ kind: 'song', song }`, `{ kind: 'album', album, playlistId? }` or `{ kind: 'playlist', playlist }` |
 | `library` | `playlists({})`, `artists({})`, `liked({})` / `likedMore({})` → `{ songs, hasMore }`, `like({ song, liked })` |
 | `streams` | `resolve({ song, efficient })` → `{ url, mimeType, bitrate, expiresAt, contentLength?, loudnessDb?, fetchUrl?, fetchHeaders? }` |
+| `chapters` | `get({ song })` → `[{ title, start }]` (seconds): parts of a long song or mix, shown as a chapter list and marks on the seek bar when there are two or more. Asked for songs of 6 minutes or more |
 | `links` | `share(item)` → URL or `undefined` — **synchronous** |
 | `thumbnails` | `resize(url, px)` → URL or `undefined` if it isn't yours — **synchronous**, runs while rendering |
 | `account` | `{ signedIn, info, sessionKey, section?, signInTitle?, signInDescription?, refresh?(), signInMethods?, signOut?() }` |
@@ -469,7 +474,7 @@ Plugin.restoreComponent('BottomNav')
 | Group | Entries |
 | --- | --- |
 | App shell | `ScreenStack`, `PlayerSheet`, `BottomNav`, `SheetHost`, `SnackbarHost` |
-| Sheets and player parts | `BottomSheet`, `DialogShell`, `QueuePanel`, `SeekBar` |
+| Sheets and player parts | `BottomSheet`, `DialogShell`, `QueuePanel`, `SeekBar`, `PlayerArt` (the full player's cover; gets a `song` prop) |
 | Building blocks | `TopAppBar`, `ItemRow`, `ItemCard`, `SectionView`, `SettingsRow`, `SettingsBlocks`, `CollectionView`, `StateView`, `RefreshIndicator`, `MIcon`, `Thumb` |
 | Screens | `HomeScreen`, `LibraryScreen`, `SettingsScreen`, `SearchScreen`, `AlbumScreen`, `PlaylistScreen`, `ArtistScreen`, `BrowseScreen`, `CollectionScreen`, `LibraryItemsScreen`, `SettingsPageScreen` |
 
@@ -563,7 +568,7 @@ must ask for it with `placement: 'main'` in the section, and then it appears on 
 Settings home before About. Either way the page has the app's own rows, switches and
 choice dialogs. Row fields: `id`, `title`, `icon`, `description`, `value`, `chevron`,
 `destructive`, `disabled`, `hidden`, `onClick`, `toggle` (`{ value, set }`) and
-`select` (`{ title?, options, value, set }`). Blocks are `group` (rows), `header`,
+`select` (`{ title?, options, value, set, custom? }`; `custom` adds a "Custom…" choice that asks for a typed value: `{ label(value), parse(text) → value | null, title?, description?, placeholder? }`). Blocks are `group` (rows), `header`,
 `note`, or `component` (`{ component, props }`). Built-in sections (`appearance`,
 `playback`, `content`, `storage`, `about`, …) are in the same record — plugins can push
 rows into them.

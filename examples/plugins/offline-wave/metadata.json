@@ -1,0 +1,20 @@
+{
+  "name": "Offline wave",
+  "version": "1.0.0",
+  "authors": [
+    "Noctis"
+  ],
+  "type": "unrestricted",
+  "platforms": [
+    "*"
+  ],
+  "description": "Pre-generate a wave of songs around what you're playing (or around your likes and history) and download them all for offline listening. Choose the wave size in Settings → Offline wave, then start one from the player, a song's menu, or Settings.",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/offline-wave",
+  "categories": [
+    "utility",
+    "offline"
+  ],
+  "languages": [
+    "en"
+  ]
+}

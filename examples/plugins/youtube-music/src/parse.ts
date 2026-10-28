@@ -70,6 +70,16 @@ function artistsFromSubtitle(subtitle: string): ArtistRef[] {
  * Items
  * ------------------------------------------------------------------ */
 
+/** "1.2M plays", "3,456", "980K views" → a number; undefined when there isn't one. */
+function countOf(value: unknown): number | undefined {
+  const text = typeof value === 'number' ? String(value) : typeof value === 'string' ? value : ''
+  const match = /(\d[\d.,]*)\s*([KMB])?/i.exec(text)
+  if (!match) return undefined
+  const amount = Number(match[1].replace(/,/g, match[2] ? '.' : ''))
+  if (!Number.isFinite(amount)) return undefined
+  return Math.round(amount * ({ K: 1e3, M: 1e6, B: 1e9 }[(match[2] ?? '').toUpperCase() as 'K' | 'M' | 'B'] ?? 1))
+}
+
 export function fromListItem(item: YTNodes.MusicResponsiveListItem): Item | null {
   const thumbnail = largest(item.thumbnail?.contents)
   const secondLine = textOf(item.flex_columns.at(1)?.title)
@@ -90,6 +100,7 @@ export function fromListItem(item: YTNodes.MusicResponsiveListItem): Item | null
         thumbnail,
         explicit: isExplicit(item.badges),
         isVideo: item.item_type === 'video',
+        plays: countOf(item.views),
       }
     }
 

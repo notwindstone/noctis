@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { version as vueVersion } from 'vue'
 import AboutHero from '../components/settings/AboutHero.vue'
 import SeedSwatches from '../components/settings/SeedSwatches.vue'
@@ -17,6 +19,11 @@ import {
   contentLanguage,
   hapticsEnabled,
   maxCacheMb,
+  saveAsFiles,
+  downloadMaxMinutes,
+  autoSkipLonger,
+  autoSkipShorter,
+  skipFailed,
   minimizeToTray,
   keepAwake,
   mediaControls,
@@ -32,6 +39,7 @@ import {
 import { colorSource, effectiveColorSource, isDark, mode, supportsSystemColor, type ColorSource, type ThemeMode } from '../theme'
 import { language, languageName, languageOptions, languagePreference, t } from '../i18n'
 import { hasNoctisPlugin, isDesktop, platform } from '../native'
+import { notify } from '../snackbar'
 import { confirm, showPlayFrom } from '../ui'
 import { activeService, activeServiceId, services } from '../services/registry'
 
@@ -109,12 +117,13 @@ const appearanceBlocks: SettingsBlock[] = [
         options: [
           { value: 'system', label: 'Follow the system' },
           { value: 'full', label: 'Always on' },
+          { value: 'never', label: 'Never', description: 'No slides or fades anywhere' },
         ],
         get value() {
           return motion.value
         },
         set(value) {
-          motion.value = value as 'system' | 'full'
+          motion.value = value as 'system' | 'full' | 'never'
         },
       },
     },
@@ -199,6 +208,19 @@ const QUALITY_OPTIONS: { value: AudioQuality; label: string; description: string
   { value: 'low', label: 'Data saver', description: 'Smallest stream, around 50–70 kbps' },
 ]
 
+const secondsLabel = (seconds: number) =>
+  seconds >= 3600 && seconds % 3600 === 0 ? `${seconds / 3600} h` : seconds >= 60 && seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} s`
+
+/** "45", "2 min", "1.5 h" → seconds (a bare number counts in `bare` seconds' units); null if it isn't a length. */
+function parseLength(text: string, bare = 1): string | null {
+  const match = /^(\d+(?:[.,]\d+)?)\s*(s|sec|с|сек|m|min|м|мин|h|ч)?\.?$/i.exec(text)
+  if (!match) return null
+  const unit = (match[2] ?? '').toLowerCase()
+  const factor = !unit ? bare : /^(h|ч)$/.test(unit) ? 3600 : /^(m|min|м|мин)$/.test(unit) ? 60 : 1
+  const seconds = Math.round(Number(match[1].replace(',', '.')) * factor)
+  return seconds > 0 ? String(seconds) : null
+}
+
 const playbackBlocks: SettingsBlock[] = [
   group('play-from', [
     {
@@ -248,6 +270,15 @@ const playbackBlocks: SettingsBlock[] = [
         set(value) {
           previousRestart.value = value as PreviousRestart
         },
+        custom: {
+          description: 'Seconds into the song, e.g. 7',
+          placeholder: 'Seconds',
+          label: (value) => `After ${value} seconds`,
+          parse(text) {
+            const seconds = Number(text.replace(',', '.').replace(/\s*(s|sec|seconds?|с|сек)\.?$/i, ''))
+            return Number.isFinite(seconds) && seconds > 0 ? String(seconds) : null
+          },
+        },
       },
     },
     {
@@ -256,6 +287,63 @@ const playbackBlocks: SettingsBlock[] = [
       title: 'Autoplay',
       description: 'Keep playing similar songs when the queue ends',
       toggle: bool(autoplayRelated),
+    },
+    {
+      id: 'skip-shorter',
+      icon: 'next',
+      title: 'Leave out short songs',
+      description: 'Autoplay and radios skip songs shorter than this',
+      select: {
+        title: 'Leave out songs shorter than',
+        options: [
+          { value: '0', label: 'Never' },
+          ...[15, 30, 60, 90, 120].map((seconds) => ({ value: String(seconds), label: secondsLabel(seconds) })),
+        ],
+        get value() {
+          return String(autoSkipShorter.value)
+        },
+        set(value) {
+          autoSkipShorter.value = Number(value)
+        },
+        custom: {
+          description: 'In seconds, or with a unit: 45, 2 min',
+          placeholder: 'Length, e.g. 45 or 2 min',
+          label: (value) => `Shorter than ${secondsLabel(Number(value))}`,
+          parse: parseLength,
+        },
+      },
+    },
+    {
+      id: 'skip-longer',
+      icon: 'next',
+      title: 'Leave out long songs',
+      description: 'Autoplay and radios skip songs longer than this: mixes, station recordings, hour-long uploads',
+      select: {
+        title: 'Leave out songs longer than',
+        options: [
+          { value: '0', label: 'Never' },
+          ...[600, 900, 1200, 1800, 3600].map((seconds) => ({ value: String(seconds), label: secondsLabel(seconds) })),
+        ],
+        get value() {
+          return String(autoSkipLonger.value)
+        },
+        set(value) {
+          autoSkipLonger.value = Number(value)
+        },
+        custom: {
+          description: 'In minutes, or with a unit: 25, 90 s',
+          placeholder: 'Length, e.g. 25 or 1 h',
+          label: (value) => `Longer than ${secondsLabel(Number(value))}`,
+          parse: (text) => parseLength(text, 60),
+        },
+      },
+    },
+    {
+      id: 'skip-failed',
+      icon: 'next',
+      title: 'Skip songs that fail to play',
+      description: 'Move on to the next song when one can\'t be played. Off: playback stops and shows the error.',
+      toggle: bool(skipFailed),
     },
     {
       id: 'remember-queue',
@@ -268,8 +356,11 @@ const playbackBlocks: SettingsBlock[] = [
       id: 'lock-screen',
       icon: 'lockscreen',
       title: 'Lock screen controls',
-      description:
-        'Song, play/pause and skip on the lock screen and in notifications. Also keeps music playing in the background.',
+      get description() {
+        return isDesktop
+          ? 'Song, play/pause and skip in the system media controls (volume flyout, lock screen). Off: Noctis only reacts to the media keys. Takes effect after a restart.'
+          : 'Song, play/pause and skip on the lock screen and in notifications. Also keeps music playing in the background.'
+      },
       toggle: bool(mediaControls),
     },
     {
@@ -408,7 +499,7 @@ const contentBlocks: SettingsBlock[] = [
  * ------------------------------------------------------------------ */
 
 const CACHE_SIZES = [128, 256, 512, 1024, 2048, 0]
-const cacheLabel = (mb: number) => (mb === 0 ? 'Unlimited' : mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`)
+const cacheLabel = (mb: number) => (mb === 0 ? 'Unlimited' : mb >= 1024 ? `${Math.round((mb / 1024) * 100) / 100} GB` : `${mb} MB`)
 
 const storageBlocks: SettingsBlock[] = [
   { id: 'meter', type: 'component', component: StorageMeter },
@@ -468,6 +559,58 @@ const storageBlocks: SettingsBlock[] = [
   { id: 'cache-header', type: 'header', title: 'Cache' },
   group('cache', [
     {
+      id: 'download-max-length',
+      icon: 'download',
+      title: 'Longest song to download',
+      description: 'Longer ones (mixes, hour-long uploads) are left out when downloading a playlist or album. Stations never are.',
+      select: {
+        title: 'Longest song to download',
+        options: [
+          { value: '0', label: 'No limit' },
+          ...[10, 30, 60, 120, 180].map((minutes) => ({ value: String(minutes), label: minutes >= 60 ? `${minutes / 60} h` : `${minutes} min` })),
+        ],
+        get value() {
+          return String(downloadMaxMinutes.value)
+        },
+        set(value) {
+          downloadMaxMinutes.value = Number(value)
+        },
+        custom: {
+          description: 'In minutes, or with a unit: 45, 2 h',
+          placeholder: 'Length, e.g. 45 or 2 h',
+          label: (value) => (Number(value) >= 60 ? `${Math.round((Number(value) / 60) * 10) / 10} h` : `${value} min`),
+          parse: (text) => {
+            const seconds = parseLength(text, 60)
+            return seconds === null ? null : String(Math.max(1, Math.round(Number(seconds) / 60)))
+          },
+        },
+      },
+    },
+    {
+      id: 'save-as-files',
+      icon: 'folder',
+      title: 'Save as regular files',
+      description: 'Downloads and cache are ordinary audio files named after the song, in a folder you can open. Off keeps them in the app\'s hidden webview cache. Applies to songs saved from now on.',
+      hidden: !isDesktop,
+      toggle: bool(saveAsFiles),
+    },
+    {
+      id: 'show-files',
+      icon: 'folder',
+      title: 'Show saved files',
+      description: 'Open the folder with downloaded and cached songs',
+      hidden: !isDesktop,
+      chevron: true,
+      async onClick() {
+        try {
+          const dir = await invoke<string>('offline_dir')
+          await revealItemInDir(dir)
+        } catch (error) {
+          notify(error instanceof Error ? error.message : String(error))
+        }
+      },
+    },
+    {
       id: 'cache-enabled',
       icon: 'cached',
       title: 'Cache played songs',
@@ -489,6 +632,17 @@ const storageBlocks: SettingsBlock[] = [
         },
         set(value) {
           maxCacheMb.value = Number(value)
+        },
+        custom: {
+          description: 'In MB, or with a unit: 700, 3 GB',
+          placeholder: 'Size, e.g. 3 GB',
+          label: (value) => cacheLabel(Number(value)),
+          parse(text) {
+            const match = /^(\d+(?:[.,]\d+)?)\s*(mb|gb|мб|гб)?$/i.exec(text)
+            if (!match) return null
+            const size = Number(match[1].replace(',', '.')) * (/^(gb|гб)$/i.test(match[2] ?? '') ? 1024 : 1)
+            return size > 0 ? String(Math.round(size)) : null
+          },
         },
       },
     },

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { C } from '../../plugins/components'
 import type { SettingsBlock, SettingsRowDef } from '../../plugins/rows'
-import { showChoice } from '../../ui'
+import { notify } from '../../snackbar'
+import { showChoice, showTextDialog } from '../../ui'
 
 /** Renders a settings section described as data (src/plugins/rows.ts). */
 defineProps<{ blocks: SettingsBlock[] }>()
@@ -10,18 +11,39 @@ function valueOf(row: SettingsRowDef): string | undefined {
   if (row.value !== undefined) return row.value
   if (!row.select) return undefined
   const current = row.select.value
-  return row.select.options.find((option) => option.value === current)?.label ?? current
+  const label = row.select.options.find((option) => option.value === current)?.label
+  return label ?? row.select.custom?.label(current) ?? current
 }
+
+const CUSTOM = '\u0000custom'
+
 
 function activate(row: SettingsRowDef) {
   if (row.disabled) return
   if (row.select) {
     const select = row.select
+    const custom = select.custom
+    const isCustom = custom !== undefined && !select.options.some((option) => option.value === select.value)
     showChoice({
       title: select.title ?? row.title,
-      options: select.options,
-      value: select.value,
-      onSelect: (value) => select.set(value),
+      options: custom
+        ? [...select.options, { value: CUSTOM, label: 'Custom…', description: isCustom ? custom.label(select.value) : custom.description }]
+        : select.options,
+      value: isCustom ? CUSTOM : select.value,
+      onSelect: (value) => {
+        if (value !== CUSTOM || !custom) return select.set(value)
+        showTextDialog({
+          title: custom.title ?? select.title ?? row.title,
+          description: custom.description,
+          placeholder: custom.placeholder,
+          confirmLabel: 'Set',
+          onConfirm(text) {
+            const parsed = custom.parse(text.trim())
+            if (parsed === null) notify("That isn't a usable value")
+            else select.set(parsed)
+          },
+        })
+      },
     })
     return
   }

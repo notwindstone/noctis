@@ -1,0 +1,3 @@
+// Not an Xcode project. This app is built with xtool from ../Package.swift (see ../README.md).
+// The Capacitor CLI still reads the iOS version from here when it writes CapApp-SPM/Package.swift.
+IPHONEOS_DEPLOYMENT_TARGET = 15.0;

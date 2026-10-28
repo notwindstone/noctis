@@ -18,6 +18,8 @@ import {
   progress,
   queueTitle,
   seek,
+  chapters,
+  currentChapter,
   stopPlayback,
   toggleShuffle,
   togglePlay,
@@ -26,8 +28,10 @@ import { playerArtworkColors, repeatMode, shuffleEnabled } from '../preferences'
 import { colorSource, schemeStyle } from '../theme'
 import { closePlayer, openPlayer, playerExpanded, playerExpansion, queueOpen, showItemMenu } from '../ui'
 import { ActionCollections, executeAction, resolveEntry, visibleEntries, type ActionEntry } from '../plugins/actions'
+import { showChapters } from '../plugins/builtins'
 import { notify } from '../snackbar'
-import { artistNames, type Song } from '../models'
+import { artistNames, STATION_SECONDS, type Song } from '../models'
+import { isStationSong } from '../stations'
 
 const sheet = ref<HTMLElement | null>(null)
 const frameEl = ref<HTMLElement | null>(null)
@@ -381,13 +385,23 @@ const backdropStyle = computed(() => {
 
 const tintStyle = computed(() => ({ opacity: String(e.value) }))
 
+/**
+ * Snap to whole device pixels. A composited layer (the mini player has will-change: transform)
+ * drawn at a fractional offset is resampled, which softens its text and artwork; on a Windows
+ * display scaled to 125% or 150% every whole CSS pixel offset is fractional in device pixels.
+ */
+const snap = (value: number) => {
+  const density = window.devicePixelRatio || 1
+  return Math.round(value * density) / density
+}
+
 const miniStyle = computed(() => ({
   // As wide as the frame it grows into, so dragging it up doesn't leave it narrower than the sheet.
-  width: `${viewport.value.width * rect.value.sx}px`,
+  width: `${snap(viewport.value.width * rect.value.sx)}px`,
   opacity: String(Math.max(0, 1 - e.value * 3)),
   pointerEvents: e.value > 0.3 ? ('none' as const) : undefined,
   visibility: e.value > 0.4 ? ('hidden' as const) : undefined,
-  transform: `translate3d(${rect.value.x + skipOffset.value * 0.6}px, ${rect.value.y}px, 0)`,
+  transform: `translate3d(${snap(rect.value.x + skipOffset.value * 0.6)}px, ${snap(rect.value.y)}px, 0)`,
 }))
 
 const fullStyle = computed(() => ({
@@ -395,6 +409,9 @@ const fullStyle = computed(() => ({
   pointerEvents: e.value < 0.6 ? ('none' as const) : undefined,
   visibility: e.value < 0.01 ? ('hidden' as const) : undefined,
 }))
+
+/** A station has no real length: no bar, no times. */
+const isStationNow = computed(() => (currentSong.value ? isStationSong(currentSong.value) : false) || duration.value >= STATION_SECONDS)
 
 const liked = computed(() => (currentSong.value ? isLiked(currentSong.value.id) : false))
 /* Chips under the controls come from the playerActions collection (src/plugins/actions.ts). */
@@ -519,7 +536,7 @@ function openMenu() {
           </header>
 
           <div class="full-player-art">
-            <C.Thumb :src="currentSong.thumbnail" :size="560" shape="rounded" eager />
+            <C.PlayerArt :song="currentSong" />
           </div>
 
           <div class="full-player-meta">
@@ -527,6 +544,9 @@ function openMenu() {
               <h2 class="type-headline-small">{{ currentSong.title }}</h2>
               <button class="full-player-artist type-body-large" type="button" @click="openArtist">
                 {{ artistNames(currentSong.artists) }}
+              </button>
+              <button v-if="currentChapter && chapters.length > 1" class="full-player-chapter type-label-large" type="button" @click="showChapters">
+                {{ currentChapter.title }}
               </button>
             </div>
             <button
@@ -541,7 +561,7 @@ function openMenu() {
             </button>
           </div>
 
-          <C.SeekBar :position="position" :duration="duration" @seek="seek" />
+          <C.SeekBar v-if="!isStationNow" :position="position" :duration="duration" :marks="chapters.map((chapter) => chapter.start)" @seek="seek" />
 
           <div class="full-player-controls">
             <button
@@ -592,7 +612,10 @@ function openMenu() {
               @click="runChip(chip.entry)"
             >
               <span v-if="chipStatus[chip.entry.id] === 'pending'" class="chip-spinner" aria-hidden="true" />
-              <span v-else-if="chip.progress !== undefined" class="progress-ring" :style="{ '--p': chip.progress }" aria-hidden="true" />
+              <svg v-else-if="chip.progress !== undefined" class="progress-ring" viewBox="0 0 20 20" :style="{ '--p': chip.progress }" aria-hidden="true">
+                <circle class="progress-ring-track" cx="10" cy="10" r="8" />
+                <circle class="progress-ring-arc" cx="10" cy="10" r="8" />
+              </svg>
               <C.MIcon v-else :name="chipStatus[chip.entry.id] === 'success' ? 'check' : chip.icon" :size="20" />
               {{ chip.label }}
             </button>
@@ -608,7 +631,7 @@ function openMenu() {
     <!-- Mini player -->
     <div class="mini-player" :style="miniStyle" :aria-hidden="e > 0.3">
       <div class="mini-player-main" role="button" tabindex="0" aria-label="Open player" @keydown.enter="openFull">
-        <C.Thumb class="mini-player-art" :src="currentSong.thumbnail" :size="44" eager />
+        <C.Thumb class="mini-player-art" :src="currentSong.thumbnail" :size="48" eager />
         <span class="mini-player-text">
           <strong>{{ currentSong.title }}</strong>
           <span>{{ artistNames(currentSong.artists) }}</span>

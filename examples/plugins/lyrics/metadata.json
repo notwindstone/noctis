@@ -1,0 +1,11 @@
+{
+  "name": "Lyrics",
+  "version": "1.0.0",
+  "authors": ["Noctis"],
+  "type": "unrestricted",
+  "platforms": ["*"],
+  "description": "Synced lyrics in the player: word-by-word fill, blur and spring scrolling like Apple Music, with translations and romanization. Sources: LRCLIB, NetEase, QQ Music, Musixmatch, Genius and your own .lrc/.ttml/.srt files. Everything is configurable in Settings → Lyrics.",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/lyrics",
+  "categories": ["lyrics", "utility"],
+  "languages": ["en"]
+}

@@ -5,7 +5,7 @@ import { describeError } from '../composables'
 import { relativeTime } from '../format'
 import type { IconName } from '../icons'
 import { clearHistory, history, likedSongs } from '../library'
-import type { CollectionId, Route } from '../navigation'
+import { navigate, type CollectionId, type Route } from '../navigation'
 import { loadLocalLibrary, localTracks } from '../local/library'
 import { toSong } from '../local/service'
 import { cached, clearCache, downloads, formatBytes, usage } from '../offline'
@@ -160,6 +160,9 @@ function clearAll() {
     @load-more="loadMore"
   >
     <template #actions>
+      <button v-if="id === 'local'" class="icon-button" type="button" aria-label="Local music settings" @click="navigate({ name: 'settings-page', page: 'local-music' })">
+        <C.MIcon name="settings" />
+      </button>
       <button
         v-if="(id === 'history' || id === 'cached') && songs.length > 0"
         class="icon-button"

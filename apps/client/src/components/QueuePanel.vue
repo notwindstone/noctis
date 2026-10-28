@@ -21,7 +21,13 @@ const settling = ref(false)
 // Drag the panel down to dismiss; touches on the reorder handles never move it.
 /** The desktop layout puts the queue beside the player: it slides in from the right and is pushed back out. */
 const WIDE = '(min-width: 900px) and (min-aspect-ratio: 6 / 5)'
-const sideways = () => window.matchMedia(WIDE).matches
+const wideQuery = window.matchMedia(WIDE)
+const sideways = () => wideQuery.matches
+/** The close arrow points where the panel goes: right beside the player, down as a sheet. */
+const isSideways = ref(wideQuery.matches)
+const onWideChange = () => (isSideways.value = wideQuery.matches)
+wideQuery.addEventListener('change', onWideChange)
+onBeforeUnmount(() => wideQuery.removeEventListener('change', onWideChange))
 
 const sheet = useSheetDrag(panelEl, {
   onClose: () => emit('close'),
@@ -199,7 +205,7 @@ function play(index: number) {
         <span class="type-body-medium muted">{{ queueTitle || 'Queue' }} · {{ queue.length }} songs</span>
       </div>
       <button class="icon-button" type="button" aria-label="Close queue" @click="emit('close')">
-        <C.MIcon name="collapse" />
+        <C.MIcon :name="isSideways ? 'chevron-right' : 'collapse'" />
       </button>
     </header>
 

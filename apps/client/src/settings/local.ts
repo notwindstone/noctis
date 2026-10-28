@@ -7,6 +7,7 @@ import {
   localFolders,
   localTracks,
   musicPermission,
+  hasMediaStore,
   nativeMusic,
   removeLocalFolder,
   requestMusicAccess,
@@ -39,8 +40,11 @@ const folderRows = shallowReactive<SettingsRowDef[]>([])
 
 async function add() {
   try {
-    const folder = await addLocalFolder()
-    if (folder) notify(`Added "${folder.name}": ${localTracks.value.filter((track) => track.folderId === folder.id).length} songs`)
+    const added = await addLocalFolder()
+    if (!added) return
+    const { folder, merged } = added
+    const songs = localTracks.value.filter((track) => track.folderId === folder.id).length
+    notify(`Added "${folder.name}": ${songs} songs${merged.length > 0 ? `, including ${merged.map((item) => `"${item.name}"`).join(', ')}` : ''}`)
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error))
   }
@@ -99,19 +103,19 @@ export function defineLocalSettings() {
         },
       ], {
         get hidden() {
-          return !nativeMusic
+          return !hasMediaStore
         },
       }),
-      { id: 'folders-header', type: 'header', get title() { return nativeMusic ? 'Extra folders' : 'Folders' }, get hidden() { return folderRows.length === 0 } },
+      { id: 'folders-header', type: 'header', get title() { return hasMediaStore ? 'Extra folders' : 'Folders' }, get hidden() { return folderRows.length === 0 } },
       group('folders', folderRows),
       group('actions', [
         {
           id: 'add',
           icon: 'add-link',
           get title() {
-            return nativeMusic ? 'Add a folder the scan missed' : 'Add a folder'
+            return hasMediaStore ? 'Add a folder the scan missed' : 'Add a folder'
           },
-          description: nativeMusic ? 'For music Android doesn\'t index, like folders with a .nomedia file' : 'Your browser asks which folder',
+          description: hasMediaStore ? 'For music Android doesn\'t index, like folders with a .nomedia file' : nativeMusic ? 'Pick a folder in Files' : 'Your browser asks which folder',
           get disabled() {
             return !canAddFolders || scanning.value
           },
@@ -125,7 +129,7 @@ export function defineLocalSettings() {
             return scanning.value ? `Scanning… ${scanCount.value} songs` : 'Pick up new, changed and removed files'
           },
           get hidden() {
-            return localFolders.value.length === 0 && !(nativeMusic && scanWholeDevice.value && musicPermission.value === 'granted')
+            return localFolders.value.length === 0 && !(hasMediaStore && scanWholeDevice.value && musicPermission.value === 'granted')
           },
           get disabled() {
             return scanning.value
@@ -138,7 +142,7 @@ export function defineLocalSettings() {
         type: 'note',
         get text() {
           if (!canAddFolders) return "This browser can't open folders (the File System Access API is missing). Use the Android app, or a Chromium-based browser."
-          return `Songs show up under "On this device", and as a copy in "Play from" when the same song comes from a server or a service.${nativeMusic ? ' A song found both by the scan and in an extra folder is listed once.' : ''}${browserMusic ? ' Browsers ask again for access to a folder after a restart.' : ''}`
+          return `Songs show up under "On this device", and as a copy in "Play from" when the same song comes from a server or a service.${hasMediaStore ? ' A song found both by the scan and in an extra folder is listed once.' : ''}${browserMusic ? ' Browsers ask again for access to a folder after a restart.' : ''}`
         },
       },
     ],

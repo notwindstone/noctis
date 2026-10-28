@@ -6,6 +6,7 @@ import DialogShell from '../components/DialogShell.vue'
 import ItemCard from '../components/ItemCard.vue'
 import ItemRow from '../components/ItemRow.vue'
 import MIcon from '../components/MIcon.vue'
+import PlayerArt from '../components/PlayerArt.vue'
 import PlayerSheet from '../components/PlayerSheet.vue'
 import PlayFromDialog from '../components/PlayFromDialog.vue'
 import QueuePanel from '../components/QueuePanel.vue'
@@ -45,6 +46,7 @@ import { writeLog } from './log'
 type BuiltInComponentName =
   | 'ScreenStack'
   | 'PlayerSheet'
+  | 'PlayerArt'
   | 'BottomNav'
   | 'SheetHost'
   | 'SnackbarHost'
@@ -83,6 +85,7 @@ const BUILT_IN: Record<BuiltInComponentName, Component> = {
   // App shell
   ScreenStack,
   PlayerSheet,
+  PlayerArt,
   BottomNav,
   SheetHost,
   SnackbarHost,

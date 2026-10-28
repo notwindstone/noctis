@@ -1,5 +1,9 @@
 import { watch } from 'vue'
-import { hasNoctisPlugin, Noctis, type MediaState } from './native'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { hasNoctisPlugin, isDesktop, Noctis, type MediaState } from './native'
+import { writeLog } from './plugins/log'
+import { notify } from './snackbar'
 import {
   currentIndex,
   currentSong,
@@ -15,6 +19,7 @@ import {
   seek,
   seekCount,
   stopPlayback,
+  togglePlay,
 } from './player'
 import { keepAwake, mediaControls } from './preferences'
 import { artistNames } from './models'
@@ -65,7 +70,32 @@ function sync() {
   void Noctis.updateMediaSession(current).catch(() => {})
 }
 
+/**
+ * Desktop: the webview publishes to the system media controls on its own, and only a restart
+ * with it switched off (src-tauri/src/media.rs) removes it. Then Noctis listens to the media
+ * keys itself (global shortcuts there), so Play/Pause, Next and Previous still work.
+ */
+function initDesktopMediaControls() {
+  const apply = (announce: boolean) =>
+    invoke<boolean>('set_media_controls', { enabled: mediaControls.value })
+      .then((current) => {
+        if (!current && announce) notify(`Restart Noctis to ${mediaControls.value ? 'turn on' : 'turn off'} the system media controls`)
+      })
+      .catch((error) => writeLog('noctis', 'warn', "Couldn't save the media controls setting:", error))
+
+  void apply(true)
+  watch(mediaControls, () => void apply(true))
+
+  void listen<string>('media-key', ({ payload }) => {
+    if (payload === 'play-pause') void togglePlay()
+    else if (payload === 'next') next()
+    else if (payload === 'previous') previous()
+    else if (payload === 'stop') stopPlayback()
+  })
+}
+
 export function initMediaControls() {
+  if (isDesktop) initDesktopMediaControls()
   if (!hasNoctisPlugin) return
 
   void Noctis.addListener('mediaAction', ({ action, position: target }) => {

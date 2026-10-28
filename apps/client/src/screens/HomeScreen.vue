@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { C } from '../plugins/components'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { describeError, useInfiniteScroll } from '../composables'
 import { haptic, tap } from '../haptics'
 import { history } from '../library'
@@ -78,15 +78,19 @@ async function load(filter: string | null = selectedFilter.value, quiet = false)
   }
 }
 
-async function loadMore() {
-  if (!hasMore.value || loading.value || loadingMore.value) return
+/** Resolves to whether it added rows, so the scroll observer looks again if the page still isn't full. */
+async function loadMore(): Promise<boolean> {
+  if (!hasMore.value || loading.value || loadingMore.value) return false
   loadingMore.value = true
   try {
     const result = await loadMoreHome(selectedFilter.value)
     sections.value = [...sections.value, ...result.sections]
     hasMore.value = result.hasMore
-  } catch {
-    hasMore.value = false
+    return result.sections.length > 0 || result.hasMore
+  } catch (cause) {
+    // Keep `hasMore`: the next time the end comes into view it tries again, instead of the feed stopping for good.
+    notify(`Couldn't load more: ${describeError(cause)}`)
+    return false
   } finally {
     loadingMore.value = false
   }
@@ -123,7 +127,12 @@ function openAccount() {
 
 const { pull, dragging, refreshing } = usePullToRefresh(root, () => load(selectedFilter.value, true))
 
-useInfiniteScroll(sentinel, loadMore)
+const { recheck } = useInfiniteScroll(sentinel, loadMore)
+
+// A page that was skipped while loading (the first fetch, a cached feed) still needs its rows.
+watch(loading, (isLoading) => {
+  if (!isLoading) void nextTick(recheck)
+})
 
 // Open straight into the last fetched feed; only fetch when there's nothing cached.
 onMounted(async () => {

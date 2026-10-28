@@ -4,9 +4,23 @@ import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
  * Calls `load` whenever the sentinel element scrolls into view inside its screen layer.
  * Used for continuation-based infinite lists.
  */
-export function useInfiniteScroll(sentinel: Ref<HTMLElement | null>, load: () => Promise<void> | void) {
+/**
+ * Calls `load` when the sentinel comes near the end of the screen. An IntersectionObserver only
+ * reports when the sentinel *enters* view, so a sentinel that is already in view (the first page
+ * doesn't fill a tall window, or a request was skipped while another was running) would never
+ * ask again. `load` therefore says whether it added anything (`true`), and the observer is then
+ * reset to look at the sentinel afresh; the returned `recheck` does the same on demand.
+ */
+export function useInfiniteScroll(sentinel: Ref<HTMLElement | null>, load: () => Promise<boolean | void> | boolean | void) {
   let observer: IntersectionObserver | null = null
   let busy = false
+
+  function recheck() {
+    const el = sentinel.value
+    if (!observer || !el) return
+    observer.unobserve(el)
+    observer.observe(el)
+  }
 
   onMounted(() => {
     const el = sentinel.value
@@ -15,11 +29,13 @@ export function useInfiniteScroll(sentinel: Ref<HTMLElement | null>, load: () =>
       async (entries) => {
         if (busy || !entries.some((entry) => entry.isIntersecting)) return
         busy = true
+        let added: boolean | void = false
         try {
-          await load()
+          added = await load()
         } finally {
           busy = false
         }
+        if (added === true) recheck()
       },
       { root: el.closest('.screen-layer'), rootMargin: '600px 0px' },
     )
@@ -27,6 +43,8 @@ export function useInfiniteScroll(sentinel: Ref<HTMLElement | null>, load: () =>
   })
 
   onBeforeUnmount(() => observer?.disconnect())
+
+  return { recheck }
 }
 
 /** A loading/error wrapper for async screen data. */

@@ -3,14 +3,16 @@ import { artworkHue } from './artColor'
 import { haptic } from './haptics'
 import { runAfterHooks, runBeforeHooks } from './plugins/hooks'
 import { recordPlay } from './library'
-import { download, localSource, offline } from './offline'
-import { autoplayRelated, cacheEnabled, persistentQueue, previousRestart, repeatMode, shuffleEnabled } from './preferences'
+import { STATION_SECONDS } from './models'
+import { isStationSong, markStation } from './stations'
+import { download, localSource, offline, removeOffline } from './offline'
+import { autoplayRelated, autoSkipLonger, autoSkipShorter, cacheEnabled, mediaControls, persistentQueue, skipFailed as skipFailedSetting, previousRestart, repeatMode, shuffleEnabled } from './preferences'
 import { writeLog } from './plugins/log'
 import { notify } from './snackbar'
 import { readJson, writeJson } from './storage'
 import { artworkHue as themeArtworkHue } from './theme'
-import { queueMore, radio, radioFor, startQueue } from './services/api'
-import type { RadioSeed } from './services/types'
+import { getChapters, queueMore, radio, radioFor, startQueue } from './services/api'
+import type { Chapter, RadioSeed } from './services/types'
 import { artistNames, type Playlist, type Song, type StreamInfo } from './models'
 import { forgetStream, resolveStream } from './services/stream'
 import { thumbnailAt } from './thumbnails'
@@ -36,6 +38,15 @@ export const currentHue = ref<number | null>(null)
 export const currentSong = computed<Song | null>(() => queue.value[currentIndex.value] ?? null)
 export const hasNext = computed(() => currentIndex.value < queue.value.length - 1 || repeatMode.value === 'all')
 export const progress = computed(() => (duration.value > 0 ? Math.min(1, position.value / duration.value) : 0))
+/** The current song's chapters (empty for most songs: only long mixes and albums-in-one-file have them). */
+export const chapters = shallowRef<Chapter[]>([])
+export const currentChapter = computed(() => {
+  let found: Chapter | null = null
+  for (const chapter of chapters.value) if (chapter.start <= position.value + 0.5) found = chapter
+  return found
+})
+/** Songs shorter than this aren't asked for chapters. */
+const CHAPTERS_MIN_SECONDS = 360
 export const upNext = computed(() => queue.value.slice(currentIndex.value + 1))
 
 /** The order before shuffling, so turning shuffle off restores it. */
@@ -52,6 +63,15 @@ const MAX_CUT_OFF_RETRIES = 3
 let currentStream: StreamInfo | null = null
 let pausedAt = 0
 let resumeWatch: number | undefined
+/** Songs in a row that couldn't play; a whole queue of dead songs shouldn't be skipped through forever. */
+let failureStreak = 0
+const MAX_FAILURE_STREAK = 5
+/** The song waiting to count as "played" (see `listened`), and the seconds heard of it so far. */
+let unrecorded: Song | null = null
+let listened = 0
+let lastTime = 0
+/** Heard this long (or the whole song, if it's shorter) before it shows up in Recently played. */
+const RECORD_AFTER_SECONDS = 10
 
 /**
  * Paused longer than this, resuming fetches a fresh stream: the URL may have expired, the
@@ -68,6 +88,8 @@ const RESUME_TIMEOUT_MS = 8000
 
 function updateMediaSession(song: Song) {
   if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return
+  // "Lock screen controls" off: the system's media overlay shouldn't know about the song at all.
+  if (!mediaControls.value) return
   const art = thumbnailAt(song.thumbnail, 512)
   navigator.mediaSession.metadata = new MediaMetadata({
     title: song.title,
@@ -90,6 +112,13 @@ async function load(index: number, autoplay = true, reload = false) {
     }
   }
 
+  // A station is a placeholder with seconds of audio: don't start it, go on to the next song.
+  if (autoplay && isStationSong(song) && index < queue.value.length - 1) {
+    writeLog('noctis', 'info', `Skipping "${song.title}": it is a station`)
+    void load(index + 1, autoplay)
+    return
+  }
+
   const token = ++loadToken
   writeLog('noctis', 'info', `Loading "${song.title}" (${index + 1}/${queue.value.length}) from ${song.source ?? 'its service'}${reload ? ' again' : ''}`)
   currentIndex.value = index
@@ -106,7 +135,20 @@ async function load(index: number, autoplay = true, reload = false) {
   audio.pause()
 
   updateMediaSession(song)
-  if (autoplay && !reload) recordPlay(song)
+  if (!reload) {
+    chapters.value = []
+    if (!song.duration || song.duration >= CHAPTERS_MIN_SECONDS) {
+      void getChapters(song)
+        .then((list) => {
+          if (token === loadToken) chapters.value = list
+        })
+        .catch(() => {})
+    }
+    // Recently played only gets songs that actually played for a while (see the timeupdate handler).
+    unrecorded = autoplay ? song : null
+    listened = 0
+    lastTime = 0
+  }
   void artworkHue(song.thumbnail).then((hue) => {
     if (token === loadToken) {
       currentHue.value = hue
@@ -133,6 +175,7 @@ async function load(index: number, autoplay = true, reload = false) {
       haptic('reject')
       playbackError.value = (error as Error).message || 'This song could not be played.'
       notify(`Couldn't play "${song.title}": ${playbackError.value}`)
+      if (autoplay) skipFailed(index)
       return
     }
   }
@@ -163,6 +206,20 @@ async function load(index: number, autoplay = true, reload = false) {
   }
 }
 
+/** A song that can't play: move on to the next one, still playing, unless the whole stretch is failing. */
+function skipFailed(index: number) {
+  if (!skipFailedSetting.value || currentIndex.value !== index || ++failureStreak > MAX_FAILURE_STREAK) return
+  if (index < queue.value.length - 1) void load(index + 1)
+}
+
+/** What autoplay and radios bring, minus songs outside the length limits (Settings → Playback). Unknown lengths stay. */
+function withinLimits(songs: Song[]): Song[] {
+  const shorter = autoSkipShorter.value
+  const longer = autoSkipLonger.value
+  if (!shorter && !longer) return songs
+  return songs.filter((song) => !song.duration || ((!shorter || song.duration >= shorter) && (!longer || song.duration <= longer)))
+}
+
 /** Keep the queue topped up from the radio/playlist continuation or related songs. */
 async function maybeFetchMore() {
   if (fetchingMore || currentIndex.value < queue.value.length - 4) return
@@ -183,7 +240,7 @@ async function maybeFetchMore() {
     }
 
     const known = new Set(queue.value.map((song) => song.id))
-    const fresh = songs.filter((song) => !known.has(song.id))
+    const fresh = withinLimits(songs).filter((song) => !known.has(song.id))
     if (fresh.length > 0) {
       queue.value = [...queue.value, ...fresh]
       if (unshuffled) unshuffled = [...unshuffled, ...fresh]
@@ -281,7 +338,7 @@ export async function playSong(song: Song) {
   try {
     const page = await radioFor(song)
     if (token !== loadToken && currentSong.value?.id !== song.id) return
-    const rest = page.songs.filter((item) => item.id !== song.id)
+    const rest = withinLimits(page.songs.filter((item) => item.id !== song.id))
     if (rest.length === 0) {
       notify(`No radio for "${song.title}"`)
       return
@@ -306,8 +363,9 @@ export async function playRadio(playlist: Playlist) {
       { playlistId: playlist.id, videoId: playlist.radio?.videoId, params: playlist.radio?.params },
       playlist.source,
     )
-    if (page.songs.length === 0) throw new Error('empty')
-    setQueue(page.songs, 0, playlist.title, { token: page.continuation, playlistId: page.playlistId, source: playlist.source })
+    const songs = withinLimits(page.songs)
+    if (songs.length === 0) throw new Error('empty')
+    setQueue(songs, 0, playlist.title, { token: page.continuation, playlistId: page.playlistId, source: playlist.source })
   } catch {
     isLoading.value = false
     notify(`Couldn't start "${playlist.title}"`)
@@ -319,8 +377,9 @@ export async function playFromQueueSource(options: { playlistId: string; params?
   try {
     isLoading.value = true
     const page = await startQueue({ playlistId: options.playlistId, params: options.params }, options.source)
-    if (page.songs.length === 0) throw new Error('empty')
-    setQueue(page.songs, 0, options.title, { token: page.continuation, playlistId: page.playlistId, source: options.source })
+    const songs = withinLimits(page.songs)
+    if (songs.length === 0) throw new Error('empty')
+    setQueue(songs, 0, options.title, { token: page.continuation, playlistId: page.playlistId, source: options.source })
   } catch {
     isLoading.value = false
     notify(`Couldn't play "${options.title}"`)
@@ -332,8 +391,9 @@ export async function playRadioFrom(seed: RadioSeed, title: string, source?: str
   try {
     isLoading.value = true
     const page = await radio(seed, source)
-    if (page.songs.length === 0) throw new Error('empty')
-    setQueue(page.songs, 0, title, { token: page.continuation, playlistId: page.playlistId, source })
+    const songs = withinLimits(page.songs)
+    if (songs.length === 0) throw new Error('empty')
+    setQueue(songs, 0, title, { token: page.continuation, playlistId: page.playlistId, source })
   } catch {
     isLoading.value = false
     notify(`Couldn't start "${title}"`)
@@ -530,9 +590,28 @@ export function shufflePlay(songs: Song[], title = '') {
 
 audio.addEventListener('timeupdate', () => {
   position.value = audio.currentTime
+  if (!unrecorded) return
+  // Only time actually heard counts: a seek is a jump, not listening.
+  const step = audio.currentTime - lastTime
+  if (step > 0 && step < 2.5) listened += step
+  lastTime = audio.currentTime
+  if (listened >= Math.min(RECORD_AFTER_SECONDS, duration.value || RECORD_AFTER_SECONDS)) {
+    recordPlay(unrecorded)
+    unrecorded = null
+  }
 })
 
 audio.addEventListener('loadedmetadata', () => {
+  const song = currentSong.value
+  if (song && Number.isFinite(audio.duration) && audio.duration >= STATION_SECONDS) {
+    // Its length gave it away: remember it, and move on.
+    markStation(song.id)
+    writeLog('noctis', 'info', `"${song.title}" is a station (${Math.round(audio.duration / 3600)} h long)`)
+    notify(`"${song.title}" is a station: skipped`)
+    if (currentIndex.value < queue.value.length - 1) next()
+    else audio.pause()
+    return
+  }
   if (Number.isFinite(audio.duration) && audio.duration > 0) duration.value = audio.duration
   if (pendingSeek !== null) {
     audio.currentTime = Math.min(pendingSeek, audio.duration || pendingSeek)
@@ -545,6 +624,7 @@ audio.addEventListener('playing', () => {
   isPlaying.value = true
   // It plays again: a later expiry deserves its own retry.
   retriedExpired = false
+  failureStreak = 0
   window.clearTimeout(resumeWatch)
 })
 audio.addEventListener('play', () => {
@@ -573,6 +653,16 @@ audio.addEventListener('ended', () => {
     if (cutOffRetries < MAX_CUT_OFF_RETRIES) {
       cutOffRetries++
       void reloadCurrent(true)
+      return
+    }
+  }
+  if (song) {
+    const early = Number.isFinite(length) && length > 0 && audio.currentTime < length - 3
+    writeLog('noctis', early ? 'warn' : 'info', `"${song.title}" ended at ${Math.round(audio.currentTime)}s of ${Math.round(length)}s (${currentStream ? 'streamed' : 'from this device'})`)
+    // A saved copy that stops short is broken (an interrupted save): drop it and stream the song instead.
+    if (early && !currentStream && offline.value[song.id] && cutOffRetries < MAX_CUT_OFF_RETRIES) {
+      cutOffRetries++
+      void removeOffline(song.id).then(() => reloadCurrent(true))
       return
     }
   }
@@ -606,6 +696,7 @@ audio.addEventListener('error', () => {
         isLoading.value = false
         playbackError.value = 'The stream was refused.'
         notify(`Couldn't play "${song.title}".`)
+        skipFailed(currentIndex.value)
       })
     return
   }
@@ -613,6 +704,7 @@ audio.addEventListener('error', () => {
   isLoading.value = false
   playbackError.value = 'The stream was refused.'
   notify(`Couldn't play "${song.title}".`)
+  skipFailed(currentIndex.value)
 })
 
 watch(repeatMode, (mode) => {
@@ -659,12 +751,19 @@ function setupMediaSession() {
   ]
   for (const [action, handler] of handlers) {
     try {
-      navigator.mediaSession.setActionHandler(action, handler)
+      navigator.mediaSession.setActionHandler(action, mediaControls.value ? handler : null)
     } catch {
       /* unsupported action on this platform */
     }
   }
 }
+
+// The toggle takes effect at once: controls and metadata go away (or come back with the current song).
+watch(mediaControls, (enabled) => {
+  setupMediaSession()
+  if (enabled && currentSong.value) updateMediaSession(currentSong.value)
+  else if ('mediaSession' in navigator) navigator.mediaSession.metadata = null
+})
 
 let initialized = false
 

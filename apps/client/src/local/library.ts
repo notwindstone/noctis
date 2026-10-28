@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core'
 import { ref, shallowRef } from 'vue'
-import { hasNoctisPlugin, Noctis, type NativeMusicFile } from '../native'
+import { hasNoctisPlugin, Noctis, platform, type NativeMusicFile } from '../native'
 import { writeLog } from '../plugins/log'
 import { persisted } from '../storage'
 import { idbDelete, idbGet, idbSet } from './idb'
@@ -75,23 +75,36 @@ export const scanning = ref(false)
 export const scanCount = ref(0)
 
 /** Android: scan everything Android indexes (on by default), besides the picked folders. */
-export const scanWholeDevice = persisted('noctis:local-whole-device', true, (value) => typeof value === 'boolean')
+export const scanWholeDevice = persisted('noctis:local-whole-device', platform === 'android', (value) => typeof value === 'boolean')
 /** Android: "granted", "denied", "prompt"… (checked at startup). */
 export const musicPermission = ref<string>('prompt')
 
 export const nativeMusic = hasNoctisPlugin
+/** Only Android has a media index to scan; iOS apps can only read folders the user picks. */
+export const hasMediaStore = nativeMusic && platform === 'android'
 export const browserMusic = !hasNoctisPlugin && typeof window !== 'undefined' && 'showDirectoryPicker' in window
 /** Whether this device can add music folders at all. */
 export const canAddFolders = nativeMusic || browserMusic
 
 let loaded: Promise<void> | null = null
 
+/** Tracks whose folder is still in the list (the whole-device scan counts while it's on). */
+function withFolders(tracks: LocalTrack[]): LocalTrack[] {
+  const ids = new Set(localFolders.value.map((folder) => folder.id))
+  return tracks.filter((track) => (track.folderId === DEVICE_FOLDER ? hasMediaStore && scanWholeDevice.value : ids.has(track.folderId)))
+}
+
+const hasFolder = (id: string) => localFolders.value.some((folder) => folder.id === id)
+
 /** Read the index from IndexedDB (once). */
 export function loadLocalLibrary(): Promise<void> {
   loaded ??= (async () => {
     try {
-      localTracks.value = (await idbGet<LocalTrack[]>('tracks')) ?? []
+      const stored = (await idbGet<LocalTrack[]>('tracks')) ?? []
+      localTracks.value = withFolders(stored)
       localArtwork.value = new Map(Object.entries((await idbGet<Record<string, string>>('artwork')) ?? {}))
+      // Songs of a folder that was removed mid-scan used to stay behind, unplayable and undeletable.
+      if (localTracks.value.length !== stored.length) void save()
     } catch (error) {
       writeLog('noctis', 'warn', "Couldn't read the local library:", error)
     }
@@ -209,6 +222,8 @@ async function scanFolder(folder: LocalFolder, artwork: Map<string, string>): Pr
   }
   const { parseBlob, selectCover } = await import('music-metadata')
   for await (const { path, handle: fileHandle } of walk(handle)) {
+    // Removed from the list while it was being read: stop, there's nothing to add it to.
+    if (!hasFolder(folder.id)) return []
     const file = await fileHandle.getFile()
     const name = path.split('/').pop()!.replace(/\.[^.]+$/, '')
     let track: LocalTrack = { id: `${folder.id}/${path}`, folderId: folder.id, path, title: name, artist: 'Unknown artist', album: path.split('/').at(-2) ?? 'Unknown album', albumArtist: 'Unknown artist', mimeType: file.type, size: file.size, modified: file.lastModified }
@@ -256,7 +271,7 @@ export async function scanLocalLibrary(only?: string): Promise<number> {
     let tracks = localTracks.value
 
     // Android: the whole device first.
-    if (nativeMusic && (!only || only === DEVICE_FOLDER)) {
+    if (hasMediaStore && (!only || only === DEVICE_FOLDER)) {
       if (scanWholeDevice.value && (await checkMusicPermission()) === 'granted') {
         try {
           const { files } = await Noctis.scanMediaStore()
@@ -275,6 +290,7 @@ export async function scanLocalLibrary(only?: string): Promise<number> {
       if (only && folder.id !== only) continue
       try {
         const fresh = await scanFolder(folder, artwork)
+        if (!hasFolder(folder.id)) continue
         tracks = [...tracks.filter((track) => track.folderId !== folder.id), ...fresh]
         localFolders.value = localFolders.value.map((item) => (item.id === folder.id ? { ...item, scanned: Date.now() } : item))
         writeLog('noctis', 'info', `Scanned ${fresh.length} songs in "${folder.name}"`)
@@ -282,9 +298,17 @@ export async function scanLocalLibrary(only?: string): Promise<number> {
         writeLog('noctis', 'error', `Couldn't scan "${folder.name}":`, error)
       }
     }
-    // A file in an extra folder that the device scan also found is listed once.
+    // Folders removed meanwhile (even mid-scan), or left over from an older version, take their songs with them.
+    tracks = withFolders(tracks)
+    // A file found twice (by the device scan and in an extra folder, or in two overlapping
+    // folders) is listed once; the device scan's copy wins.
     const indexed = new Set(tracks.filter((track) => track.folderId === DEVICE_FOLDER && track.key).map((track) => track.key))
-    tracks = tracks.filter((track) => track.folderId === DEVICE_FOLDER || !track.key || !indexed.has(track.key))
+    tracks = tracks.filter((track) => {
+      if (track.folderId === DEVICE_FOLDER || !track.key) return true
+      if (indexed.has(track.key)) return false
+      indexed.add(track.key)
+      return true
+    })
 
     // Drop artwork no track uses any more.
     const used = new Set(tracks.map((track) => track.art).filter(Boolean))
@@ -298,9 +322,40 @@ export async function scanLocalLibrary(only?: string): Promise<number> {
   }
 }
 
-/** Ask for a folder, add it and scan it. Resolves to the folder, or null if cancelled. */
-export async function addLocalFolder(): Promise<LocalFolder | null> {
+/** The folder id inside an Android tree URI ("primary:Music/Rock"). */
+const treeId = (uri: string) => decodeURIComponent(uri.split('/tree/')[1]?.split('/document/')[0] ?? '').replace(/\/+$/, '')
+
+/** How a folder being added relates to one already in the list. */
+async function relation(existing: LocalFolder, added: { uri?: string; handle?: DirectoryHandle }): Promise<'same' | 'inside' | 'contains' | null> {
+  if (existing.uri && added.uri) {
+    const a = treeId(existing.uri)
+    const b = treeId(added.uri)
+    const under = (parent: string, child: string) => child.startsWith(/[:/]$/.test(parent) ? parent : `${parent}/`)
+    if (a === b) return 'same'
+    if (under(a, b)) return 'inside'
+    if (under(b, a)) return 'contains'
+    return null
+  }
+  const known = !existing.uri && added.handle ? await idbGet<DirectoryHandle>(`handle:${existing.id}`) : undefined
+  if (!known || !added.handle) return null
+  try {
+    if (await known.isSameEntry(added.handle)) return 'same'
+    if (await known.resolve(added.handle)) return 'inside'
+    if (await added.handle.resolve(known)) return 'contains'
+  } catch {
+    /* a handle that can't be compared is treated as unrelated */
+  }
+  return null
+}
+
+/**
+ * Ask for a folder, add it and scan it. Resolves to the folder (and the folders it swallowed:
+ * adding a parent of folders already in the list merges them into it), or null if cancelled.
+ * Throws when the folder is already in the list, alone or as part of another.
+ */
+export async function addLocalFolder(): Promise<{ folder: LocalFolder; merged: LocalFolder[] } | null> {
   let folder: LocalFolder
+  let handle: DirectoryHandle | undefined
   if (nativeMusic) {
     let picked: { uri: string; name: string }
     try {
@@ -308,23 +363,32 @@ export async function addLocalFolder(): Promise<LocalFolder | null> {
     } catch {
       return null
     }
-    if (localFolders.value.some((item) => item.uri === picked.uri)) return null
     folder = { id: crypto.randomUUID().slice(0, 8), name: picked.name || 'Music', kind: 'android', uri: picked.uri }
   } else if (browserMusic) {
-    let handle: DirectoryHandle
     try {
       handle = await (window as unknown as { showDirectoryPicker(options: { mode: 'read' }): Promise<DirectoryHandle> }).showDirectoryPicker({ mode: 'read' })
     } catch {
       return null
     }
     folder = { id: crypto.randomUUID().slice(0, 8), name: handle.name, kind: 'web' }
-    await idbSet(`handle:${folder.id}`, handle)
   } else {
     throw new Error("This device can't add music folders")
   }
+
+  const merged: LocalFolder[] = []
+  for (const existing of localFolders.value) {
+    const how = await relation(existing, { uri: folder.uri, handle })
+    if (how === 'same') throw new Error(`"${existing.name}" is already added`)
+    if (how === 'inside') throw new Error(`"${folder.name}" is already part of "${existing.name}"`)
+    if (how === 'contains') merged.push(existing)
+  }
+
+  if (handle) await idbSet(`handle:${folder.id}`, handle)
   localFolders.value = [...localFolders.value, folder]
+  // The parent covers them now; keeping both would list every song twice.
+  for (const inner of merged) await removeLocalFolder(inner.id)
   await scanLocalLibrary(folder.id)
-  return folder
+  return { folder, merged }
 }
 
 export async function removeLocalFolder(id: string) {

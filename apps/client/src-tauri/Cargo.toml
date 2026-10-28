@@ -13,16 +13,20 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
-tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
+# Without its default "cookies" feature: that one keeps a `.cookies` jar in the user's
+# cache folder (outside the data directory). Plugins send the cookies they need as headers.
+tauri-plugin-http = { version = "2", default-features = false, features = ["unsafe-headers", "rustls-tls", "http2", "charset", "system-proxy"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
+base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["sync", "time"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"
+tauri-plugin-global-shortcut = "2"
 
 [profile.release]
 codegen-units = 1

@@ -2,6 +2,7 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 import { createApp } from 'vue'
 import App from './App.vue'
 import './styles/main.css'
+import { initDragScroll } from './dragScroll'
 import { initKeyboard } from './keyboard'
 import { initTray } from './tray'
 import { initMediaControls } from './mediaControls'
@@ -27,6 +28,7 @@ initTheme()
 initPlayer()
 initMediaControls()
 initKeyboard()
+initDragScroll()
 initTray()
 
 // Built-in actions, menus and settings use the same registries plugins extend.

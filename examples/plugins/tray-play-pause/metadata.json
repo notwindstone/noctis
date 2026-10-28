@@ -1,0 +1,11 @@
+{
+  "name": "Tray play/pause",
+  "version": "1.0.0",
+  "authors": ["Noctis"],
+  "type": "unrestricted",
+  "platforms": ["desktop"],
+  "description": "A left click on the tray icon plays or pauses the music; a double click opens Noctis (the pause waits a moment so opening the window doesn't pause the music first). With nothing loaded, a click opens the window as usual.",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/tray-play-pause",
+  "categories": ["utility"],
+  "languages": ["en"]
+}

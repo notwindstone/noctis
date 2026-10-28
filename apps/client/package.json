@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "description": "The Noctis app: Vue 3 + Capacitor (Android) + Tauri (desktop)",
+  "description": "The Noctis app: Vue 3 + Capacitor (Android, iOS) + Tauri (desktop)",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
@@ -11,6 +11,8 @@
     "preview": "vite preview",
     "sync": "bun run build && cap sync",
     "android": "bun run sync && cap open android",
+    "ios": "bun run sync && cd ios && xtool dev",
+    "ios:build": "bun run sync && cd ios && xtool dev build",
     "tauri": "tauri",
     "desktop": "tauri dev",
     "desktop:build": "tauri build"
@@ -20,6 +22,7 @@
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/ios": "^8.5.3",
     "@capacitor/status-bar": "^8.0.4",
     "@material-symbols/svg-400": "^0.48.1",
     "@noctis/plugin-core": "workspace:*",

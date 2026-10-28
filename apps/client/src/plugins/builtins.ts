@@ -1,7 +1,8 @@
 import { isLiked, toggleLike } from '../library'
 import { navigate } from '../navigation'
 import { cancelDownload, download, isOnDevice, offlineState, removeOffline, transfers } from '../offline'
-import { addToQueue, currentSong, playNext, playRadio, playSongs, removeFromQueue, shufflePlay, startRadio } from '../player'
+import { addToQueue, chapters, currentChapter, currentSong, playNext, playRadio, playSongs, removeFromQueue, seek, shufflePlay, startRadio } from '../player'
+import { formatTime } from '../format'
 import { notify } from '../snackbar'
 import { closePlayer, confirm, openPlayer, queueOpen, showChoice, showPlayFrom, type ItemMenuRequest } from '../ui'
 import { getAlbum, getPlaylist, shareLink } from '../services/api'
@@ -120,6 +121,7 @@ function registerBuiltInActions() {
     openPlayer()
     queueOpen.value = true
   }, OWNER)
+  registerAction<PlayerContext>('player.chapters', () => showChapters(), OWNER)
   registerAction<PlayerContext>('player.download', ({ song, handlers }) => {
     const state = offlineState(song.id)
     if (state === 'downloaded') {
@@ -255,7 +257,8 @@ function defineBuiltInEntries() {
   ]
 
   const player: ActionEntry<PlayerContext>[] = [
-    { id: 'queue', icon: 'queue', label: 'Up next', action: 'player.queue' },
+    { id: 'queue', icon: 'queue', label: 'Up next', filled: () => queueOpen.value, action: 'player.queue' },
+    { id: 'chapters', icon: 'list', label: 'Chapters', action: 'player.chapters', visible: () => chapters.value.length > 1 },
     {
       id: 'download',
       icon: ({ song }) => (offlineState(song.id) === 'downloaded' ? 'downloaded' : 'download'),
@@ -275,6 +278,17 @@ function defineBuiltInEntries() {
   ActionCollections.playlistMenu.push(...(playlist as ActionEntry[]))
   ActionCollections.artistMenu.push(...(artist as ActionEntry[]))
   ActionCollections.playerActions.push(...(player as ActionEntry[]))
+}
+
+/** The chapter list: choosing one jumps there. */
+export function showChapters() {
+  if (chapters.value.length === 0) return
+  showChoice({
+    title: 'Chapters',
+    options: chapters.value.map((chapter) => ({ value: String(chapter.start), label: chapter.title, description: formatTime(chapter.start) })),
+    value: String(currentChapter.value?.start ?? ''),
+    onSelect: (start) => seek(Number(start)),
+  })
 }
 
 let defined = false

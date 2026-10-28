@@ -21,6 +21,12 @@ const failed = ref(false)
 const loaded = ref(false)
 /** hq720 stills don't exist for every (older) video; fall back to mqdefault once. */
 const downgraded = ref(false)
+/**
+ * YouTube answers a missing picture with its grey "no preview" tile (a 120x90 image), not an
+ * error. It's shown as Noctis's logo instead.
+ */
+const placeholder = ref(false)
+const logo = `${import.meta.env.BASE_URL}favicon.svg`
 
 /** Which try this is: the picture is requested again (a new element) after a failure. */
 const attempt = ref(0)
@@ -46,6 +52,7 @@ watch(
     failed.value = false
     loaded.value = false
     downgraded.value = false
+    placeholder.value = false
     attempt.value = 0
   },
 )
@@ -97,7 +104,11 @@ function onError() {
   else fail()
 }
 
-function onLoad() {
+function onLoad(event: Event) {
+  const image = event.target as HTMLImageElement
+  if (image.naturalWidth === 120 && image.naturalHeight === 90 && /(^|\.)ytimg\.com\//.test(new URL(image.src, location.href).host + '/')) {
+    placeholder.value = true
+  }
   loaded.value = true
   clearTimers()
 }
@@ -105,11 +116,12 @@ function onLoad() {
 
 <template>
   <span class="thumb" :class="`thumb-${shape}`">
-    <span v-if="!url || failed || !loaded" class="thumb-fallback" aria-hidden="true">
-      <C.MIcon :name="icon" :size="Math.max(18, Math.round(size * 0.36))" />
+    <span v-if="!url || failed || !loaded || placeholder" class="thumb-fallback" aria-hidden="true">
+      <img v-if="placeholder" class="thumb-logo" :src="logo" alt="" draggable="false" />
+      <C.MIcon v-else :name="icon" :size="Math.max(18, Math.round(size * 0.36))" />
     </span>
     <img
-      v-if="url && !failed"
+      v-if="url && !failed && !placeholder"
       :key="attempt"
       :src="url"
       alt=""

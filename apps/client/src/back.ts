@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, shallowRef, watch } from 'vue'
-import { hasNoctisPlugin, Noctis, type BackEventData } from './native'
+import { hasNoctisPlugin, Noctis, platform, type BackEventData } from './native'
 
 /**
  * One place for every "back": Android's predictive back gesture (with progress, via
@@ -204,7 +204,8 @@ let initialized = false
 export function initBack() {
   if (initialized) return
   initialized = true
-  if (hasNoctisPlugin) {
+  // Predictive back is Android's; on iOS the web layer handles the edge swipe itself.
+  if (hasNoctisPlugin && platform === 'android') {
     setupNativeBack()
   } else {
     setupHistoryBack()

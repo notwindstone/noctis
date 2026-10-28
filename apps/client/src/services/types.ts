@@ -92,6 +92,11 @@ export interface ServiceDefinition {
     like?(input: { song: Song; liked: boolean }): Promise<void>
   }
 
+  /** Chapters of a long song or mix (a track list in the description), for the player's chapter list. */
+  chapters?: {
+    get(input: { song: Song }): Promise<Chapter[]>
+  }
+
   streams?: {
     /** A playable URL. `efficient` asks for a small stream (data saver, slow network). */
     resolve(input: { song: Song; efficient: boolean }): Promise<StreamInfo>
@@ -164,6 +169,13 @@ export type RadioSeed =
   | { kind: 'song'; song: Song }
   | { kind: 'album'; album: Pick<Album, 'id' | 'title'>; playlistId?: string }
   | { kind: 'playlist'; playlist: Pick<Playlist, 'id' | 'title'> }
+
+/** A named part of a long song or mix. */
+export interface Chapter {
+  title: string
+  /** Seconds from the start. */
+  start: number
+}
 
 /** "albums.get", "streams.resolve"… */
 export type EndpointName = {

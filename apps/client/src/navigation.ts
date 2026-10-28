@@ -3,6 +3,7 @@ import { registerBackTarget } from './back'
 import { App as NativeApp } from '@capacitor/app'
 import { isNative, type BackEventData } from './native'
 import type { BrowseTarget, Item } from './models'
+import { animationsOff } from './preferences'
 
 export type TabId = 'home' | 'library' | 'settings'
 
@@ -80,7 +81,8 @@ function run(operation: (animate: boolean) => Promise<void>): Promise<void> {
   animator?.finishNow()
   const next = chain.then(async () => {
     try {
-      await operation(pending === 1)
+      // With animations off there's nothing to play: the 1 ms animation it would get still flashes the screen underneath.
+      await operation(pending === 1 && !animationsOff())
     } finally {
       pending--
     }

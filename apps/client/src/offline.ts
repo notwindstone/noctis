@@ -2,14 +2,16 @@ import { Capacitor } from '@capacitor/core'
 import { Directory, Filesystem } from '@capacitor/filesystem'
 import { computed, reactive, shallowReactive, shallowRef, watch } from 'vue'
 import { haptic } from './haptics'
-import { isNative } from './native'
+import { invoke } from '@tauri-apps/api/core'
+import { isDesktop, isNative } from './native'
 import { navigate } from './navigation'
 import * as notifications from './notifications'
-import { cacheEnabled, downloadConcurrency, downloadNotifications, maxCacheMb } from './preferences'
+import { cacheEnabled, downloadConcurrency, downloadMaxMinutes, downloadNotifications, maxCacheMb, saveAsFiles } from './preferences'
 import { writeLog } from './plugins/log'
 import { persisted } from './storage'
 import { fetchRange } from './http'
-import { sourceOf, type Song } from './models'
+import { artistNames, sourceOf, type Song } from './models'
+import { isStationSong } from './stations'
 import { services } from './services/registry'
 import { forgetStream, resolveStream } from './services/stream'
 
@@ -19,7 +21,10 @@ import { forgetStream, resolveStream } from './services/stream'
  * size set in Settings → Storage.
  *
  * googlevideo only serves bounded byte ranges, so files are fetched in 1 MB chunks.
- * On Android they go to the app's data directory; in the browser, to Cache Storage.
+ * On Android they go to the app's data directory; in the browser, to Cache Storage. On the
+ * desktop they are ordinary files named after the song (src-tauri/src/files.rs), unless
+ * "Save as regular files" is off (Settings → Storage): then they go to the webview's Cache
+ * Storage like in the browser. Each entry says where its file is, so both kinds coexist.
  */
 
 export type OfflineKind = 'download' | 'cache'
@@ -28,6 +33,8 @@ export interface OfflineEntry {
   song: Song
   kind: OfflineKind
   path: string
+  /** Desktop: `path` is a file under the music folder; otherwise it's in Cache Storage / the app's data. */
+  store?: 'file'
   mimeType: string
   size: number
   savedAt: number
@@ -78,7 +85,20 @@ export function offlineState(id: string): OfflineState {
 }
 
 function extensionFor(mimeType: string): string {
-  return mimeType.includes('webm') ? 'webm' : mimeType.includes('mp4') ? 'm4a' : 'audio'
+  if (mimeType.includes('webm')) return 'webm'
+  if (mimeType.includes('mp4') || mimeType.includes('m4a') || mimeType.includes('aac')) return 'm4a'
+  if (mimeType.includes('mpeg')) return 'mp3'
+  for (const type of ['flac', 'ogg', 'opus', 'wav']) if (mimeType.includes(type)) return type
+  return 'audio'
+}
+
+/** "Artist - Title [id].ext" without what Windows doesn't allow in a file name. */
+function fileNameFor(song: Song, extension: string): string {
+  const plain = (text: string) =>
+    // eslint-disable-next-line no-control-regex
+    text.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/\s+/g, ' ').replace(/[. ]+$/, '').trim()
+  const label = plain([artistNames(song.artists), song.title].filter(Boolean).join(' - ')).slice(0, 110) || 'song'
+  return `${label} [${song.id.replace(/[^\w-]/g, '_')}].${extension}`
 }
 
 function bytesToBase64(bytes: ArrayBuffer): string {
@@ -107,10 +127,21 @@ async function fetchAll(
     let attempt = 0
     for (;;) {
       const result = await fetchRange(url, start, end, headers)
+      const wanted = end - start + 1
+      // A server that ignores Range answers 200 with the whole file: keep this chunk's part of it.
+      if (result.status === 200 && result.bytes && result.bytes.byteLength > wanted) {
+        result.bytes = result.bytes.slice(start, end + 1)
+      }
       if (result.status === 200 || result.status === 206) {
-        const base64 = result.base64 ?? (result.bytes ? bytesToBase64(result.bytes) : '')
-        await onChunk(base64, result.bytes, index)
-        break
+        // A cut-off answer saved as if it were whole makes a file that ends seconds in.
+        const got = result.bytes ? result.bytes.byteLength : result.base64 ? Math.floor((result.base64.length * 3) / 4) - (result.base64.endsWith('==') ? 2 : result.base64.endsWith('=') ? 1 : 0) : 0
+        if (got === wanted) {
+          const base64 = result.base64 ?? (result.bytes ? bytesToBase64(result.bytes) : '')
+          await onChunk(base64, result.bytes, index)
+          break
+        }
+        if (++attempt >= 3) throw new Error(`Got ${got} of ${wanted} bytes at byte ${start}`)
+        continue
       }
       if (++attempt >= 3) throw new Error(`HTTP ${result.status} at byte ${start}`)
     }
@@ -119,12 +150,17 @@ async function fetchAll(
 }
 
 async function save(song: Song, kind: OfflineKind, isCancelled?: () => boolean): Promise<OfflineEntry> {
+  const refusal = notDownloadable(song, kind)
+  if (refusal) throw new Error(refusal)
   const stream = await resolveStream(song)
   const total = stream.contentLength
   if (!total) throw new Error('Unknown file size')
 
+  const asFile = isDesktop && saveAsFiles.value
   // Ids from other services may contain ":" ("spotify:track:…"); keep file names plain.
-  const path = `audio/${song.id.replace(/[^\w.-]/g, '_')}.${extensionFor(stream.mimeType)}`
+  const path = asFile
+    ? `${kind === 'download' ? 'downloads' : 'cache'}/${fileNameFor(song, extensionFor(stream.mimeType))}`
+    : `audio/${song.id.replace(/[^\w.-]/g, '_')}.${extensionFor(stream.mimeType)}`
   const webParts: ArrayBuffer[] = []
 
   await fetchAll(
@@ -132,7 +168,9 @@ async function save(song: Song, kind: OfflineKind, isCancelled?: () => boolean):
     stream.fetchHeaders,
     total,
     async (base64, bytes, index) => {
-      if (isNative) {
+      if (asFile) {
+        await invoke('offline_write', { path, data: base64, append: index > 0 })
+      } else if (isNative) {
         if (index === 0) {
           await Filesystem.writeFile({ path, data: base64, directory: Directory.Data, recursive: true })
         } else {
@@ -149,11 +187,11 @@ async function save(song: Song, kind: OfflineKind, isCancelled?: () => boolean):
     isCancelled,
   ).catch(async (error) => {
     // Don't leave half a file behind.
-    if (isNative) await deleteFile(path)
+    if (isNative || asFile) await deleteFile(path, asFile ? 'file' : undefined)
     throw error
   })
 
-  if (!isNative) {
+  if (!isNative && !asFile) {
     const cache = await caches.open(WEB_CACHE)
     await cache.put(
       new Request(`/offline/${path}`),
@@ -161,12 +199,14 @@ async function save(song: Song, kind: OfflineKind, isCancelled?: () => boolean):
     )
   }
 
-  return { song, kind, path, mimeType: stream.mimeType, size: total, savedAt: Date.now(), lastPlayed: Date.now() }
+  return { song, kind, path, store: asFile ? 'file' : undefined, mimeType: stream.mimeType, size: total, savedAt: Date.now(), lastPlayed: Date.now() }
 }
 
-async function deleteFile(path: string) {
+async function deleteFile(path: string, store?: 'file') {
   try {
-    if (isNative) {
+    if (store === 'file') {
+      await invoke('offline_delete', { path })
+    } else if (isNative) {
       await Filesystem.deleteFile({ path, directory: Directory.Data })
     } else {
       const cache = await caches.open(WEB_CACHE)
@@ -310,10 +350,27 @@ function pump() {
   if (wait !== Infinity) wakeTimer = window.setTimeout(pump, wait)
 }
 
+const ATTEMPTS = 3
+
+/** A song that fails (a dropped connection, a stale stream URL) gets a few more tries before it counts as failed. */
+async function saveWithRetries(song: Song, isCancelled: () => boolean): Promise<OfflineEntry> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await save(song, 'download', isCancelled)
+    } catch (error) {
+      if (error instanceof Cancelled || isCancelled() || attempt >= ATTEMPTS) throw error
+      writeLog('noctis', 'info', `Download of "${song.title}" failed (${(error as Error).message}), trying again`)
+      // The stream URL may be what went stale: resolve a fresh one.
+      forgetStream(song.id)
+      await new Promise((resolve) => window.setTimeout(resolve, attempt * 2000))
+    }
+  }
+}
+
 async function run(job: Job) {
   const { song, finish } = job
   try {
-    const entry = await save(song, 'download', () => job.cancelled)
+    const entry = await saveWithRetries(song, () => job.cancelled)
     offline.value = { ...offline.value, [song.id]: { ...entry, kind: 'download' } }
     batch.done++
   } catch (error) {
@@ -388,14 +445,32 @@ savedQueue.value = [...running.values(), ...pending].map((job) => job.song)
 /** A song that's already a file on this device (Settings → Local music): nothing to download. */
 export const isOnDevice = (song: Pick<Song, 'source'>) => song.source === 'device'
 
+/** A cached song becomes a download; as a file it moves from the cache folder to the downloads one. */
+async function promote(id: string, song?: Song) {
+  const entry = offline.value[id]
+  if (!entry) return
+  let path = entry.path
+  if (entry.store === 'file' && path.startsWith('cache/')) {
+    const moved = `downloads/${path.slice('cache/'.length)}`
+    if (await invoke('offline_move', { from: path, to: moved }).then(() => true, () => false)) path = moved
+  }
+  offline.value = { ...offline.value, [id]: { ...entry, kind: 'download', path, ...(song ? { song } : {}) } }
+}
+
+/** Why a song isn't saved on the device (a station, or longer than Settings → Storage allows), or null. */
+export function notDownloadable(song: Song, kind: OfflineKind = 'download'): string | null {
+  if (isStationSong(song)) return 'It is a station, not a song'
+  const limit = downloadMaxMinutes.value * 60
+  if (kind === 'download' && limit > 0 && (song.duration ?? 0) > limit) return `It is longer than ${downloadMaxMinutes.value} minutes`
+  return null
+}
+
 export async function download(song: Song, kind: OfflineKind = 'download') {
-  if (isOnDevice(song)) return
+  if (isOnDevice(song) || notDownloadable(song, kind)) return
   const existing = offline.value[song.id]
   if (existing) {
     // Promote a cached song to a download without fetching it again.
-    if (kind === 'download' && existing.kind === 'cache') {
-      offline.value = { ...offline.value, [song.id]: { ...existing, kind: 'download', song } }
-    }
+    if (kind === 'download' && existing.kind === 'cache') await promote(song.id, song)
     return
   }
   const transfer = transfers.get(song.id)
@@ -408,7 +483,7 @@ export async function download(song: Song, kind: OfflineKind = 'download') {
       const inFlight = cacheFills.get(song.id)
       await inFlight
       if (offline.value[song.id]) {
-        offline.value = { ...offline.value, [song.id]: { ...offline.value[song.id], kind: 'download' } }
+        await promote(song.id)
         batch.done++
       } else {
         batch.failed++
@@ -448,7 +523,7 @@ export async function removeOffline(id: string) {
   const next = { ...offline.value }
   delete next[id]
   offline.value = next
-  await deleteFile(entry.path)
+  await deleteFile(entry.path, entry.store)
 }
 
 async function clearKind(kind: OfflineKind) {
@@ -456,7 +531,7 @@ async function clearKind(kind: OfflineKind) {
   const next = { ...offline.value }
   for (const entry of entries) delete next[entry.song.id]
   offline.value = next
-  await Promise.all(entries.map((entry) => deleteFile(entry.path)))
+  await Promise.all(entries.map((entry) => deleteFile(entry.path, entry.store)))
 }
 
 export const clearCache = () => clearKind('cache')
@@ -494,6 +569,12 @@ export async function localSource(id: string): Promise<string | null> {
   offline.value = { ...offline.value, [id]: { ...entry, lastPlayed: Date.now() } }
 
   try {
+    if (entry.store === 'file') {
+      const bytes = await invoke<ArrayBuffer>('offline_read', { path: entry.path })
+      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl)
+      currentObjectUrl = URL.createObjectURL(new Blob([bytes], { type: entry.mimeType }))
+      return currentObjectUrl
+    }
     if (isNative) {
       const { uri } = await Filesystem.getUri({ path: entry.path, directory: Directory.Data })
       return Capacitor.convertFileSrc(uri)
