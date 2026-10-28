@@ -32,6 +32,10 @@ a plugin you install. Examples:
   several sources (LRCLIB, NetEase, QQ Music, Musixmatch, Genius, your own files), Apple
   Music-style animation, translation and romanization. It replaces `PlayerArt` (the cover)
   and exposes `Noctis.lyrics` for other plugins to add sources;
+- [`examples/plugins/tray-play-pause`](../examples/plugins/tray-play-pause) — desktop: a click
+  on the tray icon plays or pauses, a double click opens Noctis (the `onTrayClick` hook);
+- [`examples/plugins/offline-wave`](../examples/plugins/offline-wave) — downloads a batch of
+  songs around what you play, through `Noctis.libs.offline`;
 - [`examples/plugins/demo-source`](../examples/plugins/demo-source):
 a fake "demo" streaming service with a hook, a song-menu action, a settings page and a
 screen.
@@ -386,6 +390,7 @@ Plugin.subscribe('hook::onTrayClick::before', () => ({ status: 'stop' }))
 ```
 
 Call `remove()` when the plugin is disabled. Items only show while "Minimize to tray" is on.
+[`tray-play-pause`](../examples/plugins/tray-play-pause) is a complete example (it also tells a single click from a double click).
 
 ## Play from
 

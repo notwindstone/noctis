@@ -101,19 +101,20 @@ Client paths below are in `apps/client/`.
 | `src/playFrom.ts` | "Play from": a song's options (device copy, your services, each server stream), the per-song choice, the preference and the fallback when a song's own source can't play it |
 | `src/matching.ts` | finding a song on another service by searching (`offerAsSource`), so songs known only from metadata can play |
 | `src/local/` | music on the device as the "On this device" service. Android: the whole device from MediaStore (music permission), plus extra folders through the Storage Access Framework (`LocalMusic.java`). Browsers: folders through the File System Access API |
+| `src-tauri/` | the desktop shell: launch options (`--help`), data directory, files for downloads, tray, sign-in windows, media keys (see the Desktop row in [CLAUDE.md](CLAUDE.md)) |
 | `src/models.ts` | plain models every screen uses (songs, albums, sections, pages…) |
 | `src/services/` | the service layer: `types.ts` (what a service provides), `registry.ts`, `api.ts` (routes every call to the item's or the active service, through the `onRequest` hook) |
 | `examples/plugins/soundcloud/` | SoundCloud: discovery home, search, artists, playlists, radios, your library (signed in on SoundCloud's own page), HLS joined into one file (`stream.ts`) |
 | `examples/plugins/monochrome/` | Monochrome (monochrome.st): lossless FLAC through API instances you add (`instances.ts`: tracks API or hifi-api, detected, with failover), editors' picks, TIDAL playlists found on the catalog by ISRC |
 | `examples/plugins/musicbrainz/` | a server plugin that indexes MusicBrainz into the catalog, on search or by release/artist |
-| `examples/plugins/youtube-music/` | YouTube Music, as a plugin built from TypeScript: youtubei.js sessions and sign-in (`client.ts`), native/proxied fetch (`http.ts`), endpoints (`api.ts`, `parse.ts`), streams with BotGuard tokens (`stream.ts`, `potoken.ts`) |
+| `examples/plugins/youtube-music/` | YouTube Music, as a plugin built from TypeScript: youtubei.js sessions and sign-in (`client.ts`), native/proxied fetch (`http.ts`), endpoints (`api.ts`, `parse.ts`), chapters from video descriptions (`chapters.ts`), streams with BotGuard tokens (`stream.ts`, `potoken.ts`) |
 | `src/plugins/` | the client's side of the plugin system: runtime, hooks, component/action registries, settings rows (see [docs/PLUGINS.md](docs/PLUGINS.md)) |
-| `src/player.ts` | queue, shuffle/repeat, radio autoplay, offline-first sources, persisted queue |
-| `src/offline.ts` | downloads and the auto-trimmed cache (1 MB ranged chunks → app storage / Cache Storage) |
+| `src/player.ts` | queue, shuffle/repeat, radio autoplay (with length limits), skipping songs that fail or are stations, chapters, offline-first sources, persisted queue |
+| `src/offline.ts` | downloads and the auto-trimmed cache (1 MB ranged chunks → app storage / Cache Storage; plain files on the desktop, `src-tauri/src/files.rs`), with retries, and no stations or over-long songs (`stations.ts`) |
 | `src/library.ts` | on-device likes (mirrored to the service when it takes them), history, search history |
 | `src/back.ts` | single back-handling stack: native predictive back, browser back, Escape, edge swipe |
 | `src/navigation.ts`, `components/ScreenStack.vue` | per-tab screen stacks; every screen is a layer, so back gestures can reveal the real previous screen |
-| `src/theme.ts` | OKLCH Material 3 schemes from wallpaper (Android 12+), album art or a preset |
+| `src/theme.ts` | OKLCH Material 3 schemes from wallpaper (Android 12+), album art, a preset or a colour you pick |
 | `android/.../NoctisPlugin.java` | predictive back events, system accent colour, Google sign-in, cookie clearing |
 | `android/.../LoginActivity.java` | WebView sign-in: Google for YouTube Music, OAuth redirects, and a site's own page until it sets a cookie (SoundCloud) |
 
