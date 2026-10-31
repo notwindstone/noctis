@@ -315,6 +315,8 @@ h3 {
 .chip-button {
   position: relative;
   display: inline-flex;
+  flex: none;
+  white-space: nowrap;
   align-items: center;
   gap: 8px;
   height: 40px;
@@ -452,6 +454,11 @@ h3 {
   transform: rotate(-90deg);
 }
 
+.progress-ring.large {
+  width: 24px;
+  height: 24px;
+}
+
 .progress-ring circle {
   fill: none;
   stroke-width: 3;
@@ -484,6 +491,12 @@ h3 {
   background: currentColor;
   transform-origin: bottom;
   animation: eq 0.9s ease-in-out infinite;
+}
+
+/* Following the music: the levels set the height, no looping animation. */
+.eq.is-live span {
+  animation: none;
+  transition: transform 60ms linear;
 }
 
 .eq span:nth-child(2) {
@@ -525,6 +538,11 @@ h3 {
 
 .screen-layer::-webkit-scrollbar {
   display: none;
+}
+
+/* Screens size things by their own width (cqi), which isn't the window's next to the rail. */
+.screen-layer {
+  container-type: inline-size;
 }
 
 .has-gestures .screen-layer.is-current,
@@ -699,6 +717,8 @@ h3 {
   gap: 4px;
   min-width: 0;
   padding-right: 4px;
+  border-radius: 16px;
+  transition: background-color 0.15s ease;
 }
 
 .item-row-main {
@@ -795,6 +815,10 @@ h3 {
   color: var(--md-sys-color-primary);
 }
 
+.offline-badge.is-waiting {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
 .item-row-more {
   width: 40px;
   height: 40px;
@@ -826,6 +850,11 @@ h3 {
 .item-card.is-artist {
   align-items: center;
   text-align: center;
+}
+
+/* Round artwork: overlays (playing, hover) follow the circle. */
+.item-card.is-artist .item-card-art {
+  --thumb-radius: 50%;
 }
 
 .item-card-playing,
@@ -863,6 +892,19 @@ h3 {
 .item-card-subtitle {
   -webkit-line-clamp: 1;
   color: var(--md-sys-color-on-surface-variant);
+}
+
+.item-card-number {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  min-width: 26px;
+  padding: 3px 8px;
+  border-radius: 13px;
+  background: rgb(0 0 0 / 0.5);
+  color: #fff;
+  text-align: center;
+  backdrop-filter: blur(8px);
 }
 
 .item-grid {
@@ -1306,15 +1348,66 @@ h3 {
   align-items: center;
   justify-content: center;
   gap: 10px;
+  width: 100%;
   margin: 16px 0 8px;
+}
+
+/* Play and Shuffle share what the round buttons leave, so the row fits a 360px phone. */
+.collection-actions > .filled-button.large,
+.collection-actions > .tonal-button.large {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+@media (max-width: 440px) {
+  .collection-header {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .collection-actions {
+    gap: 8px;
+  }
+
+  .collection-actions > .icon-button.large {
+    width: 48px;
+    height: 48px;
+  }
+
+  .collection-actions > .filled-button.large,
+  .collection-actions > .tonal-button.large {
+    height: 52px;
+    padding: 0 18px 0 14px;
+    font-size: 15px;
+  }
 }
 
 .collection-sort {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   padding: 0 12px 4px;
 }
 
-.collection-sort .text-button {
+.collection-layout {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Grid view of a page's songs: the card width is the smallest a column may be. */
+.collection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--collection-card, 150px), 1fr));
+  gap: 20px 14px;
+  padding: 8px 16px 0;
+}
+
+.collection-sort .text-button,
+.collection-layout .text-button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1348,11 +1441,11 @@ h3 {
   padding: 8px 8px 0;
 }
 
+/* A height, not an aspect-ratio: with max-height that also narrowed the hero (landscape phones). */
 .artist-hero {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 0.92;
-  max-height: 64vh;
+  height: min(92cqi, 64vh);
 }
 
 .artist-hero-image {
@@ -1366,16 +1459,52 @@ h3 {
   background: linear-gradient(180deg, transparent 35%, color-mix(in oklab, var(--md-sys-color-surface) 70%, transparent) 70%, var(--md-sys-color-surface) 100%);
 }
 
-.artist-name {
+.artist-hero-text {
   position: absolute;
   right: 20px;
   bottom: 12px;
   left: 20px;
+  display: flex;
+  align-items: flex-end;
+  gap: 28px;
 }
 
+.artist-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.artist-hero-portrait {
+  display: none;
+  flex: none;
+  width: 200px;
+  height: 200px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.28);
+}
+
+.artist-hero.no-image {
+  height: auto;
+}
+
+.artist-hero.no-image .artist-hero-text {
+  position: static;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  padding: calc(var(--safe-top) + 72px) 20px 12px;
+}
+
+.artist-hero.no-image .artist-hero-portrait {
+  display: block;
+  width: 128px;
+  height: 128px;
+  box-shadow: none;
+}
+
+/* The album page's buttons (.collection-actions), lined up under the name instead of centred. */
 .artist-actions {
-  display: flex;
-  gap: 12px;
+  justify-content: flex-start;
+  margin: 0;
   padding: 8px 20px 4px;
 }
 
@@ -1462,11 +1591,16 @@ h3 {
   min-width: 0;
 }
 
+/* One line each, so a long title ("Recently played" on a 360px phone) doesn't make its row taller. */
+.library-tile-text strong,
 .library-tile-text span {
   overflow: hidden;
-  color: var(--md-sys-color-on-surface-variant);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.library-tile-text span {
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .signin-card {
@@ -1523,7 +1657,7 @@ h3 {
 }
 
 .settings-row:active:not(:disabled) {
-  background: var(--md-sys-color-surface-container-high);
+  background: color-mix(in oklab, var(--md-sys-color-on-surface) 12%, var(--md-sys-color-surface-container));
 }
 
 .settings-row:disabled {
@@ -1556,6 +1690,62 @@ h3 {
 
 .settings-row-chevron {
   color: var(--md-sys-color-on-surface-variant);
+}
+
+/* Settings → Plugins → Installed: the open button, a switch and a delete button side by side. */
+.installed-plugin {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+}
+
+.installed-plugin-open {
+  flex: 1;
+  min-width: 0;
+  padding-right: 8px;
+}
+
+.installed-plugin-open .settings-row-icon {
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.installed-plugin-remove:hover {
+  color: var(--md-sys-color-error);
+}
+
+.plugin-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  border-radius: 28%;
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.plugin-icon > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.plugin-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 32px 24px;
+  text-align: center;
+}
+
+.plugin-header .plugin-icon {
+  margin-bottom: 8px;
+}
+
+.plugin-header-id {
+  overflow-wrap: anywhere;
 }
 
 .settings-subheader {
@@ -1720,7 +1910,8 @@ h3 {
   gap: 8px;
   margin: 0 16px 16px;
   padding: 12px;
-  border-radius: 20px;
+  /* The same corners as a settings group above and below it. */
+  border-radius: 24px;
   background: var(--md-sys-color-surface-container);
 }
 
@@ -1733,7 +1924,6 @@ h3 {
   flex-direction: column;
   gap: 6px;
   width: 100%;
-  max-height: 60dvh;
   margin: 0;
   padding: 0;
   overflow-y: auto;
@@ -1742,6 +1932,10 @@ h3 {
   font-size: 12px;
   line-height: 16px;
   user-select: text;
+}
+
+.plugin-log-list.is-embedded {
+  max-height: 40dvh;
 }
 
 .plugin-log-entry {
@@ -1781,6 +1975,11 @@ h3 {
 .storage-meter span {
   border-radius: 7px;
   min-width: 14px;
+}
+
+.storage-meter.is-empty {
+  border-radius: 7px;
+  background: var(--md-sys-color-surface-container-highest);
 }
 
 .storage-meter-download {
@@ -2108,6 +2307,15 @@ h3 {
   color: var(--md-sys-color-on-surface-variant);
 }
 
+.full-player-format {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--md-sys-color-outline);
+}
+
 .full-player-controls {
   display: flex;
   align-items: center;
@@ -2169,10 +2377,61 @@ h3 {
   transform: scale(0.94);
 }
 
+/*
+ * One line that scrolls once plugins add more buttons than fit. Centred while they fit
+ * (auto margins on the ends, not justify-content: center, which cut off the first ones
+ * for good when they overflowed), edge to edge so a cut-off button says "there's more".
+ */
 .full-player-actions {
   display: flex;
-  justify-content: center;
   gap: 12px;
+  margin: 0 -24px;
+  padding: 0 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* The player frame takes touches for its drag; this row keeps sideways swipes. */
+  touch-action: pan-x;
+  mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
+
+.full-player-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.full-player-actions > :first-child {
+  margin-left: auto;
+}
+
+.full-player-actions > :last-child {
+  margin-right: auto;
+}
+
+/* Tablets upright: the phone layout in a column, not stretched across the screen. */
+@media (min-width: 600px) and (orientation: portrait) {
+  .full-player-art,
+  .full-player-meta,
+  .full-player > .seek {
+    width: 100%;
+    max-width: 520px;
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  .full-player-controls {
+    width: 100%;
+    max-width: 532px;
+    margin: 12px auto 20px;
+  }
+
+  .full-player-actions {
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  .queue-panel {
+    max-width: 640px;
+    margin: 0 auto;
+  }
 }
 
 @media (max-height: 640px) {
@@ -2218,6 +2477,25 @@ h3 {
   right: 0;
   border-radius: 3px 8px 8px 3px;
   background: var(--md-sys-color-secondary-container);
+}
+
+.seek-buffered {
+  position: absolute;
+  top: 50%;
+  height: 16px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--md-sys-color-on-surface-variant) 38%, transparent);
+  transform: translateY(-50%);
+  transition: width 0.3s linear, height 0.2s var(--md-sys-motion-easing);
+  pointer-events: none;
+}
+
+.seek-buffered.is-complete {
+  border-radius: 3px 8px 8px 3px;
+}
+
+.seek-track.is-dragging .seek-buffered {
+  height: 20px;
 }
 
 .seek-mark {
@@ -2301,7 +2579,7 @@ h3 {
   transform: translate3d(0, 100%, 0) !important;
 }
 
-@media (min-width: 900px) and (min-aspect-ratio: 6 / 5) {
+@media (min-width: 900px) and (min-aspect-ratio: 6 / 5), (orientation: landscape) and (max-height: 600px) {
   .queue-panel-leave-to {
     transform: translate3d(calc(100% + 24px), 0, 0) !important;
   }
@@ -2336,7 +2614,7 @@ h3 {
   display: none;
 }
 
-@media (min-width: 900px) and (min-aspect-ratio: 6 / 5) {
+@media (min-width: 900px) and (min-aspect-ratio: 6 / 5), (orientation: landscape) and (max-height: 600px) {
   .queue-grip {
     display: block;
   }
@@ -2542,6 +2820,99 @@ h3 {
   background: color-mix(in oklab, var(--md-sys-color-on-surface) 10%, transparent);
 }
 
+.menu-divider,
+.context-menu-divider {
+  height: 1px;
+  margin: 8px 0;
+  border: 0;
+  background: var(--md-sys-color-outline-variant);
+}
+
+/* Menu at the mouse pointer (ContextMenu.vue): M3's menu, for desktops. */
+.context-menu-root {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+}
+
+.context-menu-scrim {
+  position: absolute;
+  inset: 0;
+}
+
+.context-menu {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  padding: 8px 0;
+  overflow-y: auto;
+  border-radius: var(--md-sys-shape-sm);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: var(--md-sys-elevation-2);
+}
+
+.context-menu-divider {
+  margin: 8px 0;
+}
+
+.context-menu-item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 16px 0 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 14px;
+  text-align: left;
+}
+
+.context-menu-item span {
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.context-menu-item:hover,
+.context-menu-item:focus-visible {
+  outline: none;
+  background: color-mix(in oklab, var(--md-sys-color-on-surface) 8%, transparent);
+}
+
+.context-menu-item:active {
+  background: color-mix(in oklab, var(--md-sys-color-on-surface) 12%, transparent);
+}
+
+.context-menu-item:disabled {
+  opacity: 0.38;
+}
+
+.context-menu-enter-active {
+  transition: opacity 0.12s ease;
+}
+
+.context-menu-enter-active .context-menu {
+  transition: transform 0.18s var(--md-sys-motion-emphasized-decel);
+}
+
+.context-menu-leave-active {
+  transition: opacity 0.1s ease;
+}
+
+.context-menu-enter-from,
+.context-menu-leave-to {
+  opacity: 0;
+}
+
+.context-menu-enter-from .context-menu {
+  transform: scale(0.92);
+}
+
 .sheet-enter-active,
 .sheet-leave-active {
   transition: opacity 0.3s ease;
@@ -2595,6 +2966,17 @@ h3 {
   gap: 16px;
   padding: 0 24px;
   overflow-y: auto;
+  border-top: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+
+.dialog-body.has-more-above {
+  border-top-color: var(--md-sys-color-outline-variant);
+}
+
+.dialog-body.has-more-below {
+  border-bottom-color: var(--md-sys-color-outline-variant);
 }
 
 .dialog-description {
@@ -2651,6 +3033,10 @@ h3 {
 .choice-text {
   display: flex;
   flex-direction: column;
+}
+
+.choice-icon {
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .radio {
@@ -2721,13 +3107,13 @@ h3 {
 }
 
 .play-from-badge {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 0 8px;
-  border-radius: 999px;
+  flex: none;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: var(--md-sys-shape-full);
   background: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
-  vertical-align: 2px;
+  white-space: nowrap;
 }
 
 .choice-option.is-unavailable {
@@ -2746,7 +3132,7 @@ h3 {
   width: 100%;
   padding: 14px 16px;
   border: 1px solid var(--md-sys-color-outline);
-  border-radius: 6px;
+  border-radius: var(--md-sys-shape-xs);
   outline: none;
   background: transparent;
   font-size: 14px;
@@ -2808,41 +3194,48 @@ h3 {
 /* Download queue page */
 
 .downloads-summary {
-  margin: 0 16px 8px;
+  margin: 0 20px 8px;
   color: var(--md-sys-color-on-surface-variant);
 }
 
-.downloads-actions {
-  display: flex;
-  padding: 0 16px 8px;
-}
-
-.downloads-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 20px 0 16px;
-  border: 0;
-  border-radius: 20px;
-  background: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
-  cursor: pointer;
-}
-
+/* A section title with its actions (text buttons) at the end, lined up with the page title. */
 .downloads-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 16px 16px 4px;
+  min-height: 40px;
+  margin: 12px 8px 0 20px;
   color: var(--md-sys-color-primary);
 }
 
-.downloads-link {
-  border: 0;
-  background: none;
-  color: inherit;
-  cursor: pointer;
+.downloads-heading-actions {
+  display: flex;
+}
+
+/* Downloads page: the run in progress, a way to its queue. */
+.downloads-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: calc(100% - 32px);
+  margin: 8px 16px;
+  padding: 12px 12px 12px 16px;
+  border-radius: 24px;
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-primary);
+  text-align: left;
+}
+
+.downloads-banner-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--md-sys-color-on-surface);
+}
+
+.downloads-banner > .m-icon {
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 /* Side padding and gaps live on the list, so rows never touch the screen edges or each other. */
@@ -2972,16 +3365,55 @@ h3 {
     padding: 4px 0;
   }
 
-  /* Centred by padding, not by a max-width: backgrounds (the playlist tint) still span the window. */
+  /*
+   * Every page is one readable column, centred by padding rather than a max-width so
+   * backgrounds still span the window: the tint is absolutely positioned, and heroes and
+   * sticky bars take the inset back with negative margins. cqi is the screen layer's width.
+   */
   .screen {
-    padding-right: max(0px, calc((100% - 1240px) / 2));
-    padding-left: max(0px, calc((100% - 1240px) / 2));
+    --content-inset: max(0px, calc((100cqi - 960px) / 2));
+    padding-right: var(--content-inset);
+    padding-left: var(--content-inset);
   }
 
-  .settings-screen,
-  .settings-page {
-    padding-right: max(0px, calc((100% - 760px) / 2));
-    padding-left: max(0px, calc((100% - 760px) / 2));
+  .top-bar,
+  .home-top,
+  .search-top,
+  .artist-hero {
+    margin-right: calc(-1 * var(--content-inset));
+    margin-left: calc(-1 * var(--content-inset));
+  }
+
+  .top-bar {
+    padding-right: calc(var(--content-inset) + 4px);
+    padding-left: calc(var(--content-inset) + 4px);
+  }
+
+  .home-top {
+    padding-right: calc(var(--content-inset) + 12px);
+    padding-left: calc(var(--content-inset) + 16px);
+  }
+
+  .search-top {
+    padding-right: var(--content-inset);
+    padding-left: var(--content-inset);
+  }
+
+  /* An explicit width: with aspect-ratio, max-height would otherwise shrink an auto width back. */
+  .artist-hero {
+    width: calc(100% + 2 * var(--content-inset));
+  }
+
+  /* The photo spans the window; the name lines up with the column under it. */
+  .artist-hero-text,
+  .artist-hero.no-image .artist-hero-text {
+    right: calc(var(--content-inset) + 20px);
+    left: calc(var(--content-inset) + 20px);
+  }
+
+  .artist-hero.no-image .artist-hero-text {
+    padding-right: calc(var(--content-inset) + 20px);
+    padding-left: calc(var(--content-inset) + 20px);
   }
 
   .screen-headline {
@@ -2999,8 +3431,34 @@ h3 {
   }
 
   .artist-hero {
-    aspect-ratio: 16 / 6;
-    max-height: 340px;
+    height: clamp(260px, 26vw, 340px);
+    overflow: hidden;
+  }
+
+  .artist-hero.no-image {
+    height: auto;
+  }
+
+  /* Artist photos are rarely wide or large enough to fill a window sharply: blurred, they
+     tint the whole width, and the photo itself sits next to the name. */
+  .artist-hero-image {
+    filter: blur(48px) saturate(1.3);
+    transform: scale(1.2);
+  }
+
+  .artist-hero-portrait {
+    display: block;
+  }
+
+  .artist-hero.no-image .artist-hero-text {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 28px;
+  }
+
+  .artist-hero.no-image .artist-hero-portrait {
+    width: 200px;
+    height: 200px;
   }
 
   .snackbar {
@@ -3010,15 +3468,32 @@ h3 {
 
 /* Mouse and keyboard: hover feedback, visible scrollbars, a pointer on clickable things. */
 @media (hover: hover) and (pointer: fine) {
-  .item-row-main:hover,
-  .settings-row:hover,
-  .choice-option:hover {
+  /* The whole row, ⋮ included, so the menu button doesn't sit outside the highlight. */
+  .item-row:hover,
+  .choice-option:hover,
+  .menu-item:hover {
     background: color-mix(in oklab, var(--md-sys-color-on-surface) 8%, transparent);
   }
 
-  .library-tile:hover,
-  .item-card:hover {
-    filter: brightness(0.97);
+  .item-row:hover .item-row-main:not(:active) {
+    background: none;
+  }
+
+  .settings-row:hover:not(:disabled):not(:active) {
+    background: color-mix(in oklab, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container));
+  }
+
+  .library-tile:hover {
+    background: color-mix(in oklab, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface-container));
+  }
+
+  .item-card:hover .item-card-art::after {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--thumb-radius);
+    background: color-mix(in oklab, var(--md-sys-color-on-surface) 8%, transparent);
+    content: '';
+    pointer-events: none;
   }
 
   .bottom-nav-item:hover .bottom-nav-indicator {
@@ -3089,7 +3564,7 @@ h3 {
 
 /* The full player in a wide window: the artwork and the controls side by side, as one
    block centred in the window. */
-@media (min-width: 900px) and (min-aspect-ratio: 6 / 5) {
+@media (min-width: 900px) and (min-aspect-ratio: 6 / 5), (orientation: landscape) and (max-height: 600px) {
   .full-player {
     display: grid;
     grid-template-columns: min(70dvh, 42vw) min(460px, 36vw);
@@ -3139,6 +3614,28 @@ h3 {
   .full-player > .full-player-actions {
     grid-row: 5;
     flex-wrap: wrap;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    mask-image: none;
+  }
+
+  .full-player > .full-player-actions > * {
+    margin: 0;
+  }
+
+  .full-player {
+    transition:
+      grid-template-columns 0.34s var(--md-sys-motion-easing),
+      padding 0.34s var(--md-sys-motion-easing);
+  }
+
+  /* The queue takes the right side; the player moves over into what's left of the window. */
+  .full-player.is-queue-open {
+    padding-right: calc(min(440px, 100% - 32px) + 32px);
+    grid-template-columns: min(60dvh, calc((100vw - 520px) * 0.5)) min(400px, calc((100vw - 520px) * 0.45));
+    column-gap: clamp(24px, 3vw, 56px);
   }
 
   /* The queue opens beside the player instead of covering the bottom of it, sliding in from the side. */
@@ -3152,6 +3649,61 @@ h3 {
     width: min(440px, calc(100% - 32px));
     height: auto;
     border-radius: 28px;
+  }
+}
+
+/* Not room for the artwork next to the queue: the controls alone. */
+@media (min-width: 900px) and (min-aspect-ratio: 6 / 5) and (max-width: 1099px), (orientation: landscape) and (max-height: 600px) and (max-width: 1099px) {
+  .full-player.is-queue-open {
+    grid-template-columns: min(460px, calc(100vw - 520px));
+  }
+
+  .full-player.is-queue-open .full-player-art {
+    display: none;
+  }
+
+  /* Not the bar or the queue: placing an absolutely positioned grid child makes the cell its containing block. */
+  .full-player.is-queue-open > :not(.full-player-bar):not(.queue-panel) {
+    grid-column: 1 !important;
+  }
+}
+
+/* A phone on its side: the same two columns, packed into the little height there is. */
+@media (orientation: landscape) and (max-height: 600px) {
+  .full-player {
+    grid-template-columns: min(calc(100dvh - 88px), 40vw) min(460px, 48vw);
+    column-gap: clamp(24px, 4vw, 48px);
+    padding-top: calc(var(--safe-top) + 56px);
+    padding-right: max(24px, env(safe-area-inset-right));
+    padding-bottom: calc(var(--safe-bottom) + 12px);
+    padding-left: max(24px, env(safe-area-inset-left));
+  }
+
+  .full-player-meta {
+    margin-bottom: 0;
+  }
+
+  .full-player-controls {
+    margin: 2px -6px 8px;
+  }
+
+  /* One scrolling line, as on a phone held upright: there's no height for a second. */
+  .full-player > .full-player-actions {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 8px;
+    margin: 0 -24px;
+    padding: 0 24px;
+    overflow-x: auto;
+    mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  }
+
+  .full-player > .full-player-actions > :first-child {
+    margin-left: auto;
+  }
+
+  .full-player > .full-player-actions > :last-child {
+    margin-right: auto;
   }
 }
 

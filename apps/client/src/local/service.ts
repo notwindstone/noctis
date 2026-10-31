@@ -142,7 +142,7 @@ const service: ServiceDefinition = {
       const tracks = albums().get(id)
       if (!tracks) throw new Error('This album is no longer on the device')
       const album = toAlbum(id, tracks)
-      return { id, kind: 'album', title: album.title, subtitle: [album.year, `${tracks.length} songs`].filter(Boolean).join(' · '), thumbnail: album.thumbnail, artists: album.artists, year: album.year, songs: tracks.map(toSong), hasMore: false, sections: [] }
+      return { id, kind: 'album', title: album.title, subtitle: album.year, thumbnail: album.thumbnail, artists: album.artists, year: album.year, songs: tracks.map(toSong), hasMore: false, sections: [] }
     },
   },
 

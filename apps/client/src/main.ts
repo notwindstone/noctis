@@ -9,7 +9,9 @@ import { initMediaControls } from './mediaControls'
 import { initPlayer } from './player'
 import { defineBuiltIns } from './plugins/builtins'
 import { exposeNamespace } from './plugins/namespace'
+import { checkOnStart, collections, refreshAll, updates } from './plugins/collections'
 import { startPlugins } from './plugins/runtime'
+import { notify } from './snackbar'
 import { defineBuiltInSettings } from './settings/builtin'
 import { definePluginSettings } from './settings/plugins'
 import { defineServerSettings } from './settings/server'
@@ -54,6 +56,20 @@ if (isDesktop) {
   })
 }
 
+/*
+ * The webview's own menu (Back, Refresh, Save as, Print…) means nothing in an app: a right
+ * click is either the app's menu (songs, albums, the player: they handle it) or nothing.
+ * Text fields and selected text keep theirs for copy and paste, and Shift + right click
+ * still opens it anywhere (Inspect, while developing).
+ */
+document.addEventListener('contextmenu', (event) => {
+  if (event.defaultPrevented || event.shiftKey) return
+  const target = event.target as HTMLElement | null
+  if (target?.closest('input, textarea, [contenteditable=""], [contenteditable="true"]')) return
+  if (!(window.getSelection()?.isCollapsed ?? true)) return
+  event.preventDefault()
+})
+
 // Signed in to a server (or a guest on one): it's a service from the start, so Home doesn't wait for the network.
 if (serverUrl.value && canUseServer()) attachServerService()
 
@@ -72,6 +88,13 @@ const noPlugins = isDesktop
 
 void noPlugins.then((skip) => startPlugins({ skip })).then(() => {
   initOpenFiles()
+  // Say so when a plugin collection has something newer; updating is a tap in Settings → Plugins → Collections.
+  if (checkOnStart.value && collections.value.length > 0) {
+    void refreshAll().then(() => {
+      const count = updates.value.length
+      if (count > 0) notify(`${count} plugin ${count === 1 ? 'update' : 'updates'} available (Settings → Plugins → Collections)`, 6000)
+    })
+  }
   if (!serverUrl.value && hostedBy) void connect(hostedBy).catch(() => {})
   else if (serverUrl.value) void connect().catch(() => {})
 })

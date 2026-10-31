@@ -133,6 +133,11 @@ export function removeSection(id: string) {
   owners.delete(id)
 }
 
+/** The sections a plugin (or 'noctis') defined, in Settings order. */
+export function sectionsOwnedBy(owner: string): SettingsSection[] {
+  return Sections.filter((section) => owners.get(section.id) === owner)
+}
+
 export function findSection(id: string): SettingsSection | undefined {
   return Sections.find((item) => item.id === id)
 }

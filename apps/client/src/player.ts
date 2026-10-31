@@ -14,11 +14,14 @@ import { artworkHue as themeArtworkHue } from './theme'
 import { getChapters, queueMore, radio, radioFor, startQueue } from './services/api'
 import type { Chapter, RadioSeed } from './services/types'
 import { artistNames, type Playlist, type Song, type StreamInfo } from './models'
+import { requestBytes } from './http'
 import { forgetStream, resolveStream } from './services/stream'
 import { thumbnailAt } from './thumbnails'
 
 const audio = new Audio()
 audio.preload = 'auto'
+/** The element everything plays through. Read-only for others (analysis taps it); playback is this module's. */
+export const audioElement: Readonly<HTMLAudioElement> = audio
 
 export const queue = shallowRef<Song[]>([])
 export const currentIndex = ref(-1)
@@ -29,6 +32,8 @@ export const isPlaying = ref(false)
 export const isLoading = ref(false)
 export const position = ref(0)
 export const duration = ref(0)
+/** Seconds of the current song that are loaded from the playing position on (the grey stretch of the seek bar). */
+export const bufferedEnd = ref(0)
 export const playbackError = ref<string | null>(null)
 /** What the current song plays from: its stream (format, bitrate), or a download. For "Play from". */
 export const nowPlayingFrom = shallowRef<{ stream: StreamInfo | null; downloaded: boolean } | null>(null)
@@ -83,6 +88,82 @@ const STALE_PAUSE_MS = 10 * 60_000
 const RESUME_TIMEOUT_MS = 8000
 
 /* ------------------------------------------------------------------ *
+ * DRM: streams that decrypt through the browser's content decryption
+ * (Widevine and the like). The stream's `drm` field carries the key
+ * system, the PSSH init data and where the license is asked for.
+ * ------------------------------------------------------------------ */
+
+let drmSession: MediaKeySession | null = null
+
+function closeDrm() {
+  const session = drmSession
+  drmSession = null
+  if (!session) return
+  void session.close().catch(() => {})
+}
+
+function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+/** What the audio capabilities ask for by default; services can name their codecs. */
+const DEFAULT_DRM_CODECS = ['audio/mp4; codecs="mp4a.40.2"', 'audio/mp4; codecs="mp4a.40.5"']
+
+/** The CDM asks for a license: POST its challenge, feed the answer back into the session. */
+async function answerLicense(event: MediaKeyMessageEvent, drm: NonNullable<StreamInfo['drm']>) {
+  const { status, bytes } = await requestBytes(drm.licenseUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream', ...drm.licenseHeaders },
+    body: event.message,
+  })
+  if (status < 200 || status >= 300 || bytes.byteLength === 0) throw new Error(`the license server answered HTTP ${status || 'none'}`)
+  await drmSession?.update(new Uint8Array(bytes))
+}
+
+/** Attach MediaKeys for a DRM stream and open its session; throws when the device can't. */
+async function attachDrm(stream: StreamInfo) {
+  const drm = stream.drm!
+  closeDrm()
+  if (typeof navigator.requestMediaKeySystemAccess !== 'function') {
+    throw new Error('this device has no content decryption module')
+  }
+  const codecs = drm.codecs ?? (stream.mimeType.includes('flac') ? ['audio/mp4; codecs="flac"', ...DEFAULT_DRM_CODECS] : DEFAULT_DRM_CODECS)
+  const base: MediaKeySystemConfiguration = {
+    initDataTypes: ['cenc'],
+    distinctiveIdentifier: 'optional',
+    persistentState: 'optional',
+    sessionTypes: ['temporary'],
+  }
+  let access: MediaKeySystemAccess
+  try {
+    // Services ask for software crypto first; some devices only do it without the robustness level.
+    access = await navigator.requestMediaKeySystemAccess(drm.system, [
+      { ...base, audioCapabilities: codecs.map((contentType) => ({ contentType, robustness: 'SW_SECURE_CRYPTO' })) },
+      { ...base, audioCapabilities: codecs.map((contentType) => ({ contentType })) },
+    ])
+  } catch {
+    throw new Error(`this device can't decrypt ${drm.system} audio`)
+  }
+  const keys = await access.createMediaKeys()
+  await audio.setMediaKeys(keys)
+  if (drm.certificateUrl) {
+    const { bytes } = await requestBytes(drm.certificateUrl, { headers: drm.licenseHeaders })
+    if (bytes.byteLength > 0) await keys.setServerCertificate(new Uint8Array(bytes))
+  }
+  const session = keys.createSession('temporary')
+  session.addEventListener('message', (event) => {
+    answerLicense(event, drm).catch((error) => {
+      writeLog('noctis', 'warn', `DRM license failed: ${(error as Error).message}`)
+    })
+  })
+  drmSession = session
+  await session.generateRequest('cenc', base64ToBytes(drm.initData))
+}
+
+/* ------------------------------------------------------------------ *
  * Loading
  * ------------------------------------------------------------------ */
 
@@ -129,6 +210,7 @@ async function load(index: number, autoplay = true, reload = false) {
   retriedExpired = false
   if (!reload) cutOffRetries = 0
   currentStream = null
+  closeDrm()
   nowPlayingFrom.value = null
   pausedAt = Date.now()
   window.clearTimeout(resumeWatch)
@@ -169,8 +251,10 @@ async function load(index: number, autoplay = true, reload = false) {
       source = stream.url
       currentStream = stream
       streamed = true
+      writeLog('noctis', 'info', `Stream for "${song.title}": ${describeStream(stream)}`)
     } catch (error) {
       if (token !== loadToken) return
+      writeLog('noctis', 'warn', `No stream for "${song.title}":`, error)
       isLoading.value = false
       haptic('reject')
       playbackError.value = (error as Error).message || 'This song could not be played.'
@@ -182,6 +266,23 @@ async function load(index: number, autoplay = true, reload = false) {
 
   if (token !== loadToken) return
   audio.src = source
+
+  // DRM streams open their key session while they load; a failure here is like any
+  // other stream failure.
+  if (currentStream?.drm) {
+    try {
+      await attachDrm(currentStream)
+    } catch (error) {
+      if (token !== loadToken) return
+      isLoading.value = false
+      haptic('reject')
+      playbackError.value = `This song is DRM-protected and ${(error as Error).message}.`
+      notify(`Couldn't play "${song.title}": ${playbackError.value}`)
+      if (autoplay) skipFailed(index)
+      return
+    }
+    if (token !== loadToken) return
+  }
   nowPlayingFrom.value = { stream: currentStream, downloaded: !streamed }
 
   if (autoplay) {
@@ -197,7 +298,8 @@ async function load(index: number, autoplay = true, reload = false) {
     isLoading.value = false
   }
 
-  if (streamed && cacheEnabled.value && !offline.value[song.id]) {
+  // DRM streams can't be saved as files (see offline.ts), and a live stream has no end to save: neither fills the cache.
+  if (streamed && cacheEnabled.value && !offline.value[song.id] && !currentStream?.drm && !currentStream?.live) {
     // Fill the cache in the background once playback is under way.
     const startCaching = () => {
       if (currentSong.value?.id === song.id) void download(song, 'cache')
@@ -328,11 +430,11 @@ export async function playSong(song: Song) {
   if (current && current.id === song.id && current.source === song.source && audio.src) {
     unshuffled = null
     continuation = {}
-    queueTitle.value = `Radio · ${song.title}`
+    queueTitle.value = `Radio • ${song.title}`
     queue.value = [current]
     currentIndex.value = 0
   } else {
-    setQueue([song], 0, `Radio · ${song.title}`)
+    setQueue([song], 0, `Radio • ${song.title}`)
   }
   const token = loadToken
   try {
@@ -588,8 +690,22 @@ export function shufflePlay(songs: Song[], title = '') {
  * Audio element events
  * ------------------------------------------------------------------ */
 
+function updateBuffered() {
+  const ranges = audio.buffered
+  const at = audio.currentTime
+  let end = 0
+  // The range playback is in; seeking elsewhere starts a new one, so only that one counts.
+  for (let i = 0; i < ranges.length; i++) {
+    if (ranges.start(i) <= at + 0.25 && ranges.end(i) >= at) end = Math.max(end, ranges.end(i))
+  }
+  if (Math.abs(end - bufferedEnd.value) > 0.25) bufferedEnd.value = end
+}
+
+for (const event of ['progress', 'loadedmetadata', 'seeked', 'emptied', 'canplay'] as const) audio.addEventListener(event, updateBuffered)
+
 audio.addEventListener('timeupdate', () => {
   position.value = audio.currentTime
+  updateBuffered()
   if (!unrecorded) return
   // Only time actually heard counts: a seek is a jump, not listening.
   const step = audio.currentTime - lastTime
@@ -601,8 +717,28 @@ audio.addEventListener('timeupdate', () => {
   }
 })
 
+/** One line about a stream for the log (no URL: it carries tokens). */
+function describeStream(stream: StreamInfo): string {
+  let host = 'unknown host'
+  try {
+    host = new URL(stream.url).host
+  } catch {
+    /* blob: and data: URLs have none */
+  }
+  return [
+    stream.mimeType,
+    `${Math.round(stream.bitrate / 1000)} kbps`,
+    stream.contentLength ? `${(stream.contentLength / 1024 / 1024).toFixed(1)} MB` : 'size unknown',
+    stream.live ? 'live' : undefined,
+    stream.duration ? `${Math.round(stream.duration)} s` : undefined,
+    stream.drm ? `DRM ${stream.drm.system}` : undefined,
+    host,
+  ].filter(Boolean).join(', ')
+}
+
 audio.addEventListener('loadedmetadata', () => {
   const song = currentSong.value
+  if (song) writeLog('noctis', 'info', `"${song.title}": the audio reports ${Number.isFinite(audio.duration) ? `${Math.round(audio.duration)} s` : audio.duration} (the song said ${song.duration ?? 'nothing'})`)
   if (song && Number.isFinite(audio.duration) && audio.duration >= STATION_SECONDS) {
     // Its length gave it away: remember it, and move on.
     markStation(song.id)
@@ -637,6 +773,10 @@ audio.addEventListener('pause', () => {
 })
 audio.addEventListener('waiting', () => {
   isLoading.value = true
+})
+audio.addEventListener('stalled', () => {
+  const song = currentSong.value
+  if (song) writeLog('noctis', 'warn', `"${song.title}" stalled at ${Math.round(audio.currentTime)} s (network state ${audio.networkState}, ready state ${audio.readyState})`)
 })
 audio.addEventListener('canplay', () => {
   isLoading.value = false
@@ -677,6 +817,8 @@ audio.addEventListener('ended', () => {
 audio.addEventListener('error', () => {
   const song = currentSong.value
   if (!song || !audio.src) return
+  // MediaError codes: 1 aborted, 2 network, 3 decode, 4 source not supported.
+  writeLog('noctis', 'warn', `Playback error for "${song.title}": code ${audio.error?.code ?? '?'}${audio.error?.message ? ` (${audio.error.message})` : ''} at ${Math.round(audio.currentTime)} s, network state ${audio.networkState}, ready state ${audio.readyState}${currentStream ? `, stream: ${describeStream(currentStream)}` : ', from this device'}`)
 
   // Stream URLs expire after a few hours; get a fresh one once and resume.
   if (!retriedExpired && !audio.src.startsWith('blob:') && !audio.src.includes('_capacitor_file_')) {
@@ -701,6 +843,8 @@ audio.addEventListener('error', () => {
     return
   }
 
+  // A stream that can't play isn't kept: trying again resolves it afresh.
+  forgetStream(song.id)
   isLoading.value = false
   playbackError.value = 'The stream was refused.'
   notify(`Couldn't play "${song.title}".`)

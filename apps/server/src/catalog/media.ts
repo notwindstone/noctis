@@ -17,6 +17,27 @@ export class MediaError extends Error {
   }
 }
 
+/**
+ * Artwork read recently, by its reference. Providers can be slow to produce one (the
+ * local library parses the audio file for its embedded picture: 1.5–2.5 s a cover), and
+ * every list asks for the same few again and again, at several sizes.
+ */
+const COVER_CACHE_BYTES = 48 * 1024 * 1024
+const coverCache = new Map<string, { bytes: Uint8Array; type: string }>()
+let coverCacheSize = 0
+
+function rememberCover(reference: string, bytes: Uint8Array, type: string) {
+  if (bytes.byteLength > COVER_CACHE_BYTES / 8) return
+  coverCache.set(reference, { bytes, type })
+  coverCacheSize += bytes.byteLength
+  // Oldest first (a Map keeps insertion order; hits are moved to the end).
+  for (const [key, entry] of coverCache) {
+    if (coverCacheSize <= COVER_CACHE_BYTES) break
+    coverCache.delete(key)
+    coverCacheSize -= entry.bytes.byteLength
+  }
+}
+
 const RELAYED_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag']
 
 async function relay(url: string, range?: string): Promise<Response> {
@@ -102,6 +123,12 @@ export class Media {
   async cover(id: string): Promise<Response> {
     const reference = await this.catalog.coverOf(id)
     if (!reference) throw new MediaError(404, 'No artwork')
+    const cached = coverCache.get(reference)
+    if (cached) {
+      coverCache.delete(reference)
+      coverCache.set(reference, cached)
+      return new Response(cached.bytes, { headers: { 'content-type': cached.type, 'cache-control': 'public, max-age=86400' } })
+    }
     let result: Response | string | null = reference
     if (!/^https?:\/\//i.test(reference)) {
       const provider = this.providers.get(reference.slice(0, reference.indexOf(':')))
@@ -111,6 +138,10 @@ export class Media {
     const response = typeof result === 'string' ? await relay(result) : result
     const headers = new Headers(response.headers)
     headers.set('cache-control', 'public, max-age=86400')
-    return new Response(response.body, { status: response.status, headers })
+    if (!response.ok) return new Response(response.body, { status: response.status, headers })
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    const type = headers.get('content-type') ?? 'image/jpeg'
+    rememberCover(reference, bytes, type)
+    return new Response(bytes, { status: response.status, headers: { 'content-type': type, 'cache-control': 'public, max-age=86400' } })
   }
 }

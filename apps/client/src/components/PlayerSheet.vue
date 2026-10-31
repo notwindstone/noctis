@@ -13,7 +13,9 @@ import {
   isLoading,
   isPlaying,
   next,
+  nowPlayingFrom,
   position,
+  bufferedEnd,
   previous,
   progress,
   queueTitle,
@@ -24,13 +26,16 @@ import {
   toggleShuffle,
   togglePlay,
 } from '../player'
-import { playerArtworkColors, repeatMode, shuffleEnabled } from '../preferences'
+import { playerArtworkColors, repeatMode, shuffleEnabled, showStreamInfo } from '../preferences'
+import { streamLabel } from '../streamLabel'
 import { colorSource, schemeStyle } from '../theme'
-import { closePlayer, openPlayer, playerExpanded, playerExpansion, queueOpen, showItemMenu } from '../ui'
+import { closePlayer, menuPoint, openPlayer, playerExpanded, playerExpansion, queueOpen, showItemMenu } from '../ui'
 import { ActionCollections, executeAction, resolveEntry, visibleEntries, type ActionEntry } from '../plugins/actions'
 import { showChapters } from '../plugins/builtins'
 import { notify } from '../snackbar'
 import { artistNames, STATION_SECONDS, type Song } from '../models'
+
+const streamText = computed(() => (showStreamInfo.value && nowPlayingFrom.value?.stream ? streamLabel(nowPlayingFrom.value.stream) : ''))
 import { isStationSong } from '../stations'
 
 const sheet = ref<HTMLElement | null>(null)
@@ -496,10 +501,17 @@ function openArtist() {
   void navigate({ name: 'artist', id: artist.id })
 }
 
-function openMenu() {
+function openMenu(event?: MouseEvent) {
   if (!currentSong.value) return
   tap()
-  showItemMenu({ item: currentSong.value })
+  showItemMenu({ item: currentSong.value, at: menuPoint(event) })
+}
+
+/** A right click anywhere on the player (not the queue, which has its own): the song's menu. */
+function onContextmenu(event: MouseEvent) {
+  if ((event.target as Element).closest('.queue-panel')) return
+  event.preventDefault()
+  openMenu(event)
 }
 </script>
 
@@ -514,6 +526,7 @@ function openMenu() {
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
     @pointercancel="onPointerUp"
+    @contextmenu="onContextmenu"
   >
     <div ref="frameEl" class="player-frame" :style="frameStyle">
       <div class="player-backdrop" :style="backdropStyle" aria-hidden="true">
@@ -521,7 +534,7 @@ function openMenu() {
       </div>
       <div class="player-content" :style="contentStyle">
         <!-- Full player -->
-        <div class="full-player" :style="fullStyle" :aria-hidden="e < 0.6">
+        <div class="full-player" :class="{ 'is-queue-open': queueOpen }" :style="fullStyle" :aria-hidden="e < 0.6">
           <header class="full-player-bar">
             <button class="icon-button" type="button" aria-label="Collapse player" @click="onCollapse">
               <C.MIcon name="collapse" />
@@ -545,6 +558,7 @@ function openMenu() {
               <button class="full-player-artist type-body-large" type="button" @click="openArtist">
                 {{ artistNames(currentSong.artists) }}
               </button>
+              <span v-if="streamText" class="full-player-format type-label-medium">{{ streamText }}</span>
               <button v-if="currentChapter && chapters.length > 1" class="full-player-chapter type-label-large" type="button" @click="showChapters">
                 {{ currentChapter.title }}
               </button>
@@ -561,7 +575,7 @@ function openMenu() {
             </button>
           </div>
 
-          <C.SeekBar v-if="!isStationNow" :position="position" :duration="duration" :marks="chapters.map((chapter) => chapter.start)" @seek="seek" />
+          <C.SeekBar v-if="!isStationNow" :position="position" :duration="duration" :buffered="bufferedEnd" :marks="chapters.map((chapter) => chapter.start)" @seek="seek" />
 
           <div class="full-player-controls">
             <button

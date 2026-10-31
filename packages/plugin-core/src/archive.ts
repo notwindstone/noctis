@@ -1,10 +1,10 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
-import { isValidPluginId, ManifestError, parseManifest, runsOnClient, runsOnServer, type PluginManifest } from './manifest'
+import { isValidPluginId, LOGO_FILE, ManifestError, MAX_LOGO_BYTES, parseManifest, runsOnClient, runsOnServer, type PluginManifest } from './manifest'
 
 /**
  * Plugin archives: a ZIP (`.noctis` or `.zip`) with metadata.json plus index.js (the
  * client half) and/or server.js (the server half), at the root or inside one top-level
- * folder. The file name, minus the extension, is the plugin id.
+ * folder. The plugin id is `id` in metadata.json, or else the file name minus the extension.
  */
 
 export const MANIFEST_FILE = 'metadata.json'
@@ -56,7 +56,14 @@ export function readPluginArchive(fileName: string, bytes: Uint8Array): PluginAr
   let files: Record<string, Uint8Array>
   try {
     // Only inflate the files a plugin can have; anything else in the archive is ignored.
-    files = unzipSync(bytes, { filter: (file) => WANTED.has(file.name.split('/').pop() ?? '') && file.name.split('/').length <= 2 })
+    files = unzipSync(bytes, {
+      filter: (file) => {
+        if (file.name.split('/').length > 2) return false
+        const name = file.name.split('/').pop() ?? ''
+        // Images only if they're small enough to be an icon; the manifest says whether it uses one.
+        return WANTED.has(name) || (LOGO_FILE.test(name) && file.originalSize <= MAX_LOGO_BYTES)
+      },
+    })
   } catch {
     fail("This file isn't a valid ZIP archive")
   }
@@ -83,12 +90,27 @@ export function readPluginArchive(fileName: string, bytes: Uint8Array): PluginAr
   if (runsOnClient(manifest) && !clientFile) fail(`A "${manifest.side}" plugin needs ${CLIENT_ENTRY}`)
   if (runsOnServer(manifest) && !serverFile) fail(`A "${manifest.side}" plugin needs ${SERVER_ENTRY}`)
 
+  if (manifest.logo && LOGO_FILE.test(manifest.logo)) {
+    const image = pick(files, manifest.logo)
+    // A missing file isn't worth refusing the plugin for: it just has no icon.
+    manifest = { ...manifest, logo: image ? dataUrl(manifest.logo, image) : undefined }
+  }
+
   return {
-    id,
+    // The id the plugin says it has wins over what the file is called.
+    id: manifest.id ?? id,
     manifest,
     client: runsOnClient(manifest) && clientFile ? strFromU8(clientFile) : undefined,
     server: runsOnServer(manifest) && serverFile ? strFromU8(serverFile) : undefined,
   }
+}
+
+const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', svg: 'image/svg+xml' }
+
+function dataUrl(name: string, bytes: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return `data:${IMAGE_TYPES[name.split('.').pop()!.toLowerCase()]};base64,${btoa(binary)}`
 }
 
 /** The manifest as written to an archive (defaults filled in, nothing undefined). */
@@ -96,8 +118,9 @@ export function serializeManifest(manifest: PluginManifest): string {
   return JSON.stringify(manifest, (_key, value) => (value === undefined ? undefined : value), 2)
 }
 
-export function writePluginArchive(parts: { manifest: PluginManifest; client?: string; server?: string }): Uint8Array {
-  const files: Record<string, Uint8Array> = { [MANIFEST_FILE]: strToU8(serializeManifest(parts.manifest)) }
+/** `assets`: other files by name, e.g. the image `manifest.logo` names. */
+export function writePluginArchive(parts: { manifest: PluginManifest; client?: string; server?: string; assets?: Record<string, Uint8Array> }): Uint8Array {
+  const files: Record<string, Uint8Array> = { ...parts.assets, [MANIFEST_FILE]: strToU8(serializeManifest(parts.manifest)) }
   if (parts.client !== undefined) files[CLIENT_ENTRY] = strToU8(parts.client)
   if (parts.server !== undefined) files[SERVER_ENTRY] = strToU8(parts.server)
   return zipSync(files, { level: 9 })

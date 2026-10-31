@@ -26,8 +26,15 @@ a plugin you install. Examples:
   nothing;
 - [`examples/plugins/spotify`](../examples/plugins/spotify) — a real service plugin:
   Spotify through the same GraphQL API its web player uses (session from a hidden web
-  player, operation hashes read from its scripts), with audio matched on YouTube Music
-  through `Noctis.api.request('youtube-music', …)`;
+  player on Android, from a sign-in window that loads the web player on desktop;
+  operation hashes read from its scripts), playing Spotify's own audio — a clear
+  MP3 everywhere, and the DRM-protected MP4/FLAC its web player plays (Widevine through
+  the player's `StreamInfo.drm`) where the device can decrypt;
+- [`examples/plugins/bandcamp`](../examples/plugins/bandcamp) — Bandcamp without an
+  account: artist discographies, albums, tracks and tag-based discovery, streamed
+  through the signed MP3 URLs the web player's embed page carries (that page is the
+  one Bandcamp surface with no bot wall). Search leans on tag lookup because
+  bandcamp.com's own search page serves a "Client Challenge" to non-browsers;
 - [`examples/plugins/lyrics`](../examples/plugins/lyrics) — synced lyrics in the player with
   several sources (LRCLIB, NetEase, QQ Music, Musixmatch, Genius, your own files), Apple
   Music-style animation, translation and romanization. It replaces `PlayerArt` (the cover)
@@ -53,29 +60,36 @@ name (minus the extension) is the plugin id**, so `lyrics.noctis` installs as `l
 ```ts
 type Metadata = {
   name: string
+  id?: string // the plugin id; default: the archive's file name (pack-plugin writes the folder name)
   type: 'unrestricted' // the only type for now
   version?: string
   authors?: string[]
   description?: string
-  logo?: string // https: or data:image/ URL
+  logo?: string // icon: https: / data:image/ URL, or an image in the archive ("icon.png", ≤ 256 KB; svg, png, jpg, webp, gif)
   source?: string // e.g. the repository
   categories?: string[]
   languages?: string[] // ISO 639-1
   side?: 'client' | 'server' | 'both' // default 'client'
   dependencies?: Record<string, string> // plugin id → semver range, e.g. { "youtube-music": "^1.0.0" }
+  incompatible?: string[] | Record<string, string> // plugin ids it can't run with (a list = any version), or id → semver range
+  requires?: { api?: string; libs?: string[] } // plugin API range (e.g. "^1.0.0") and names under Noctis.libs it uses
   platforms?: string[] | '*' // where index.js runs: 'android', 'ios', 'web', 'desktop'; default ['*'] (everywhere)
 }
 ```
 
-`platforms` says which apps a plugin works in. The Spotify example lists `["android"]`
-(it needs the app's hidden WebView); most plugins can leave it out, or say `"*"`.
+`platforms` says which apps a plugin works in. The Spotify example lists `["android", "desktop"]`
+(its sign-in needs the apps' WebView capture: hidden on Android, a Tauri window on desktop); most plugins can leave it out, or say `"*"`.
 On `desktop` (the Tauri app) plugins get `Noctis.libs.http.nativeFetch`, a `fetch` without CORS that can set
 Cookie, Origin and User-Agent, plus `Noctis.packages.tauri` and `window.__TAURI__`.
 Noctis refuses to install a plugin made for another platform, and a Noctis server doesn't
 require one from clients it can't run on.
 
 Plugins whose `dependencies` are missing or the wrong version don't start; the log on
-their page says why. Plugins that run on the server, or on both sides, are covered in
+their page says why. The same goes for `incompatible` (declared by either plugin: of two that
+clash, the one installed first keeps running, and turning on the other says why it can't) and for
+`requires` (`api` is checked against `PLUGIN_API_VERSION` in `packages/plugin-core`, `libs` against
+`Noctis.libs`). A plugin's page shows its icon, its id (grayed; this is what other manifests name),
+and what it needs and clashes with. Settings → Plugins has a switch and a delete button on each row. Plugins that run on the server, or on both sides, are covered in
 [SERVER-PLUGINS.md](SERVER-PLUGINS.md). Installing a "both" plugin in the app installs
 its client half.
 
@@ -84,6 +98,37 @@ Pack a folder with `bun run pack-plugin path/to/folder` (writes
 file** or **Install from URL**. On Android, opening a `.noctis` file (from a file manager,
 the browser's downloads or a chat app) offers Noctis, which installs it and asks before
 running it. A copy named `my-plugin (1).noctis` still installs as `my-plugin`.
+
+### Updating, and collections
+
+Installing a plugin that is already installed **updates it in place**. Identity is the
+plugin **id** and nothing else (two plugins that happen to share a name stay two plugins). The
+id is `id` in `metadata.json`, or else the archive's file name; `pack-plugin` writes the folder
+name into `id`, so an archive keeps its identity when a file host renames it. An update keeps
+the plugin's settings and storage. If the plugin was enabled, the new version is too
+(**Settings → Plugins → Keep plugins enabled when updating**, on by default; off, new code
+has to be enabled and approved like a first install).
+
+A **collection** is a link to a `plugins.json` listing plugins, like a package repository:
+
+```json
+{ "name": "My plugins",
+  "plugins": [ { "id": "lyrics", "name": "Lyrics", "version": "1.2.0", "sha256": "…",
+                 "url": "lyrics.noctis", "description": "…", "authors": ["me"] } ] }
+```
+
+`url` is relative to the index (default `<id>.noctis`) and `sha256` is the SHA-256 of the
+plugin's `index.js`; that is how Noctis knows an update exists without downloading it.
+**Settings → Plugins → Collections** adds a collection, installs what it lists, and offers
+**Update all**; at startup it says when a collection has something newer
+(**Check when Noctis starts**). Plain `http` is accepted for addresses on your own network,
+so you can serve a collection from your computer.
+
+While developing, `bun run serve-plugins` packs every plugin under `examples/plugins` (or a
+folder you pass), serves them with a `plugins.json` on port 4748, and packs a plugin again
+whenever its files change. Add the address it prints once (use the computer's network
+address from a phone); after an edit, **Update all**. `bun run pack-plugin --all` writes the
+same files without serving them, ready to upload anywhere that gives stable links.
 
 ### Consent and code fingerprints
 
@@ -213,7 +258,7 @@ required; leave out what a service can't do and the app hides or disables what n
 | `browse` | `get({ target })` → `{ title, sections }` (a section's "More") |
 | `queue` | `start({ playlistId?, videoId?, params? })`, `more({ continuation, playlistId? })`, `radio(seed)` → `{ songs, continuation?, playlistId? }`; `seed` is `{ kind: 'song', song }`, `{ kind: 'album', album, playlistId? }` or `{ kind: 'playlist', playlist }` |
 | `library` | `playlists({})`, `artists({})`, `liked({})` / `likedMore({})` → `{ songs, hasMore }`, `like({ song, liked })` |
-| `streams` | `resolve({ song, efficient })` → `{ url, mimeType, bitrate, expiresAt, contentLength?, loudnessDb?, fetchUrl?, fetchHeaders? }` |
+| `streams` | `resolve({ song, efficient })` → `{ url, mimeType, bitrate, expiresAt, contentLength?, loudnessDb?, fetchUrl?, fetchHeaders?, live?, duration?, drm? }` |
 | `chapters` | `get({ song })` → `[{ title, start }]` (seconds): parts of a long song or mix, shown as a chapter list and marks on the seek bar when there are two or more. Asked for songs of 6 minutes or more |
 | `links` | `share(item)` → URL or `undefined` — **synchronous** |
 | `thumbnails` | `resize(url, px)` → URL or `undefined` if it isn't yours — **synchronous**, runs while rendering |
@@ -246,7 +291,7 @@ Accounts is the one place for it (the section's `description` can say who's sign
 account })` adds an account that isn't a service's (the server's, before you sign in).
 
 Downloads fetch `contentLength` bytes in ranges from `fetchUrl ?? url` (with
-`fetchHeaders` on a device); `blob:` and `data:` URLs work too.
+`fetchHeaders` on a device); `blob:` and `data:` URLs work too. A stream that is live, or longer than 12 hours (`live: true`, or `duration`), marks the song as a station: it is skipped and never downloaded, even when the service gave no length for it up front. A stream with `drm` can't be downloaded at all: the bytes only exist decrypted inside the content decryption module, so it streams instead. `drm` is `{ system, initData, licenseUrl, licenseHeaders?, certificateUrl?, codecs? }` — the player attaches MediaKeys for `system` (e.g. `com.widevine.alpha`), starts a temporary session with the base64 `initData` (the service's PSSH box), POSTs the CDM's challenge to `licenseUrl` with `licenseHeaders` and feeds the answer back into the session; `url` is then usually a `blob:` of the protected file the service assembled.
 
 `Noctis.libs.offline.download(song)` (also what the Download buttons call) puts the song in
 the download queue and resolves when it's done or failed. The queue is saved, so a killed app
@@ -255,11 +300,40 @@ Storage); a service that throttles clients can lower that with `downloads: { con
 minIntervalMs }` in its definition: at most `concurrency` of its songs at once, and at least
 `minIntervalMs` between two starts.
 
-The app shows one notification ("Downloading", "3 out of 12", a progress bar) instead of a
-message per song. Tapping it opens the Downloading page (route `downloads-queue`, also under
+The app shows one notification ("Downloading", "3 of 12 downloaded", a progress bar) instead of a
+message per song. Tapping it opens the download queue page (route `downloads-queue`, also under
 Settings → Storage), where the user sees what is downloading and waiting, cancels one song or
-all, and retries failures. `offline.cancelDownload(id)` and `cancelDownloads()` do the same from
+all, and retries failures (`offline.retryFailures()`; songs that failed for lack of a
+connection are retried by themselves when it comes back). `offline.cancelDownload(id)` and `cancelDownloads()` do the same from
 code, and a Download button pressed while its song downloads cancels it.
+
+### Audio analysis
+
+`Noctis.libs.analysis` reads what the current song sounds like, for visualizers, level
+meters and the like. Nothing runs until you ask: the first `use()` creates the analyser,
+the last `stop()` tears it down, and updates pause with playback and while the page is hidden.
+
+```ts
+const { analysis } = Noctis.libs
+const tap = analysis.useAnalysis({ bands: 24, fps: 30 })   // bands are log-spaced, low to high
+// tap.levels is a shallow ref of a Float32Array (0..1 per band), refreshed in place
+Noctis.Vue.watch(tap.levels, (levels) => draw(levels))
+tap.spectrum()   // raw FFT bins of the latest frame, 0..255 (tap.binHz is the width of one)
+tap.waveform()   // raw samples of the latest frame, 128 = silence
+tap.stop()       // always, when the view goes away
+```
+
+`analysis.analysisLive` (a ref) is true once the current song has produced readable sound;
+`analysis.analysisSupported` is false in webviews that can't capture audio (iOS). Streams the
+browser won't let the page read (cross-origin without CORS) give silence, so show a fallback
+animation until `analysisLive` turns true, as the built-in `PlayingBars` does. The tap only
+*listens*: it uses `captureStream()` and never reroutes playback, so it can't mute or delay
+anything. Because of that, it can't change the sound either: an equalizer or other effect
+would need an in-path graph, which isn't offered yet.
+
+The built-in bars beside the playing song follow the music when Settings → Playback →
+"Animate playing bars with the music" is on (off by default); replace `PlayingBars` in
+the component registry to draw them differently.
 
 ### Notifications
 
@@ -307,11 +381,27 @@ Three more helpers for services without a public API:
   plugin reads `oauth_token` this way. Device only; in a browser, ask for the value
   instead.
 
-- `Noctis.libs.auth.captureWebResponse({ url, match })` loads `url` in a hidden WebView
-  and resolves with `{ url, body }` of the first response whose URL contains `match`, so
-  a site's own code can do its session handshake (the Spotify plugin reads the web
-  player's token this way). It shares cookies with `openAuthWindow`, so signing in there
-  carries over; `clearSiteCookies(url)` signs one site out. Device only (`canCaptureWeb`).
+- `Noctis.libs.auth.captureWebResponse({ url, match, login?, fallbackUrl?, title?, userAgent?, timeoutMs? })`
+  loads `url` in a WebView and resolves with `{ url, body, cookies? }` of the first response the
+  page's own code fetches whose URL contains `match`, so a site's own code can do its
+  session handshake (the Spotify plugin reads the web player's token this way, TOTP
+  included). `clearSiteCookies(url)` signs one site out. Apps only (`canCaptureWeb`); the
+  calls look the same on every app, the host decides how:
+  - Android and iOS use a hidden WebView sharing cookies with `openAuthWindow`.
+  - Desktop opens a visible incognito window and hooks the page's `fetch`/`XHR` before its
+    own scripts run (`capture_hook.js`). Pages can't call into the app, so the hook hands
+    the response out as a navigation to `noctis-capture.invalid`, which `auth.rs` cancels and
+    reads (guarded by a per-call nonce). `timeoutMs` (default 30 s) counts from when the page
+    starts loading.
+  - `login: { url, cookieUrl, cookie }` signs in first. Desktop shows the sign-in page until
+    `cookie` is set on `cookieUrl`, then loads `url` signed in in the same window (a second
+    incognito window isn't known to share cookies) and returns `cookies`, the site's Cookie
+    header, to renew the session with later. Mobile runs `openAuthWindow`, done when the page
+    heads for `cookieUrl`'s site, then captures in the hidden WebView sharing its cookies.
+  - `fallbackUrl` (desktop): if the hook saw nothing within two thirds of `timeoutMs` (the page
+    made the request somewhere a script can't watch, e.g. a Worker), this URL is loaded
+    directly and its page text is the response.
+  - `userAgent` is mobile only: the desktop webview's own is already a real browser's.
 - `Noctis.libs.http.request(url, { method, headers, body })` makes a request without
   CORS (native HTTP on a device) and resolves with `{ status, headers, data }`, `data`
   parsed when it's JSON.
@@ -353,11 +443,12 @@ Plugin.subscribe('hook::onRequest::after', (request) => {
   for (const section of request.result.sections) section.items = section.items.filter((item) => !item.isVideo)
 })
 
-// Play Spotify songs with audio found on YouTube Music.
+// Play a service's songs with audio found on another (e.g. a service whose own audio
+// isn't playable): resolve the song on the second service instead.
 Plugin.subscribe('hook::onRequest::before', async (request) => {
-  if (request.endpoint !== 'streams.resolve' || request.input.song.source !== 'spotify') return
-  const match = await findOnYouTubeMusic(request.input.song)
-  return { status: 'stop', response: await Noctis.api.request('youtube-music', 'streams.resolve', { ...request.input, song: match }) }
+  if (request.endpoint !== 'streams.resolve' || request.input.song.source !== 'that-service') return
+  const match = await findOnAnotherService(request.input.song)
+  return { status: 'stop', response: await Noctis.api.request('another-service', 'streams.resolve', { ...request.input, song: match }) }
 })
 ```
 
@@ -389,6 +480,7 @@ const remove = Noctis.libs.tray.registerTrayItem({ id: 'my-action', label: 'Do m
 Plugin.subscribe('hook::onTrayClick::before', () => ({ status: 'stop' }))
 ```
 
+Noctis itself adds "Add to liked songs" / "Remove from liked songs" for the song that plays.
 Call `remove()` when the plugin is disabled. Items only show while "Minimize to tray" is on.
 [`tray-play-pause`](../examples/plugins/tray-play-pause) is a complete example (it also tells a single click from a double click).
 
@@ -479,8 +571,8 @@ Plugin.restoreComponent('BottomNav')
 | Group | Entries |
 | --- | --- |
 | App shell | `ScreenStack`, `PlayerSheet`, `BottomNav`, `SheetHost`, `SnackbarHost` |
-| Sheets and player parts | `BottomSheet`, `DialogShell`, `QueuePanel`, `SeekBar`, `PlayerArt` (the full player's cover; gets a `song` prop) |
-| Building blocks | `TopAppBar`, `ItemRow`, `ItemCard`, `SectionView`, `SettingsRow`, `SettingsBlocks`, `CollectionView`, `StateView`, `RefreshIndicator`, `MIcon`, `Thumb` |
+| Sheets and player parts | `BottomSheet`, `ContextMenu` (the menu at the mouse pointer on desktops), `DialogShell`, `QueuePanel`, `SeekBar`, `PlayerArt` (the full player's cover; gets a `song` prop) |
+| Building blocks | `TopAppBar`, `ItemRow`, `ItemCard`, `SectionView`, `SettingsRow`, `SettingsBlocks`, `CollectionView`, `StateView`, `RefreshIndicator`, `MIcon`, `PlayingBars`, `Thumb` |
 | Screens | `HomeScreen`, `LibraryScreen`, `SettingsScreen`, `SearchScreen`, `AlbumScreen`, `PlaylistScreen`, `ArtistScreen`, `BrowseScreen`, `CollectionScreen`, `LibraryItemsScreen`, `SettingsPageScreen` |
 
 Every component the app uses goes through the registry, down to icons (`MIcon`) and
@@ -518,6 +610,17 @@ Noctis.ActionCollections.songMenu.push({
 Entry fields: `id`, `icon` and `label` (values or functions of the context), `action`,
 and optional `visible`, `disabled`, `filled` and `progress` (0..1 shows a progress ring)
 functions. Returning `false` from an action (or throwing) reports a failure.
+
+Menus draw a divider where `group` changes between neighbouring entries. The song menu's
+groups are `'play'`, `'library'`, `'go'` and `'share'`; an entry without a `group` (most
+plugins') lands in a section of its own after them, and one with a built-in group's name
+joins that section (put it right after that group's entries).
+
+The same entries show in a bottom sheet on touch screens and in a menu at the pointer when
+a mouse opens it (a right click, or ⋮ clicked); `ui.showItemMenu({ item, at: { x, y } })`
+opens the latter at a point, and `ui.menuPoint(event)` works out where for a mouse event (or
+nothing, for touch). Right clicks anywhere else are swallowed, so the webview's own menu
+(Back, Reload, Print…) never shows, except in text fields; Shift + right click still opens it.
 
 | Collection | Context |
 | --- | --- |

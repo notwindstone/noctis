@@ -2,13 +2,15 @@
 import { C } from '../plugins/components'
 import { computed, nextTick, ref, watch } from 'vue'
 import { artworkHue } from '../artColor'
-import { formatTotal, songCount } from '../format'
+import { formatTime, formatTotal, songCount } from '../format'
 import { haptic, tap } from '../haptics'
 import type { IconName } from '../icons'
 import { navigate } from '../navigation'
-import { download, isOnDevice, notDownloadable, offlineState } from '../offline'
+import { download, isOnDevice, notDownloadable, offlineState, transfers } from '../offline'
 import { playSongs, shufflePlay } from '../player'
+import { gridDetails, gridNumbers, gridSize, songLayout, type GridSize } from '../preferences'
 import { notify } from '../snackbar'
+import { isStationSong } from '../stations'
 import { schemeStyle } from '../theme'
 import { showChoice } from '../ui'
 import { artistNames, type ArtistRef, type Section, type Song } from '../models'
@@ -24,6 +26,8 @@ const props = withDefaults(
     thumbnail?: string
     /** Icon tile instead of artwork (local collections with nothing in them yet). */
     icon?: IconName
+    /** The artwork's placeholder while it loads, or when there's none. */
+    placeholder?: IconName
     /** Small icon over the artwork, so a collection keeps its identity (♥, ⬇…). */
     badge?: IconName
     artists?: ArtistRef[]
@@ -35,6 +39,8 @@ const props = withDefaults(
     sections?: Section[]
     emptyTitle?: string
     emptyMessage?: string
+    /** Set when the songs are a playlist of yours: each song's menu offers "Remove from this playlist". */
+    editablePlaylist?: { id: string; source?: string }
     /** Song row subtitle override, e.g. "3 hr ago" in history. */
     rowSubtitle?: (song: Song) => string | undefined
   }>(),
@@ -44,6 +50,7 @@ const props = withDefaults(
     description: '',
     thumbnail: undefined,
     icon: undefined,
+    placeholder: 'album',
     badge: undefined,
     artists: () => [],
     numbered: false,
@@ -54,6 +61,7 @@ const props = withDefaults(
     emptyTitle: 'Nothing here yet',
     emptyMessage: '',
     rowSubtitle: undefined,
+    editablePlaylist: undefined,
   },
 )
 
@@ -121,9 +129,31 @@ function chooseSort() {
   })
 }
 
-/** Songs that are files on this device, or already downloaded: nothing left to fetch. */
-const haveOffline = (song: Song) => isOnDevice(song) || offlineState(song.id) === 'downloaded'
-const allOffline = computed(() => props.songs.length > 0 && props.songs.every(haveOffline))
+const GRID_SIZES: { value: GridSize; label: string; width: number }[] = [
+  { value: 'small', label: 'Small cards', width: 120 },
+  { value: 'medium', label: 'Medium cards', width: 160 },
+  { value: 'large', label: 'Large cards', width: 220 },
+]
+const gridCard = computed(() => GRID_SIZES.find((size) => size.value === gridSize.value)!)
+
+function toggleLayout() {
+  tap()
+  songLayout.value = songLayout.value === 'grid' ? 'list' : 'grid'
+}
+
+function chooseGridSize() {
+  tap()
+  showChoice({
+    title: 'Card size',
+    options: GRID_SIZES.map(({ value, label }) => ({ value, label })),
+    value: gridSize.value,
+    onSelect: (value) => (gridSize.value = value as GridSize),
+  })
+}
+
+/** Songs that are files on this device, or already downloaded: nothing left to fetch. Stations can't be saved, so they don't count against it. */
+const haveOffline = (song: Song) => isOnDevice(song) || offlineState(song.id) === 'downloaded' || isStationSong(song)
+const allOffline = computed(() => props.songs.some((song) => !isStationSong(song)) && props.songs.every(haveOffline))
 
 function play() {
   haptic('press')
@@ -187,7 +217,39 @@ async function downloadAll() {
   for (const song of missing) void download(song, 'download')
 }
 
-const songActions = useItemDelegation(() => ({ items: ordered.value, play: 'list', title: props.title }))
+/**
+ * The icon tile: asked for, or for a collection with an identity of its own (a badge: ♥, ⬇…)
+ * whose artwork turned out not to exist (servers give every song a cover address).
+ */
+const artFailed = ref(false)
+watch(() => props.thumbnail, () => (artFailed.value = false))
+const tileIcon = computed(() => props.icon ?? (artFailed.value ? props.badge : undefined))
+
+/** This page's songs still in the download queue, for the ring on the download button. */
+const downloadProgress = computed(() => {
+  const pending = props.songs.filter((song) => transfers.get(song.id)?.kind === 'download')
+  if (pending.length === 0) return null
+  const done = props.songs.filter((song) => offlineState(song.id) === 'downloaded').length
+  const running = pending.reduce((sum, song) => sum + (transfers.get(song.id)?.progress ?? 0), 0)
+  return { left: pending.length, fraction: (done + running) / (done + pending.length) }
+})
+
+const downloadLabel = computed(() => {
+  if (downloadProgress.value) return `Downloading, ${songCount(downloadProgress.value.left)} left`
+  return allOffline.value ? 'Downloaded' : 'Download all'
+})
+
+/**
+ * Album pages: the album's own artist goes without saying, so a track's second line is
+ * its length, plus its artists when they differ (features, compilations).
+ */
+const albumArtists = computed(() => artistNames(props.artists))
+function trackLine(song: Song) {
+  const names = artistNames(song.artists)
+  return [names !== albumArtists.value ? names : '', song.duration ? formatTime(song.duration) : ''].filter(Boolean).join(' • ')
+}
+
+const songActions = useItemDelegation(() => ({ items: ordered.value, play: 'list', title: props.title, playlist: props.editablePlaylist }))
 
 function openArtist(artist: ArtistRef) {
   if (artist.id) void navigate({ name: 'artist', id: artist.id })
@@ -220,10 +282,10 @@ watch(
 
     <template v-else>
       <header class="collection-header">
-        <div class="collection-art" :class="{ 'is-icon': icon }">
-          <C.MIcon v-if="icon" :name="icon" filled :size="72" />
-          <C.Thumb v-else :src="thumbnail" :size="280" eager icon="album" />
-          <span v-if="badge && !icon" class="collection-badge" aria-hidden="true">
+        <div class="collection-art" :class="{ 'is-icon': tileIcon }">
+          <C.MIcon v-if="tileIcon" :name="tileIcon" filled :size="72" />
+          <C.Thumb v-else :src="thumbnail" :size="280" eager :icon="placeholder" @failed="artFailed = true" />
+          <span v-if="badge && !tileIcon" class="collection-badge" aria-hidden="true">
             <C.MIcon :name="badge" filled :size="22" />
           </span>
         </div>
@@ -239,8 +301,12 @@ watch(
         <p v-if="meta" class="type-body-medium muted">{{ meta }}</p>
 
         <div class="collection-actions">
-          <button class="icon-button large tonal" type="button" :aria-label="allOffline ? 'Downloaded' : 'Download all'" :disabled="songs.length === 0 || gatheringAll" @click="downloadAll">
-            <C.MIcon :name="allOffline ? 'downloaded' : 'download'" />
+          <button class="icon-button large tonal" type="button" :aria-label="downloadLabel" :title="downloadLabel" :disabled="songs.length === 0 || gatheringAll" @click="downloadAll">
+            <svg v-if="downloadProgress" class="progress-ring large" viewBox="0 0 20 20" :style="{ '--p': downloadProgress.fraction }" aria-hidden="true">
+              <circle class="progress-ring-track" cx="10" cy="10" r="8" />
+              <circle class="progress-ring-arc" cx="10" cy="10" r="8" />
+            </svg>
+            <C.MIcon v-else :name="allOffline ? 'downloaded' : 'download'" />
           </button>
           <button class="filled-button large" type="button" :disabled="songs.length === 0" @click="play">
             <C.MIcon name="play" filled />
@@ -267,21 +333,65 @@ watch(
         </p>
       </header>
 
+      <slot name="before-songs" />
+
       <div v-if="songs.length > 1" class="collection-sort">
         <button class="text-button" type="button" @click="chooseSort">
           <C.MIcon name="sort" :size="20" />
           {{ sortOrder === 'default' ? 'Sort' : SORTS.find((sort) => sort.value === sortOrder)?.label }}
         </button>
+        <div class="collection-layout">
+          <template v-if="songLayout === 'grid'">
+            <button class="text-button" type="button" @click="chooseGridSize">{{ gridCard.label }}</button>
+            <button class="text-button" type="button" :aria-pressed="gridDetails" @click="gridDetails = !gridDetails">
+              <C.MIcon name="check" :size="18" :style="{ visibility: gridDetails ? 'visible' : 'hidden' }" />
+              Details
+            </button>
+            <button v-if="numbered" class="text-button" type="button" :aria-pressed="gridNumbers" @click="gridNumbers = !gridNumbers">
+              <C.MIcon name="check" :size="18" :style="{ visibility: gridNumbers ? 'visible' : 'hidden' }" />
+              Numbers
+            </button>
+          </template>
+          <button
+            class="icon-button"
+            type="button"
+            :aria-label="songLayout === 'grid' ? 'Show as a list' : 'Show as a grid'"
+            :title="songLayout === 'grid' ? 'Show as a list' : 'Show as a grid'"
+            @click="toggleLayout"
+          >
+            <C.MIcon :name="songLayout === 'grid' ? 'list' : 'grid'" :size="22" />
+          </button>
+        </div>
       </div>
 
-      <div class="collection-songs" @click="songActions.onClick" @contextmenu="songActions.onContextmenu">
+      <div
+        v-if="songLayout === 'grid' && songs.length > 1"
+        class="collection-songs collection-grid"
+        :style="{ '--collection-card': `${gridCard.width}px` }"
+        @click="songActions.onClick"
+        @contextmenu="songActions.onContextmenu"
+      >
+        <C.ItemCard
+          v-for="(song, index) in ordered"
+          :key="`${song.id}:${index}`"
+          :item="song"
+          :index="index"
+          :width="gridCard.width"
+          fluid
+          :number="numbered && gridNumbers ? index + 1 : undefined"
+          :hide-subtitle="!gridDetails"
+          :subtitle="rowSubtitle?.(song) ?? (numbered ? trackLine(song) : undefined)"
+        />
+      </div>
+
+      <div v-else class="collection-songs" @click="songActions.onClick" @contextmenu="songActions.onContextmenu">
         <C.ItemRow
           v-for="(song, index) in ordered"
           :key="`${song.id}:${index}`"
           :item="song"
           :index="index"
           :number="numbered ? index + 1 : undefined"
-          :subtitle="rowSubtitle?.(song)"
+          :subtitle="rowSubtitle?.(song) ?? (numbered ? trackLine(song) : undefined)"
         />
         <C.StateView v-if="!loading && songs.length === 0" icon="music" :title="emptyTitle" :message="emptyMessage" />
       </div>

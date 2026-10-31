@@ -28,9 +28,10 @@ async function copyLog() {
 <template>
   <div class="plugin-log">
     <div v-if="entries.length === 0" class="plugin-log-empty type-body-medium muted">Nothing logged yet.</div>
-    <ol v-else class="plugin-log-list">
+    <!-- On its own page the page scrolls; inside a plugin's page the list does, kept short. -->
+    <ol v-else class="plugin-log-list" :class="{ 'is-embedded': source }">
       <li v-for="(entry, index) in entries" :key="index" class="plugin-log-entry" :class="`is-${entry.level}`">
-        <span class="plugin-log-meta">{{ time(entry.time) }}<template v-if="!source"> · {{ entry.source }}</template></span>
+        <span class="plugin-log-meta">{{ time(entry.time) }}<template v-if="!source"> • {{ entry.source }}</template></span>
         <span class="plugin-log-message">{{ entry.message }}</span>
       </li>
     </ol>

@@ -3,6 +3,7 @@ import * as TauriCore from '@tauri-apps/api/core'
 import * as TauriHttp from '@tauri-apps/plugin-http'
 import * as Vue from 'vue'
 import * as accounts from '../accounts'
+import * as analysis from '../analysis'
 import * as auth from '../auth'
 import * as back from '../back'
 import * as haptics from '../haptics'
@@ -108,6 +109,8 @@ function build() {
     /* The app */
     libs: {
       accounts,
+      /** `use({ bands, fps })` → live levels/spectrum/waveform of the playing audio; see PLUGINS.md. */
+      analysis,
       auth,
       back,
       haptics,

@@ -1,5 +1,5 @@
 import { shallowRef, watch } from 'vue'
-import type { Album, Artist, ArtistRef, CollectionPage, Item, Playlist, Section, Song, StreamInfo } from '../models'
+import type { Album, Artist, ArtistRef, CollectionPage, Item, Section, Song, StreamInfo } from '../models'
 import { chosenOption, playbackMode, registerPlaybackOptions, registerPlaybackTargets, type PlaybackOption, type PlaybackTarget } from '../playFrom'
 import { queue } from '../player'
 import { hookRegistry } from '../plugins/hooks'
@@ -10,6 +10,7 @@ import { request as serviceRequest } from '../services/api'
 import { StreamError } from '../services/stream'
 import { defineService, removeService, services } from '../services/registry'
 import type { ServiceDefinition } from '../services/types'
+import { serverPlaylistItem } from '../playlists'
 import { handshake, serverKind, serverRequest, serverStatus, serverUrl } from '../server'
 import { serverAccount } from './account'
 import { canUseServer, coverUrl, credentials, restUrl, streamUrl, subsonic, type SubsonicPayload } from './client'
@@ -71,16 +72,7 @@ function toArtist(artist: SubsonicPayload): Artist {
   }
 }
 
-function toPlaylist(playlist: SubsonicPayload): Playlist {
-  return {
-    type: 'playlist',
-    source: SERVICE_ID,
-    id: playlist.id,
-    title: playlist.name,
-    subtitle: `${playlist.songCount ?? 0} songs${playlist.owner ? ` · ${playlist.owner}` : ''}`,
-    thumbnail: coverUrl(playlist.coverArt),
-  }
-}
+const toPlaylist = serverPlaylistItem
 
 const list = <T>(value: T[] | undefined) => value ?? []
 const section = (id: string, title: string, items: Item[], layout: Section['layout'] = 'carousel', strapline?: string): Section[] =>
@@ -156,7 +148,7 @@ async function sourcesOf(song: Song): Promise<SongSources | null> {
 }
 
 const quality = (source: ServerSource) =>
-  [source.lossless ? 'Lossless' : '', source.suffix?.toUpperCase(), source.bitRate ? `${source.bitRate} kbps` : ''].filter(Boolean).join(' · ')
+  [source.lossless ? 'Lossless' : '', source.suffix?.toUpperCase(), source.bitRate ? `${source.bitRate} kbps` : ''].filter(Boolean).join(' • ')
 
 /** A stream of exactly one server source. */
 async function serverStream(song: Song, path: string, efficient: boolean, source?: ServerSource): Promise<StreamInfo> {
@@ -196,7 +188,7 @@ async function serverOptions(song: Song): Promise<PlaybackOption[]> {
   if (!info.stream) {
     options.push({
       id: 'default',
-      label: `${services[SERVICE_ID]?.name ?? 'Server'} · Its best source`,
+      label: services[SERVICE_ID]?.name ?? 'Server',
       description: `No audio on the server; it knows this song from ${info.sources.map((source) => source.name).join(', ') || 'its catalog'}`,
       available: false,
       group: 'server',
@@ -208,7 +200,7 @@ async function serverOptions(song: Song): Promise<PlaybackOption[]> {
       const path = source.stream
       options.push({
         id: `server:${source.key}`,
-        label: `${services[SERVICE_ID]?.name ?? 'Server'} · ${source.name}`,
+        label: `${services[SERVICE_ID]?.name ?? 'Server'} • ${source.name}`,
         description: quality(source) || 'Streamed by the server',
         available: true,
         target: `server:${source.provider}`,
@@ -270,7 +262,7 @@ function serverTargets(): PlaybackTarget[] {
   const offered = new Set(handshake.value?.plugins.map((plugin) => plugin.id))
   return serverProviders.value.flatMap((provider): PlaybackTarget[] => {
     const targets: PlaybackTarget[] =
-      provider.streams === false ? [] : [{ id: `server:${provider.id}`, label: `${server} · ${provider.name}`, group: 'server', available: true, description: 'Streamed by the server' }]
+      provider.streams === false ? [] : [{ id: `server:${provider.id}`, label: `${server} • ${provider.name}`, group: 'server', available: true, description: 'Streamed by the server' }]
     const own = provider.clientService
     if (own && own !== SERVICE_ID && !services[own]?.streams) {
       const plugin = provider.clientPlugin
@@ -364,7 +356,8 @@ const service: ServiceDefinition = {
         id,
         kind: 'album',
         title: album.name,
-        subtitle: [album.year, `${songs.length} songs`].filter(Boolean).join(' · '),
+        // The page adds "3 songs • 12 min" itself.
+        subtitle: album.year ? String(album.year) : undefined,
         thumbnail: coverUrl(album.coverArt),
         artists: artistsOf(album),
         year: album.year ? String(album.year) : undefined,
@@ -382,13 +375,14 @@ const service: ServiceDefinition = {
         id,
         kind: 'playlist',
         title: playlist.name,
-        subtitle: `${playlist.songCount ?? 0} songs${playlist.owner ? ` · ${playlist.owner}` : ''}`,
+        subtitle: playlist.owner ? `By ${playlist.owner}` : undefined,
         description: playlist.comment,
         thumbnail: coverUrl(playlist.coverArt),
         artists: [],
         songs: list<SubsonicPayload>(playlist.entry).map(toSong),
         hasMore: false,
         sections: [],
+        editable: serverPlaylistItem(playlist).editable,
       }
     },
   },

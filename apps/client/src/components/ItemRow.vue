@@ -2,7 +2,7 @@
 import { C } from '../plugins/components'
 import { computed } from 'vue'
 import { formatTime } from '../format'
-import { offlineState } from '../offline'
+import { nowRunning, offlineState } from '../offline'
 import { currentSong, isPlaying } from '../player'
 import { artistNames, type Item } from '../models'
 
@@ -29,7 +29,12 @@ const props = withDefaults(
 )
 
 const isCurrent = computed(() => props.item.type === 'song' && currentSong.value?.id === props.item.id)
-const offline = computed(() => (props.item.type === 'song' ? offlineState(props.item.id) : 'none'))
+const offline = computed(() => {
+  if (props.item.type !== 'song') return 'none'
+  const state = offlineState(props.item.id)
+  // Queued and transferring look different: a clock while it waits its turn.
+  return state === 'downloading' && !nowRunning.has(props.item.id) ? 'waiting' : state
+})
 
 const title = computed(() => (props.item.type === 'artist' ? props.item.name : props.item.title))
 
@@ -58,7 +63,7 @@ const secondLine = computed(() => {
   <div class="item-row" :class="{ 'is-current': isCurrent, 'is-compact': compact }" :data-item-index="index">
     <button class="item-row-main" type="button" data-action="open">
       <span v-if="number !== undefined" class="item-row-number type-title-medium">
-        <span v-if="isCurrent && isPlaying" class="eq" aria-label="Playing"><span /><span /><span /></span>
+        <C.PlayingBars v-if="isCurrent && isPlaying" />
         <template v-else>{{ number }}</template>
       </span>
       <span v-else class="item-row-art">
@@ -69,7 +74,7 @@ const secondLine = computed(() => {
           :icon="item.type === 'artist' ? 'artist' : item.type === 'album' ? 'album' : item.type === 'playlist' ? 'playlist' : 'music'"
         />
         <span v-if="isCurrent" class="item-row-playing" aria-hidden="true">
-          <span v-if="isPlaying" class="eq"><span /><span /><span /></span>
+          <C.PlayingBars v-if="isPlaying" />
           <C.MIcon v-else name="pause" filled :size="20" />
         </span>
       </span>
@@ -79,6 +84,7 @@ const secondLine = computed(() => {
           <C.MIcon v-if="item.type === 'song' && item.explicit" class="explicit-badge" name="explicit" filled :size="16" />
           <C.MIcon v-if="offline === 'downloaded'" class="offline-badge" name="downloaded" :size="16" />
           <C.MIcon v-else-if="offline === 'downloading'" class="offline-badge" name="downloading" :size="16" />
+          <C.MIcon v-else-if="offline === 'waiting'" class="offline-badge is-waiting" name="schedule" :size="16" />
           <span>{{ secondLine }}</span>
         </span>
       </span>

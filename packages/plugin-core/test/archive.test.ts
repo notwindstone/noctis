@@ -20,6 +20,14 @@ describe('archives', () => {
     expect(readPluginArchive('lyrics.zip', bytes).client).toBe('1')
   })
 
+  test('a logo file in the archive becomes a data: URL', () => {
+    const manifest = parseManifest({ name: 'Pretty', type: 'unrestricted', logo: 'icon.png' })
+    const bytes = writePluginArchive({ manifest, client: '1', assets: { 'icon.png': new Uint8Array([137, 80, 78, 71]) } })
+    expect(readPluginArchive('pretty.noctis', bytes).manifest.logo).toBe('data:image/png;base64,iVBORw==')
+    // No file, no icon (and the plugin still installs).
+    expect(readPluginArchive('pretty.noctis', writePluginArchive({ manifest, client: '1' })).manifest.logo).toBeUndefined()
+  })
+
   test('a both-sides plugin needs both halves', () => {
     const bytes = writePluginArchive({ manifest: both, client: 'client()' })
     expect(() => readPluginArchive('stats.noctis', bytes)).toThrow(PluginArchiveError)

@@ -206,6 +206,15 @@ describe('media', () => {
     expect(await (await rest('getCoverArt', { id: song.coverArt, apiKey: key })).text()).toBe('JPEGDATA')
   })
 
+  test('cover art asked for again comes from memory, the same bytes and type', async () => {
+    const song = (await json('search3', { query: 'Luminous' })).searchResult3.song[0]
+    const first = await rest('getCoverArt', { id: song.coverArt, apiKey: key })
+    const again = await rest('getCoverArt', { id: song.coverArt, apiKey: key, size: '64' })
+    expect(await again.text()).toBe(await first.text())
+    expect(again.headers.get('content-type')).toBe(first.headers.get('content-type'))
+    expect(again.headers.get('cache-control')).toContain('max-age')
+  })
+
   test('one exact source', async () => {
     const song = (await json('search3', { query: 'Luminous' })).searchResult3.song[0]
     expect(await (await rest('stream', { id: song.id, apiKey: key, source: 'fakemusic:yt-123' })).text()).toBe('FAKEAUDIO-yt-123')

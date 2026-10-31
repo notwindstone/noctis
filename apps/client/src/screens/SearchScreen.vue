@@ -51,7 +51,7 @@ const sectionOffsets = computed(() => {
 const resultActions = useItemDelegation(() =>
   filter.value === 'all'
     ? { items: flatResults.value, play: 'radio' }
-    : { items: result.value?.items ?? [], play: 'list', title: `Search · ${submitted.value}` },
+    : { items: result.value?.items ?? [], play: 'list', title: `Search • ${submitted.value}` },
 )
 
 let suggestTimer = 0
@@ -214,6 +214,13 @@ onMounted(() => {
       >
         <C.ItemRow v-for="(item, index) in suggestions.items" :key="`${item.type}:${item.id}`" :item="item" :index="index" />
       </div>
+      <!-- Nothing typed and nothing searched before: say what this is, not a blank page. -->
+      <C.StateView
+        v-if="!query && historyMatches.length === 0"
+        icon="search"
+        :title="`Search ${serviceName}`"
+        message="Songs, albums, artists and playlists. Your recent searches show up here."
+      />
     </div>
 
     <!-- Results -->

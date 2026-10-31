@@ -132,7 +132,7 @@ export function offerAsSource(service: string, options: { minScore?: number; ski
     if (skip.has(sourceOf(song)) || !definition?.streams || !definition.search) return []
     const match = await matchFor(song).catch(() => null)
     if (!match) return []
-    const minutes = match.duration ? ` · ${Math.floor(match.duration / 60)}:${String(Math.round(match.duration % 60)).padStart(2, '0')}` : ''
+    const minutes = match.duration ? ` • ${Math.floor(match.duration / 60)}:${String(Math.round(match.duration % 60)).padStart(2, '0')}` : ''
     return [
       {
         id: `match:${service}:${match.id}`,

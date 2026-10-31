@@ -1,3 +1,4 @@
+import { LOCAL_PLAYLISTS, localPlaylistPage } from '../playlists'
 import {
   sourceOf,
   type Artist,
@@ -143,10 +144,13 @@ export function getAlbum(id: string, source?: string): Promise<CollectionPage> {
 }
 
 export function getPlaylist(id: string, source?: string): Promise<CollectionPage> {
+  // Playlists kept on this device aren't any service's.
+  if (source === LOCAL_PLAYLISTS) return Promise.resolve().then(() => localPlaylistPage(id))
   return request(sourceOf({ source }), 'playlists.get', { id })
 }
 
 export async function loadMorePlaylist(id: string, source?: string): Promise<{ songs: Song[]; hasMore: boolean }> {
+  if (source === LOCAL_PLAYLISTS) return { songs: [], hasMore: false }
   const service = sourceOf({ source })
   if (!supports(service, 'playlists.more')) return { songs: [], hasMore: false }
   return request(service, 'playlists.more', { id })

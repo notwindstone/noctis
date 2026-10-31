@@ -10,7 +10,7 @@ export interface HttpResponse {
 }
 
 /** Hosts the dev server proxies (vite.config.ts) for requests the browser can't make. */
-const PROXIED = /^https:\/\/(api-partner\.spotify\.com|clienttoken\.spotify\.com|open\.spotify\.com|open\.spotifycdn\.com|api-v2\.soundcloud\.com|secure\.soundcloud\.com|soundcloud\.com|a-v2\.sndcdn\.com|tracks\.monochrome\.st|monochrome\.st|monochrome-api\.samidy\.com)\//
+const PROXIED = /^https:\/\/(api-partner\.spotify\.com|clienttoken\.spotify\.com|spclient\.wg\.spotify\.com|seektables\.spotifycdn\.com|open\.spotify\.com|open\.spotifycdn\.com|api-v2\.soundcloud\.com|secure\.soundcloud\.com|soundcloud\.com|a-v2\.sndcdn\.com|tracks\.monochrome\.st|monochrome\.st|monochrome-api\.samidy\.com|bandcamp\.com|[a-z0-9-]+\.bandcamp\.com|t4\.bcbits\.com|f4\.bcbits\.com)\//
 
 /**
  * fetch() without CORS or forbidden headers (Cookie, Origin, User-Agent…) on desktop,
@@ -52,7 +52,7 @@ export async function request(
     return { status: response.status, headers: response.headers, data }
   }
 
-  const target = !isDesktop && PROXIED.test(url) ? url.replace(/^https:\/\//, '/__yt/') : url
+  const target = proxied(url)
   const response = await nativeFetch(target, { method, headers, body: body as string | undefined })
   const text = await response.text()
   let data: unknown = text
@@ -66,6 +66,28 @@ export async function request(
     out[name] = value
   })
   return { status: response.status, headers: out, data }
+}
+
+/** In the browser, hosts the dev server proxies go through `/__yt/<host>/<path>`. */
+function proxied(url: string): string {
+  return !isDesktop && /^https:\/\//.test(url) && PROXIED.test(url) ? url.replace(/^https:\/\//, '/__yt/') : url
+}
+
+/**
+ * A request whose body and answer are raw bytes, e.g. a DRM license exchange. The
+ * response body isn't parsed or decoded; on desktop the request has no CORS limits, in
+ * the browser it goes through the dev proxy like the rest.
+ */
+export async function requestBytes(
+  url: string,
+  init: { method?: string; headers?: Record<string, string>; body?: ArrayBuffer | ArrayBufferView } = {},
+): Promise<{ status: number; bytes: ArrayBuffer }> {
+  const response = await nativeFetch(proxied(url), {
+    method: init.method ?? 'GET',
+    headers: init.headers,
+    body: init.body as BodyInit | undefined,
+  })
+  return { status: response.status, bytes: response.ok ? await response.arrayBuffer() : new ArrayBuffer(0) }
 }
 
 /** Fetch a byte range of a media URL, e.g. one chunk of a download. */

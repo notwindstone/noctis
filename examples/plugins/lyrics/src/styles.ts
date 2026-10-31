@@ -291,7 +291,7 @@ export const css = /* css */ `
 
 /* ---- the source list in settings (drag to reorder) ---- */
 .lyr-src { margin: 0 16px 12px; }
-.lyr-src-hint { margin: 0 4px 8px; }
+.lyr-src-hint { margin: 0 16px 12px; }
 .lyr-src-list { margin: 0; padding: 0; list-style: none; }
 .lyr-src-row { display: flex; align-items: center; padding: 0; transition: transform 0.18s var(--md-sys-motion-easing, ease); }
 .lyr-src-list.is-settling .lyr-src-row { transition: none; }

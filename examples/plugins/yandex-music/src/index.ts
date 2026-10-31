@@ -209,7 +209,7 @@ async function getPlaylistPage({ id }: { id: string }): Promise<CollectionPage> 
     id,
     kind: 'playlist',
     title: playlist.title ?? 'Playlist',
-    subtitle: [owner.login ?? owner.name, playlist.trackCount ? `${playlist.trackCount} songs` : ''].filter(Boolean).join(' · '),
+    subtitle: [owner.login ?? owner.name, playlist.trackCount ? `${playlist.trackCount} songs` : ''].filter(Boolean).join(' • '),
     description: playlist.description || undefined,
     thumbnail: coverUrl(playlist.cover?.uri ?? playlist.ogImage),
     artists: [],

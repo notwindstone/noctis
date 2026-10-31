@@ -9,5 +9,8 @@
     "music-metadata": "^12.3.0",
     "pinyin-pro": "^3.29.5",
     "youtubei.js": "^18.3.0"
+  },
+  "dependencies": {
+    "googlevideo": "5.0.1"
   }
 }

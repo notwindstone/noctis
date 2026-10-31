@@ -8,7 +8,7 @@ import vue from '@vitejs/plugin-vue'
  * the same requests go through Capacitor's native HTTP stack instead.
  */
 const PROXY_PREFIX = '/__yt/'
-const ALLOWED_HOSTS = /^(music\.youtube\.com|www\.youtube\.com|youtubei\.googleapis\.com|jnn-pa\.googleapis\.com|[a-z0-9-]+\.googlevideo\.com|api-partner\.spotify\.com|clienttoken\.spotify\.com|open\.spotify\.com|open\.spotifycdn\.com|api-v2\.soundcloud\.com|secure\.soundcloud\.com|soundcloud\.com|a-v2\.sndcdn\.com|tracks\.monochrome\.st|monochrome\.st|monochrome-api\.samidy\.com)$/
+const ALLOWED_HOSTS = /^(music\.youtube\.com|www\.youtube\.com|youtubei\.googleapis\.com|jnn-pa\.googleapis\.com|[a-z0-9-]+\.googlevideo\.com|api-partner\.spotify\.com|clienttoken\.spotify\.com|spclient\.wg\.spotify\.com|seektables\.spotifycdn\.com|open\.spotify\.com|open\.spotifycdn\.com|api-v2\.soundcloud\.com|secure\.soundcloud\.com|soundcloud\.com|a-v2\.sndcdn\.com|tracks\.monochrome\.st|monochrome\.st|monochrome-api\.samidy\.com|bandcamp\.com|[a-z0-9-]+\.bandcamp\.com|t4\.bcbits\.com|f4\.bcbits\.com)$/
 const DESKTOP_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
 
@@ -41,6 +41,10 @@ function innertubeProxy(): Plugin {
           headers.set(name, value)
         }
         if (!headers.has('user-agent')) headers.set('user-agent', DESKTOP_UA)
+        // Bandcamp's bot filter challenges any 'Mozilla/*' UA over HTTP/2 on its
+        // shared domain; the upstream then answers with a challenge page. A neutral
+        // agent passes, so that's what it gets unless the plugin sent one.
+        if (host.endsWith('bandcamp.com') || host.endsWith('bcbits.com')) headers.set('user-agent', 'Noctis/1.0 (Bandcamp plugin)')
         if (host.endsWith('youtube.com')) {
           headers.set('origin', `https://${host}`)
           headers.set('referer', `https://${host}/`)

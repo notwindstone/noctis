@@ -3,7 +3,8 @@ import { Innertube, Log, Platform, UniversalCache } from 'youtubei.js'
 import { Noctis, type AccountInfo } from './host'
 import { ytFetch } from './http'
 
-const { hasNoctisPlugin, Noctis: native } = Noctis.libs.native
+const { hasNoctisPlugin, isDesktop, Noctis: native } = Noctis.libs.native
+const { canCaptureWeb, openCookieLogin } = Noctis.libs.auth
 const { contentCountry, contentLanguage } = Noctis.libs.preferences
 const { isBoolean, persisted } = Noctis.libs.storage
 
@@ -97,10 +98,23 @@ watch([() => auth.value?.cookie, useAccountForContent, contentLanguage, contentC
  * Sign-in
  * ------------------------------------------------------------------ */
 
-export const canSignInNatively = hasNoctisPlugin
+export const canSignInNatively = hasNoctisPlugin || isDesktop
+
+// The same page the Android sign-in opens.
+const SIGN_IN_URL = 'https://accounts.google.com/ServiceLogin?ytbTemplate=1&service=youtube&continue=https%3A%2F%2Fmusic.youtube.com'
 
 /** Opens the native Google sign-in page. Resolves to true when signed in. */
 export async function signInWithGoogle(): Promise<boolean> {
+  if (isDesktop && canCaptureWeb) {
+    // A throwaway window on Google's own page; it closes once music.youtube.com has SAPISID.
+    try {
+      const { cookies } = await openCookieLogin({ url: SIGN_IN_URL, cookieUrl: 'https://music.youtube.com', cookie: 'SAPISID', title: 'Sign in to YouTube Music' })
+      return signInWithCookie(cookies)
+    } catch (error) {
+      if (/closed|cancel/i.test((error as Error).message)) return false
+      throw error
+    }
+  }
   if (!hasNoctisPlugin) return false
   const result = await native.openLogin()
   return signInWithCookie(result.cookie, result.visitorData)

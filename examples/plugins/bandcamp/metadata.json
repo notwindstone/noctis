@@ -1,0 +1,16 @@
+{
+  "name": "Bandcamp",
+  "version": "1.0.3",
+  "authors": [
+    "Noctis"
+  ],
+  "type": "unrestricted",
+  "platforms": [
+    "*"
+  ],
+  "description": "Bandcamp: artists' discographies, albums, tracks and tag-based discovery, streaming anonymously the way the web player's embed does. No account needed; bought-and-paid music needs none either. Search needs Bandcamp's search page to be reachable (some networks get a browser check instead).",
+  "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/bandcamp",
+  "categories": [
+    "service"
+  ]
+}

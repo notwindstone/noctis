@@ -13,7 +13,7 @@ import { loadHome, loadMoreHome } from '../services/api'
 import { activeService, servicesReady } from '../services/registry'
 import { credentials } from '../subsonic/client'
 import { handshake, otherServerName, serverStatus, serverUrl } from '../server'
-import { account, onSessionChange, openAccountSettings, signedIn } from '../services/session'
+import { account, onSessionChange, openAccountSettings, serviceName, signedIn } from '../services/session'
 import type { HomeResult, Section } from '../models'
 
 defineProps<{ route: Route; screenKey: number; isRoot: boolean }>()
@@ -156,7 +156,8 @@ onSessionChange(() => void load(null))
     <header class="home-top">
       <button class="search-bar" type="button" @click="navigate({ name: 'search' })">
         <C.MIcon name="search" />
-        <span>Search songs, albums, artists</span>
+        <!-- The same words as the search field it opens. -->
+        <span>{{ serviceName ? `Search ${serviceName}` : 'Search songs, albums, artists' }}</span>
       </button>
       <button class="avatar-button" type="button" aria-label="Account" @click="openAccount">
         <C.Thumb v-if="account?.photo" :src="account.photo" :size="36" shape="circle" icon="account" />

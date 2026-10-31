@@ -80,7 +80,7 @@ const webBackend: Backend = {
   },
   async show({ id, title, body, progress, quiet }) {
     // No progress bars on the web: put the figure in the text.
-    const text = [body, typeof progress === 'number' ? `${Math.round(progress * 100)}%` : undefined].filter(Boolean).join(' · ')
+    const text = [body, typeof progress === 'number' ? `${Math.round(progress * 100)}%` : undefined].filter(Boolean).join(' • ')
     const notification = new Notification(title, { body: text || undefined, tag: id, silent: quiet })
     notification.onclick = () => {
       window.focus()

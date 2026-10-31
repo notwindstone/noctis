@@ -106,7 +106,7 @@ const nowQuality = computed(() => {
   const stream = playing?.stream
   if (stream) {
     const format = formatName(stream.mimeType)
-    return [format, stream.bitrate ? `${Math.round(stream.bitrate / 1000)} kbps` : ''].filter(Boolean).join(' · ')
+    return [format, stream.bitrate ? `${Math.round(stream.bitrate / 1000)} kbps` : ''].filter(Boolean).join(' • ')
   }
   return pickedOption.value?.description ?? ''
 })
@@ -119,7 +119,7 @@ function optionRow(option: PlaybackOption): Row {
   return {
     value: option.id,
     label: option.label,
-    description: installable ? `${option.description ?? 'Needs a plugin'} · tap to install` : option.description,
+    description: installable ? `${option.description ?? 'Needs a plugin'} • tap to install` : option.description,
     disabled: !option.available && !installable,
     playing: option.available && option.id === picked.value,
     option,
@@ -135,7 +135,7 @@ const songSections = computed<Section[]>(() => {
   const sections: Section[] = [
     {
       id: 'follow',
-      rows: [{ value: '', label: 'Same as other songs', description: `${preferenceLabel()} · here: ${labelOf(follows)}` }],
+      rows: [{ value: '', label: 'Same as other songs', description: `${preferenceLabel()}: ${labelOf(follows)} for this one` }],
     },
   ]
   const present = new Set(list.map((option) => option.target).filter(Boolean))
@@ -271,13 +271,12 @@ function choose(row: Row) {
         >
           <span class="radio" aria-hidden="true" />
           <span class="choice-text">
-            <span class="type-body-large">
-              {{ row.label }}
-              <span v-if="row.playing && scope === 'song'" class="play-from-badge type-label-small">{{ isCurrent ? 'Playing' : 'Picked' }}</span>
-            </span>
+            <span class="type-body-large">{{ row.label }}</span>
             <span v-if="row.description" class="type-body-medium muted">{{ row.description }}</span>
             <span v-if="row.detail" class="type-body-small muted">{{ row.detail }}</span>
           </span>
+          <!-- At the end of the row, so it never wraps under a long name. -->
+          <span v-if="row.playing && scope === 'song'" class="play-from-badge type-label-small">{{ isCurrent ? 'Playing' : 'Picked' }}</span>
         </button>
       </div>
     </template>

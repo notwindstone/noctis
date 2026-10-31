@@ -22,7 +22,8 @@ const STATUS: Record<string, string> = {
   none: 'Not connected',
   connecting: 'Connecting…',
   connected: 'Connected',
-  'needs-plugins': 'Needs plugins to connect',
+  // Connected, and most things work; some server features wait for the plugins it asks for.
+  'needs-plugins': 'Connected, missing plugins',
   error: "Couldn't connect",
 }
 
@@ -75,6 +76,13 @@ function installRequired() {
   })
 }
 
+/** A version range in words: "^1.2.0" → "1.2 or newer". */
+function versionsLabel(range: string): string {
+  const caret = /^[\^~>=]*\s*(\d+)\.(\d+)/.exec(range.trim())
+  if (range.trim() === '*' || range.trim() === '') return 'any version'
+  return caret ? `${caret[1]}.${caret[2]} or newer` : range
+}
+
 const serverName = () => handshake.value?.server.name ?? (otherServerName.value || serverUrl.value)
 
 /** What connecting got you: everything, guest access, or a server to sign in to. */
@@ -105,7 +113,7 @@ export function defineServerSettings() {
       icon: 'server',
       title: 'Server',
       get description() {
-        return serverStatus.value === 'none' ? 'Noctis or OpenSubsonic' : `${STATUS[serverStatus.value]} · ${serverName()}`
+        return serverStatus.value === 'none' ? 'Noctis or OpenSubsonic' : `${STATUS[serverStatus.value]} • ${serverName()}`
       },
     },
     [
@@ -125,7 +133,7 @@ export function defineServerSettings() {
           icon: 'sync',
           title: 'Status',
           get value() {
-            const name = handshake.value ? ` · ${handshake.value.server.name} ${handshake.value.server.version}` : serverKind.value === 'opensubsonic' ? ` · ${otherServerName.value} (OpenSubsonic)` : ''
+            const name = handshake.value ? ` • ${handshake.value.server.name} ${handshake.value.server.version}` : serverKind.value === 'opensubsonic' ? ` • ${otherServerName.value} (OpenSubsonic)` : ''
             return serverStatus.value === 'error' ? `${STATUS.error}: ${serverError.value}` : `${STATUS[serverStatus.value]}${name}`
           },
           get hidden() {
@@ -159,7 +167,7 @@ export function defineServerSettings() {
       {
         id: 'note',
         type: 'note',
-        text: 'Songs on a Noctis server can have several sources; "Play from" (Settings → Playback, or the player\'s menu) chooses between the server\'s streams, your own services and copies on this device. Like a modded Minecraft server, a Noctis server can also require client plugins: they\'re downloaded from the server and checked against the hashes it announces before installing.',
+        text: 'A song on a Noctis server can have several sources: "Play from" (Settings → Playback, or the player\'s menu) chooses between the server\'s streams, your own services and copies on this device. A server can also ask for client plugins; they\'re downloaded from it and checked against the fingerprints it announces before they\'re installed.',
       },
     ],
     'noctis',
@@ -180,11 +188,11 @@ export function defineServerSettings() {
           icon: 'plugin',
           title: requirement.name,
           get value() {
-            if (unsupported.has(requirement.id)) return `Not needed here · made for ${describePlatforms(requirement)}`
-            if (missing.has(requirement.id)) return `Missing · ${requirement.versions}${requirement.required ? ' · required' : ''}`
-            if (outdated.has(requirement.id)) return `Version ${outdated.get(requirement.id)} installed, needs ${requirement.versions}`
+            if (unsupported.has(requirement.id)) return `Not needed here • made for ${describePlatforms(requirement)}`
+            if (missing.has(requirement.id)) return `${requirement.required ? 'Required' : 'Optional'}, not installed • ${versionsLabel(requirement.versions)}`
+            if (outdated.has(requirement.id)) return `Version ${outdated.get(requirement.id)} installed, needs ${versionsLabel(requirement.versions)}`
             const installed = findPlugin(requirement.id)
-            return installed ? `Installed · ${installed.metadata.version}` : `Optional · ${requirement.versions}`
+            return installed ? `Installed • ${installed.metadata.version}` : `Optional • ${versionsLabel(requirement.versions)}`
           },
         })),
       )

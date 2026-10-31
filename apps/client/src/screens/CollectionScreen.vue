@@ -8,7 +8,7 @@ import { clearHistory, history, likedSongs } from '../library'
 import { navigate, type CollectionId, type Route } from '../navigation'
 import { loadLocalLibrary, localTracks } from '../local/library'
 import { toSong } from '../local/service'
-import { cached, clearCache, downloads, formatBytes, usage } from '../offline'
+import { batch, batchFraction, batchPosition, cached, clearCache, downloads, formatBytes, usage } from '../offline'
 import { confirm } from '../ui'
 import { getLikedSongs, loadMoreLikedSongs } from '../services/api'
 import { servicesReady } from '../services/registry'
@@ -103,13 +103,16 @@ const subtitle = computed(() => {
     case 'downloads':
       return `${formatBytes(usage.value.download)} on this device`
     case 'cached':
-      return `${formatBytes(usage.value.cache)} · cleared automatically when full`
+      return `${formatBytes(usage.value.cache)} • cleared automatically when full`
     case 'history':
     case 'local':
       return 'On this device'
   }
   return ''
 })
+
+/** The first song with artwork; without any, the collection's own icon tile (not a stand-in album). */
+const artwork = computed(() => songs.value.find((song) => song.thumbnail)?.thumbnail)
 
 const playedAt = computed(() => new Map(history.value.map((entry) => [entry.song.id, entry.playedAt])))
 
@@ -147,19 +150,30 @@ function clearAll() {
   <C.CollectionView
     :title="meta.title"
     :subtitle="subtitle"
-    :thumbnail="songs[0]?.thumbnail"
-    :icon="songs.length === 0 ? meta.icon : undefined"
+    :thumbnail="artwork"
+    :icon="artwork ? undefined : meta.icon"
     :badge="meta.icon"
     :songs="songs"
     :loading="loading"
     :error="error"
     :has-more="remoteHasMore"
-    :empty-message="meta.empty"
+    :empty-message="id === 'downloads' && batch.active ? 'Songs show up here as they finish downloading.' : meta.empty"
     :row-subtitle="rowSubtitle"
     @retry="loadRemote"
     @load-more="loadMore"
   >
     <template #actions>
+      <!-- What's still downloading is a page of its own; this is the way there. -->
+      <button
+        v-if="id === 'downloads'"
+        class="icon-button"
+        type="button"
+        :aria-label="batch.active ? `Downloading: ${batchPosition}` : 'Download queue'"
+        :title="batch.active ? batchPosition : 'Download queue'"
+        @click="navigate({ name: 'downloads-queue' })"
+      >
+        <C.MIcon name="downloading" :filled="batch.active" />
+      </button>
       <button v-if="id === 'local'" class="icon-button" type="button" aria-label="Local music settings" @click="navigate({ name: 'settings-page', page: 'local-music' })">
         <C.MIcon name="settings" />
       </button>
@@ -175,6 +189,20 @@ function clearAll() {
     </template>
     <template #extra-actions>
       <span />
+    </template>
+    <!-- What's on its way, so an empty page mid-download doesn't look like nothing happened. -->
+    <template v-if="id === 'downloads' && batch.active" #before-songs>
+      <button class="downloads-banner" type="button" @click="navigate({ name: 'downloads-queue' })">
+        <svg class="progress-ring large" viewBox="0 0 20 20" :style="{ '--p': batchFraction }" aria-hidden="true">
+          <circle class="progress-ring-track" cx="10" cy="10" r="8" />
+          <circle class="progress-ring-arc" cx="10" cy="10" r="8" />
+        </svg>
+        <span class="downloads-banner-text">
+          <span class="type-title-small">Downloading</span>
+          <span class="type-body-medium muted">{{ batchPosition }}</span>
+        </span>
+        <C.MIcon name="chevron-right" />
+      </button>
     </template>
   </C.CollectionView>
 </template>

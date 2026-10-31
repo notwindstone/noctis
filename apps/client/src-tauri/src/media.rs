@@ -25,6 +25,7 @@ const FLAG: &str = "media-controls-off";
 static DISABLED: AtomicBool = AtomicBool::new(false);
 
 /// What wry passes by default (it's replaced when we pass our own), plus the media features off.
+#[cfg(windows)]
 const DISABLED_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling,MediaSessionService,GlobalMediaControls,GlobalMediaControlsForCast,GlobalMediaControlsUpdatedUI";
 
 fn flag_path(app: &AppHandle, options: &LaunchOptions) -> Option<PathBuf> {
@@ -42,6 +43,7 @@ pub fn init(app: &AppHandle, options: &LaunchOptions) {
 }
 
 /// Extra browser arguments for a window, if the media controls are off.
+#[cfg(windows)]
 pub fn browser_args() -> Option<&'static str> {
     DISABLED.load(Ordering::Relaxed).then_some(DISABLED_ARGS)
 }

@@ -44,6 +44,12 @@ export const saveAsFiles = persisted('noctis:save-as-files', true, isBoolean)
 export const downloadMaxMinutes = persisted('noctis:download-max-minutes', 180, (value) => typeof value === 'number' && value >= 0)
 /** Songs downloaded at once (a service can allow fewer, see ServiceDefinition.downloads). */
 export const downloadConcurrency = persisted('noctis:download-concurrency', 1, (value) => typeof value === 'number' && value >= 1)
+/**
+ * What happens to a song when it's liked: nothing, it's put in the cache (trimmed with the rest of it),
+ * or it's downloaded and kept. Choosing "download" also queues the songs already liked.
+ */
+export type SaveLiked = 'off' | 'cache' | 'download'
+export const saveLiked = persisted<SaveLiked>('noctis:save-liked', 'off', oneOf('off', 'cache', 'download'))
 /** A system notification with the download progress while the app is in the background. */
 export const downloadNotifications = persisted('noctis:download-notifications', true, isBoolean)
 
@@ -60,5 +66,18 @@ export const motion = persisted<'system' | 'full' | 'never'>('noctis:motion', 's
 /** Whether screen transitions should be skipped: the user said never, or the system asks for none and they didn't override it. */
 export const animationsOff = () =>
   motion.value === 'never' || (motion.value === 'system' && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+/** The playing-song bars follow the music (needs audio analysis) instead of a canned animation. */
+export const liveBars = persisted('noctis:live-bars', false, isBoolean)
+/** Playlist and album pages: songs as rows or as cover cards (a grid), for every page. */
+export type SongLayout = 'list' | 'grid'
+export type GridSize = 'small' | 'medium' | 'large'
+export const songLayout = persisted<SongLayout>('noctis:song-layout', 'list', oneOf('list', 'grid'))
+export const gridSize = persisted<GridSize>('noctis:grid-size', 'medium', oneOf('small', 'medium', 'large'))
+/** Grid cards: the artist and length under the title. */
+export const gridDetails = persisted('noctis:grid-details', true, isBoolean)
+/** Grid cards: the track number over the cover, on numbered lists (albums). */
+export const gridNumbers = persisted('noctis:grid-numbers', true, isBoolean)
+/** Gray line under the artist in the player: codec, bitrate, sampling rate and size of the stream. */
+export const showStreamInfo = persisted('noctis:show-stream-info', false, isBoolean)
 export const playerArtworkColors = persisted('noctis:player-art-colors', true, isBoolean)
 export const pureBlack = persisted('noctis:pure-black', false, isBoolean)

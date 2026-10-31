@@ -1,22 +1,26 @@
-import { nextTick, watch } from 'vue'
+import { nextTick, shallowReactive, watch } from 'vue'
 import { describePlatforms } from '@noctis/plugin-core'
+import InstalledPlugins from '../components/settings/InstalledPlugins.vue'
+import PluginHeader from '../components/settings/PluginHeader.vue'
 import PluginLog from '../components/settings/PluginLog.vue'
 import { goBack, navigate } from '../navigation'
+import { addCollection, checkOnStart, collections, installEntry, refreshAll, refreshCollection, removeCollection, states, statusOf, updateAll, updates } from '../plugins/collections'
 import { installFromArchive, installFromFile, installFromUrl, PluginInstallError, pickPluginFile, type InstallResult } from '../plugins/install'
 import { writeLog } from '../plugins/log'
-import { defineSection, findSection, group, isMainSection, removeSection, Rows, Sections, type SettingsBlock, type SettingsRowDef } from '../plugins/rows'
-import { disablePlugin, enablePlugin, removePlugin, runStates, setPluginsActive } from '../plugins/runtime'
+import { defineSection, findSection, group, isMainSection, removeSection, Rows, Sections, sectionsOwnedBy, type SettingsBlock, type SettingsRowDef } from '../plugins/rows'
+import { blockersOf, disablePlugin, enablePlugin, removePlugin, runStates, setPluginsActive } from '../plugins/runtime'
 import {
   approvedHashes,
   describeAuthors,
   findPlugin,
   installedPlugins,
   isEnabled,
+  keepEnabledOnUpdate,
   pluginsActive,
   type InstalledPlugin,
 } from '../plugins/store'
 import { notify } from '../snackbar'
-import { confirm, showTextDialog } from '../ui'
+import { confirm, openLink, showTextDialog } from '../ui'
 
 /**
  * Settings → Plugins, built with the same getter-based rows plugins use for their own
@@ -36,6 +40,9 @@ function stateLabel(plugin: InstalledPlugin): string {
 
 /** Enable, asking first if this exact code hasn't been approved before. */
 export function requestEnable(plugin: InstalledPlugin) {
+  const blockers = blockersOf(plugin)
+  if (blockers.length > 0) return notify(blockers[0])
+
   const run = async () => {
     approvedHashes.value = { ...approvedHashes.value, [plugin.sha256]: true }
     const ok = await enablePlugin(plugin)
@@ -51,15 +58,31 @@ export function requestEnable(plugin: InstalledPlugin) {
     title: `Enable ${plugin.metadata.name}?`,
     message:
       'Plugins run with full access to Noctis: they can change any screen, see your library and your signed-in accounts, and make network requests. Only enable plugins from people you trust.',
+    // A warning, but not a destructive action: the red was the same as Delete and Remove.
     confirmLabel: 'Enable',
-    destructive: true,
     onConfirm: run,
   })
 }
 
+/** Ask, then stop and delete a plugin. `done` runs after it's gone (the plugin's own page goes back). */
+function confirmRemove(plugin: InstalledPlugin, done?: () => void) {
+  confirm({
+    title: `Remove ${plugin.metadata.name}?`,
+    message: 'It will be stopped and deleted from this device.',
+    confirmLabel: 'Remove',
+    destructive: true,
+    onConfirm: async () => {
+      await removePlugin(plugin)
+      notify(`Removed ${plugin.metadata.name}`)
+      done?.()
+    },
+  })
+}
+
 function reportInstall(result: InstallResult) {
-  const { plugin, replaced, sameCode } = result
+  const { plugin, replaced, sameCode, restarted } = result
   if (replaced && sameCode) notify(`${plugin.metadata.name} is already installed`)
+  else if (replaced && restarted) notify(`Updated ${plugin.metadata.name} to ${plugin.metadata.version || 'the new version'}`)
   else if (replaced) notify(`Updated ${plugin.metadata.name}. Enable it again to run the new version.`)
   else notify(`Installed ${plugin.metadata.name}`)
 }
@@ -114,6 +137,24 @@ function installUrl() {
   })
 }
 
+const withRange = (id: string, range: string) => (range === '*' ? id : `${id} ${range}`)
+
+/** "youtube-music ^1.0.0 • plugin API ^1.0.0 • Noctis.libs.offline". */
+function describeRequirements(plugin: InstalledPlugin): string {
+  const { dependencies, requires } = plugin.metadata
+  return [
+    ...Object.entries(dependencies).map(([id, range]) => withRange(id, range)),
+    requires?.api && `plugin API ${requires.api}`,
+    ...(requires?.libs ?? []).map((name) => `Noctis.libs.${name}`),
+  ]
+    .filter(Boolean)
+    .join(' • ')
+}
+
+function describeConflicts(plugin: InstalledPlugin): string {
+  return Object.entries(plugin.metadata.incompatible ?? {}).map(([id, range]) => withRange(id, range)).join(' • ')
+}
+
 /* ------------------------------------------------------------------ *
  * One section per plugin
  * ------------------------------------------------------------------ */
@@ -121,8 +162,15 @@ function installUrl() {
 function pluginBlocks(id: string): SettingsBlock[] {
   // Look the plugin up on every read: reinstalling replaces the object.
   const current = () => findPlugin(id)
+  const ownSettingsRows = shallowReactive<SettingsRowDef[]>([])
+  watch(
+    () => sectionsOwnedBy(id).filter((section) => !section.hidden).map((section) => section.id),
+    (ids) => ownSettingsRows.splice(0, ownSettingsRows.length, ...ids.map((sectionId) => sectionRow(sectionId))),
+    { immediate: true },
+  )
 
   return [
+    { id: 'header', type: 'component', component: PluginHeader, props: { id } },
     group('state', [
       {
         id: 'enabled',
@@ -156,6 +204,12 @@ function pluginBlocks(id: string): SettingsBlock[] {
         return !current()?.metadata.description
       },
     },
+    // The plugin's own settings, from its page (they're also listed under Settings → Plugins).
+    group('own-settings', ownSettingsRows, {
+      get hidden() {
+        return ownSettingsRows.length === 0
+      },
+    }),
     group('details', [
       {
         id: 'version',
@@ -184,12 +238,42 @@ function pluginBlocks(id: string): SettingsBlock[] {
         },
       },
       {
+        id: 'requires',
+        icon: 'extension',
+        title: 'Needs',
+        get value() {
+          const plugin = current()
+          return plugin ? describeRequirements(plugin) : ''
+        },
+        get hidden() {
+          const plugin = current()
+          return !plugin || describeRequirements(plugin) === ''
+        },
+      },
+      {
+        id: 'incompatible',
+        icon: 'block',
+        title: 'Doesn\'t work with',
+        get value() {
+          const plugin = current()
+          return plugin ? describeConflicts(plugin) : ''
+        },
+        get hidden() {
+          const plugin = current()
+          return !plugin || describeConflicts(plugin) === ''
+        },
+      },
+      {
         id: 'source',
         icon: 'link',
         title: 'Source',
         get value() {
           return current()?.metadata.source || 'Not specified'
         },
+        get chevron() {
+          return /^https?:\/\//.test(current()?.metadata.source ?? '')
+        },
+        onClick: () => openLink(current()?.metadata.source ?? ''),
       },
       {
         id: 'hash',
@@ -210,34 +294,39 @@ function pluginBlocks(id: string): SettingsBlock[] {
         destructive: true,
         onClick() {
           const plugin = current()
-          if (!plugin) return
-          confirm({
-            title: `Remove ${plugin.metadata.name}?`,
-            message: 'It will be stopped and deleted from this device.',
-            confirmLabel: 'Remove',
-            destructive: true,
-            onConfirm: async () => {
-              await removePlugin(plugin)
-              notify(`Removed ${plugin.metadata.name}`)
-              void goBack()
-            },
-          })
+          if (plugin) confirmRemove(plugin, () => void goBack())
         },
       },
     ]),
   ]
 }
 
+/** A row opening a settings section. */
+function sectionRow(id: string): SettingsRowDef {
+  return {
+    id,
+    get icon() {
+      return findSection(id)?.icon ?? 'plugin'
+    },
+    get title() {
+      return findSection(id)?.title ?? id
+    },
+    get description() {
+      return findSection(id)?.description
+    },
+    chevron: true,
+    onClick: () => void navigate({ name: 'settings-page', page: id }),
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * The main section
  * ------------------------------------------------------------------ */
 
-const installedRows: SettingsRowDef[] = []
 /** Settings sections that plugins added (and didn't ask to put on the main list). */
 const pluginSectionRows: SettingsRowDef[] = []
 
 export function definePluginSettings() {
-  const installedGroup = group('installed', installedRows)
   const pluginSectionsGroup = group('plugin-sections', pluginSectionRows)
 
   defineSection(
@@ -266,15 +355,60 @@ export function definePluginSettings() {
             },
           },
         },
+        {
+          id: 'keep-enabled',
+          icon: 'refresh',
+          title: 'Keep plugins enabled when updating',
+          description: 'A newer version of a plugin you turned on starts right away. Off: every update has to be enabled and approved again.',
+          toggle: {
+            get value() {
+              return keepEnabledOnUpdate.value
+            },
+            set(value) {
+              keepEnabledOnUpdate.value = value
+            },
+          },
+        },
+        {
+          id: 'collections',
+          icon: 'library',
+          title: 'Collections',
+          chevron: true,
+          get description() {
+            const count = collections.value.length
+            const waiting = updates.value.length
+            if (count === 0) return 'Install and update plugins from a list'
+            return `${count} ${count === 1 ? 'collection' : 'collections'}${waiting > 0 ? ` • ${waiting} ${waiting === 1 ? 'update' : 'updates'}` : ''}`
+          },
+          onClick: () => void navigate({ name: 'settings-page', page: 'plugin-collections' }),
+        },
         { id: 'install-file', icon: 'upload', title: 'Install from file', description: 'A .zip or .noctis archive', onClick: installFile },
-        { id: 'install-url', icon: 'add-link', title: 'Install from URL', onClick: installUrl },
+        { id: 'install-url', icon: 'add-link', title: 'Install from URL', description: 'A link to a .zip or .noctis archive', onClick: installUrl },
       ]),
       { id: 'installed-header', type: 'header', title: 'Installed' },
-      installedGroup,
+      {
+        id: 'installed',
+        type: 'component',
+        component: InstalledPlugins,
+        props: {
+          // Its settings' icon, so a plugin without an image isn't a column of identical puzzle pieces.
+          icon: (plugin: InstalledPlugin) => sectionsOwnedBy(plugin.id).find((section) => !section.hidden)?.icon ?? 'plugin',
+          description(plugin: InstalledPlugin) {
+            const version = plugin.metadata.version ? `v${plugin.metadata.version} • ` : ''
+            return `${version}${describeAuthors(plugin.metadata)} • ${stateLabel(plugin)}`
+          },
+          open: (plugin: InstalledPlugin) => void navigate({ name: 'settings-page', page: sectionId(plugin) }),
+          toggle(plugin: InstalledPlugin, value: boolean) {
+            if (value) requestEnable(plugin)
+            else void disablePlugin(plugin)
+          },
+          remove: (plugin: InstalledPlugin) => confirmRemove(plugin),
+        },
+      },
       {
         id: 'empty',
         type: 'note',
-        text: 'Add services and features with plugins: a .zip or .noctis archive with index.js and metadata.json. See docs/PLUGINS.md.',
+        text: 'Plugins add services (YouTube Music, SoundCloud…) and features. Install one from a file or a link above, or add a collection to choose from a list.',
         get hidden() {
           return installedPlugins.value.length > 0
         },
@@ -288,6 +422,8 @@ export function definePluginSettings() {
     'noctis',
   )
 
+  defineCollectionsSection()
+
   defineSection({ id: 'plugins-log', icon: 'terminal', title: 'Plugin log', hidden: true }, [
     { id: 'log', type: 'component', component: PluginLog },
   ], 'noctis')
@@ -296,24 +432,7 @@ export function definePluginSettings() {
   watch(
     () => Sections.filter((section) => !section.hidden && !isMainSection(section)).map((section) => section.id),
     (ids) => {
-      pluginSectionRows.splice(
-        0,
-        pluginSectionRows.length,
-        ...ids.map((id): SettingsRowDef => ({
-          id,
-          get icon() {
-            return findSection(id)?.icon ?? 'plugin'
-          },
-          get title() {
-            return findSection(id)?.title ?? id
-          },
-          get description() {
-            return findSection(id)?.description
-          },
-          chevron: true,
-          onClick: () => void navigate({ name: 'settings-page', page: id }),
-        })),
-      )
+      pluginSectionRows.splice(0, pluginSectionRows.length, ...ids.map((id) => sectionRow(id)))
     },
     { immediate: true },
   )
@@ -322,30 +441,6 @@ export function definePluginSettings() {
   watch(
     installedPlugins,
     (plugins) => {
-      const rows = (installedGroup as { rows: SettingsRowDef[] }).rows
-      rows.splice(
-        0,
-        rows.length,
-        ...plugins.map((plugin): SettingsRowDef => {
-          const id = plugin.id
-          return {
-            id,
-            icon: 'plugin',
-            get title() {
-              return findPlugin(id)?.metadata.name ?? id
-            },
-            get description() {
-              const current = findPlugin(id)
-              if (!current) return ''
-              const version = current.metadata.version ? `v${current.metadata.version} · ` : ''
-              return `${version}${describeAuthors(current.metadata)} · ${stateLabel(current)}`
-            },
-            chevron: true,
-            onClick: () => void navigate({ name: 'settings-page', page: sectionId(plugin) }),
-          }
-        }),
-      )
-
       const ids = new Set(plugins.map(sectionId))
       for (const id of Object.keys(Rows)) {
         if (id.startsWith('plugin:') && !ids.has(id)) removeSection(id)
@@ -354,6 +449,171 @@ export function definePluginSettings() {
         if (findSection(sectionId(plugin))) continue
         defineSection({ id: sectionId(plugin), icon: 'plugin', title: plugin.metadata.name, hidden: true }, pluginBlocks(plugin.id), 'noctis')
       }
+    },
+    { immediate: true },
+  )
+}
+
+/* ------------------------------------------------------------------ *
+ * Collections
+ * ------------------------------------------------------------------ */
+
+function addCollectionDialog() {
+  showTextDialog({
+    title: 'Add a collection',
+    description: 'The address of a plugin collection (plugins.json). On your own network, http works too: `bun run serve-plugins` serves one while you develop.',
+    placeholder: 'https://…/plugins.json',
+    confirmLabel: 'Add',
+    async onConfirm(value) {
+      try {
+        await addCollection(value)
+        notify('Collection added')
+      } catch (error) {
+        reportFailure(error)
+      }
+    },
+  })
+}
+
+async function runUpdateAll() {
+  const count = updates.value.length
+  if (count === 0) return notify('Everything is up to date')
+  const { updated, failed } = await updateAll()
+  for (const message of failed) writeLog('noctis', 'error', message)
+  notify(failed.length > 0 ? `Updated ${updated}, ${failed.length} failed: ${failed[0]}` : `Updated ${updated} ${updated === 1 ? 'plugin' : 'plugins'}`)
+}
+
+async function installListed(entry: Parameters<typeof installEntry>[0]) {
+  try {
+    reportInstall(await installEntry(entry))
+  } catch (error) {
+    reportFailure(error)
+  }
+}
+
+/** The collections page: the head is fixed, the rest is rebuilt whenever a collection or an install changes. */
+function defineCollectionsSection() {
+  const id = 'plugin-collections'
+  const head: SettingsBlock[] = [
+    group('actions', [
+      { id: 'add', icon: 'add-link', title: 'Add a collection', description: 'A link to a plugins.json list', onClick: addCollectionDialog },
+      {
+        id: 'update-all',
+        icon: 'refresh',
+        title: 'Update all',
+        get description() {
+          const count = updates.value.length
+          return count === 0 ? 'Everything is up to date' : `${count} ${count === 1 ? 'plugin has' : 'plugins have'} a newer version`
+        },
+        get disabled() {
+          return updates.value.length === 0
+        },
+        // Nothing to update from (and "Everything is up to date" said otherwise) until there's a collection.
+        get hidden() {
+          return collections.value.length === 0
+        },
+        onClick: () => void runUpdateAll(),
+      },
+      {
+        id: 'check',
+        icon: 'cached',
+        title: 'Check for updates',
+        description: 'Ask every collection for newer versions now',
+        get hidden() {
+          return collections.value.length === 0
+        },
+        onClick: () => void refreshAll(),
+      },
+      {
+        id: 'check-on-start',
+        icon: 'notifications',
+        title: 'Check when Noctis starts',
+        description: 'Say so when a collection has a newer version of a plugin you have',
+        toggle: {
+          get value() {
+            return checkOnStart.value
+          },
+          set(value) {
+            checkOnStart.value = value
+          },
+        },
+      },
+    ]),
+    {
+      id: 'empty',
+      type: 'note',
+      text: 'A collection is a link to a list of plugins (plugins.json). Add one, and its plugins can be installed, and updated when the list has a newer version, without downloading files by hand.',
+      get hidden() {
+        return collections.value.length > 0
+      },
+    },
+  ]
+
+  defineSection({ id, icon: 'library', title: 'Collections', hidden: true }, [...head], 'noctis')
+
+  const rebuild = () => {
+    const blocks = Rows[id]
+    if (!blocks) return
+    const dynamic: SettingsBlock[] = []
+    for (const saved of collections.value) {
+      const url = saved.url
+      const state = () => states[url]
+      dynamic.push({ id: `header:${url}`, type: 'header', title: saved.name })
+      const rows: SettingsRowDef[] = []
+      const ready = state()
+      if (ready?.status === 'ready') {
+        for (const entry of ready.plugins) {
+          rows.push({
+            id: entry.id,
+            icon: 'plugin',
+            title: entry.name,
+            get description() {
+              return [entry.version && `v${entry.version}`, entry.description].filter(Boolean).join(' • ')
+            },
+            get value() {
+              const status = statusOf(entry)
+              return status === 'current' ? 'Installed' : status === 'update' ? 'Update' : 'Install'
+            },
+            onClick: () => (statusOf(entry) === 'current' ? undefined : installListed(entry)),
+          })
+        }
+      } else {
+        rows.push({
+          id: 'status',
+          icon: ready?.status === 'error' ? 'warning' : 'cached',
+          title: ready?.status === 'error' ? "Couldn't read this collection" : 'Loading…',
+          description: ready?.status === 'error' ? ready.message : undefined,
+          onClick: () => void refreshCollection(url),
+        })
+      }
+      rows.push(
+        { id: 'copy', icon: 'link', title: 'Address', value: url },
+        {
+          id: 'remove',
+          icon: 'delete',
+          title: 'Remove this collection',
+          description: 'The plugins you installed from it stay',
+          destructive: true,
+          onClick: () => removeCollection(url),
+        },
+      )
+      dynamic.push(group(`plugins:${url}`, rows))
+    }
+    blocks.splice(head.length, blocks.length - head.length, ...dynamic)
+  }
+
+  // Which collections there are and whether their lists are loaded decide the shape; installs only change row values (getters).
+  watch(
+    () => [collections.value.map((item) => `${item.url}\n${item.name}`).join(), Object.entries(states).map(([url, state]) => `${url}:${state.status}`).join()],
+    rebuild,
+    { immediate: true },
+  )
+
+  // Lists load when the page first needs them.
+  watch(
+    collections,
+    (list) => {
+      for (const { url } of list) if (!states[url]) void refreshCollection(url)
     },
     { immediate: true },
   )

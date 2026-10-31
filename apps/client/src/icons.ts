@@ -97,6 +97,14 @@ import i_translate from '@material-symbols/svg-400/rounded/translate.svg?raw'
 import i_translateFill from '@material-symbols/svg-400/rounded/translate-fill.svg?raw'
 import i_language from '@material-symbols/svg-400/rounded/language.svg?raw'
 import i_languageFill from '@material-symbols/svg-400/rounded/language-fill.svg?raw'
+import i_add from '@material-symbols/svg-400/rounded/add.svg?raw'
+import i_addFill from '@material-symbols/svg-400/rounded/add-fill.svg?raw'
+import i_edit from '@material-symbols/svg-400/rounded/edit.svg?raw'
+import i_editFill from '@material-symbols/svg-400/rounded/edit-fill.svg?raw'
+import i_block from '@material-symbols/svg-400/rounded/block.svg?raw'
+import i_blockFill from '@material-symbols/svg-400/rounded/block-fill.svg?raw'
+import i_extension from '@material-symbols/svg-400/rounded/extension.svg?raw'
+import i_extensionFill from '@material-symbols/svg-400/rounded/extension-fill.svg?raw'
 import i_delete from '@material-symbols/svg-400/rounded/delete.svg?raw'
 import i_deleteFill from '@material-symbols/svg-400/rounded/delete-fill.svg?raw'
 import i_logout from '@material-symbols/svg-400/rounded/logout.svg?raw'
@@ -163,6 +171,8 @@ import i_paint from '@material-symbols/svg-400/rounded/format_paint.svg?raw'
 import i_paintFill from '@material-symbols/svg-400/rounded/format_paint-fill.svg?raw'
 import i_vibrate from '@material-symbols/svg-400/rounded/swipe_down.svg?raw'
 import i_vibrateFill from '@material-symbols/svg-400/rounded/swipe_down-fill.svg?raw'
+import i_grid from '@material-symbols/svg-400/rounded/grid_view.svg?raw'
+import i_gridFill from '@material-symbols/svg-400/rounded/grid_view-fill.svg?raw'
 import i_list from '@material-symbols/svg-400/rounded/format_list_bulleted.svg?raw'
 import i_listFill from '@material-symbols/svg-400/rounded/format_list_bulleted-fill.svg?raw'
 import i_bolt from '@material-symbols/svg-400/rounded/bolt.svg?raw'
@@ -173,6 +183,22 @@ import i_password from '@material-symbols/svg-400/rounded/password.svg?raw'
 import i_passwordFill from '@material-symbols/svg-400/rounded/password-fill.svg?raw'
 import i_cloud from '@material-symbols/svg-400/rounded/cloud.svg?raw'
 import i_cloudFill from '@material-symbols/svg-400/rounded/cloud-fill.svg?raw'
+import i_minimize from '@material-symbols/svg-400/rounded/minimize.svg?raw'
+import i_minimizeFill from '@material-symbols/svg-400/rounded/minimize-fill.svg?raw'
+import i_animation from '@material-symbols/svg-400/rounded/animation.svg?raw'
+import i_animationFill from '@material-symbols/svg-400/rounded/animation-fill.svg?raw'
+import i_flag from '@material-symbols/svg-400/rounded/flag.svg?raw'
+import i_flagFill from '@material-symbols/svg-400/rounded/flag-fill.svg?raw'
+import i_timer from '@material-symbols/svg-400/rounded/timer.svg?raw'
+import i_timerFill from '@material-symbols/svg-400/rounded/timer-fill.svg?raw'
+import i_hourglass from '@material-symbols/svg-400/rounded/hourglass_empty.svg?raw'
+import i_hourglassFill from '@material-symbols/svg-400/rounded/hourglass_empty-fill.svg?raw'
+import i_layers from '@material-symbols/svg-400/rounded/layers.svg?raw'
+import i_layersFill from '@material-symbols/svg-400/rounded/layers-fill.svg?raw'
+import i_new_folder from '@material-symbols/svg-400/rounded/create_new_folder.svg?raw'
+import i_new_folderFill from '@material-symbols/svg-400/rounded/create_new_folder-fill.svg?raw'
+import i_open_external from '@material-symbols/svg-400/rounded/open_in_new.svg?raw'
+import i_open_externalFill from '@material-symbols/svg-400/rounded/open_in_new-fill.svg?raw'
 
 const RAW = {
   'home': [i_home, i_homeFill],
@@ -223,6 +249,10 @@ const RAW = {
   'language': [i_language, i_languageFill],
   'translate': [i_translate, i_translateFill],
   'delete': [i_delete, i_deleteFill],
+  'block': [i_block, i_blockFill],
+  'extension': [i_extension, i_extensionFill],
+  'add': [i_add, i_addFill],
+  'edit': [i_edit, i_editFill],
   'logout': [i_logout, i_logoutFill],
   'login': [i_login, i_loginFill],
   'radio': [i_radio, i_radioFill],
@@ -255,11 +285,20 @@ const RAW = {
   'image': [i_image, i_imageFill],
   'paint': [i_paint, i_paintFill],
   'vibrate': [i_vibrate, i_vibrateFill],
+  'grid': [i_grid, i_gridFill],
   'list': [i_list, i_listFill],
   'bolt': [i_bolt, i_boltFill],
   'devices': [i_devices, i_devicesFill],
   'cloud': [i_cloud, i_cloudFill],
   'password': [i_password, i_passwordFill],
+  'minimize': [i_minimize, i_minimizeFill],
+  'animation': [i_animation, i_animationFill],
+  'flag': [i_flag, i_flagFill],
+  'timer': [i_timer, i_timerFill],
+  'hourglass': [i_hourglass, i_hourglassFill],
+  'layers': [i_layers, i_layersFill],
+  'new-folder': [i_new_folder, i_new_folderFill],
+  'open-external': [i_open_external, i_open_externalFill],
 } as const
 
 export type IconName = keyof typeof RAW

@@ -1,5 +1,6 @@
-import { computed } from 'vue'
-import { pauseHistory } from './preferences'
+import { computed, watch } from 'vue'
+import { download, offlineState } from './offline'
+import { pauseHistory, saveLiked } from './preferences'
 import { notify } from './snackbar'
 import { persisted } from './storage'
 import { sourceOf, type Artist, type Song } from './models'
@@ -40,12 +41,24 @@ export async function toggleLike(song: Song) {
     ? [song, ...likedSongs.value.filter((item) => item.id !== song.id)]
     : likedSongs.value.filter((item) => item.id !== song.id)
 
+  // Settings → Storage → "Save liked songs".
+  if (liked && saveLiked.value !== 'off') void download(song, saveLiked.value)
+
   try {
     await setLiked(song, liked)
   } catch {
     notify(`Saved on this device; ${services[sourceOf(song)]?.name ?? 'the service'} could not be updated.`)
   }
 }
+
+// Choosing "download" takes the songs liked so far along (the queue paces them).
+watch(saveLiked, (choice) => {
+  if (choice !== 'download') return
+  const missing = likedSongs.value.filter((song) => offlineState(song.id) === 'none')
+  if (missing.length === 0) return
+  notify(`Downloading ${missing.length} liked ${missing.length === 1 ? 'song' : 'songs'}`)
+  for (const song of missing) void download(song, 'download')
+})
 
 export function recordPlay(song: Song) {
   if (pauseHistory.value) return

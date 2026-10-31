@@ -176,8 +176,8 @@ function defaultOption(song: Song): PlaybackOption {
   const fromServer = service === SERVER_SERVICE
   return {
     id: 'default',
-    label: fromServer ? `${services[service]?.name ?? 'Server'} · Its best source` : (services[service]?.name ?? service),
-    description: fromServer ? 'The server picks' : 'Where this song comes from',
+    label: services[service]?.name ?? (fromServer ? 'Server' : service),
+    description: fromServer ? 'Its best source, picked by the server' : 'Where this song comes from',
     available: Boolean(services[service]?.streams),
     target: fromServer ? undefined : service === DEVICE_SERVICE ? 'device' : `own:${service}`,
     group: fromServer ? 'server' : 'own',
@@ -193,7 +193,7 @@ export function deviceOption(song: Song): PlaybackOption | null {
   return {
     id: 'device',
     label: 'On this device',
-    description: [track.mimeType?.replace('audio/', '').toUpperCase(), track.bitrate ? `${track.bitrate} kbps` : '', track.path].filter(Boolean).join(' · '),
+    description: [track.mimeType?.replace('audio/', '').toUpperCase(), track.bitrate ? `${track.bitrate} kbps` : '', track.path].filter(Boolean).join(' • '),
     available: true,
     target: 'device',
     group: 'own',

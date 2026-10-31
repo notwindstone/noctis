@@ -1,14 +1,15 @@
 {
   "name": "Spotify",
-  "version": "2.0.0",
+  "version": "3.1.6",
   "authors": [
     "Noctis"
   ],
   "type": "unrestricted",
   "platforms": [
-    "android"
+    "android",
+    "desktop"
   ],
-  "description": "Spotify's home, search, albums, artists and playlists, plus your library and liked songs when signed in. Uses Spotify the way its web player does (no developer account or Premium needed); audio is matched and played from YouTube Music, so the YouTube Music plugin must stay on.",
+  "description": "Spotify's home, search, albums, artists, playlists and radios, plus your library and liked songs when signed in (Android and desktop apps; in a browser paste cookies). Audio comes from Spotify itself, the way its web player plays it: a clear MP3, or the DRM-protected MP4/FLAC that Widevine decrypts where the device can (the MP3 is the fallback on Android's WebView and the only kind downloads can save).",
   "source": "https://github.com/notwindstone/noctis/tree/main/examples/plugins/spotify",
   "categories": [
     "service"

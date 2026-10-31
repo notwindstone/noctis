@@ -18,7 +18,7 @@ function radio() {
   const album = data.value
   if (!album) return
   if (album.playlistId) {
-    void playRadioFrom({ kind: 'album', album: { id: album.id, title: album.title }, playlistId: album.playlistId }, `Radio · ${album.title}`, source.value)
+    void playRadioFrom({ kind: 'album', album: { id: album.id, title: album.title }, playlistId: album.playlistId }, `Radio • ${album.title}`, source.value)
   }
   else if (album.songs[0]) void startRadio(album.songs[0])
 }
@@ -30,7 +30,7 @@ function radio() {
     :subtitle="data?.subtitle"
     :second-subtitle="data?.secondSubtitle"
     :description="data?.description"
-    :thumbnail="data?.thumbnail"
+    :thumbnail="data?.thumbnail ?? data?.songs.find((song) => song.thumbnail)?.thumbnail"
     :artists="data?.artists"
     :songs="data?.songs ?? []"
     :sections="data?.sections"

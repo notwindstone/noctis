@@ -77,6 +77,12 @@ export interface ActionEntry<Context = unknown> {
   action: string
   /** Draw the icon filled (e.g. a liked heart). */
   filled?: (context: Context) => boolean
+  /**
+   * Menus draw a divider where the group changes between neighbouring entries. Built-in
+   * song menu groups: 'play', 'library', 'go', 'share'; entries without one (most plugins')
+   * end up in a section of their own after them.
+   */
+  group?: string
   visible?: (context: Context) => boolean
   disabled?: (context: Context) => boolean
   /** 0..1 shows a progress ring instead of the icon (e.g. a download in progress). */

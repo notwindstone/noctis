@@ -84,6 +84,8 @@ export interface Playlist {
    * radio is seeded from, if any.
    */
   radio?: { videoId?: string; params?: string }
+  /** Yours to change: songs can be added and removed, and it can be renamed and deleted (see src/playlists.ts). */
+  editable?: boolean
 }
 
 export interface Artist {
@@ -138,6 +140,8 @@ export interface CollectionPage {
   playlistId?: string
   /** Albums and playlists the page links to ("More from …", "Related"). */
   sections: Section[]
+  /** A playlist of yours: songs can be removed from it here. */
+  editable?: boolean
 }
 
 export interface ArtistPage {
@@ -212,6 +216,8 @@ export interface StreamInfo {
   /** Downloads use it to pick a file extension. */
   mimeType: string
   bitrate: number
+  /** Sampling rate in Hz, when the service says (shown with the format in the player). */
+  sampleRate?: number
   /** Needed to download (files are fetched in byte ranges). */
   contentLength?: number
   /** Normalisation hint in dB relative to the reference loudness. */
@@ -222,4 +228,27 @@ export interface StreamInfo {
   fetchUrl?: string
   /** Extra headers for ranged download requests on a device. */
   fetchHeaders?: Record<string, string>
+  /** The service says this is a live stream or a station (no end, nothing to save). */
+  live?: boolean
+  /** Length in seconds as the service reports it for this stream, when the song itself didn't say. */
+  duration?: number
+  /**
+   * Content decryption (Widevine DRM and the like): the player attaches MediaKeys and
+   * answers the CDM's challenge by POSTing it to `licenseUrl`. Streams with this set
+   * can't be downloaded — the bytes only exist decrypted in the CDM.
+   */
+  drm?: {
+    /** Key system identifier, e.g. "com.widevine.alpha". */
+    system: string
+    /** Base64 init data (the service's PSSH box) to open the session with. */
+    initData: string
+    /** Where the CDM's challenge is POSTed; the answer goes into the session. */
+    licenseUrl: string
+    /** Extra headers for the license request (usually the service's auth). */
+    licenseHeaders?: Record<string, string>
+    /** Server certificate URL, when the service expects one in the challenge. */
+    certificateUrl?: string
+    /** Media types the key system must support; defaults to AAC in MP4. */
+    codecs?: string[]
+  }
 }

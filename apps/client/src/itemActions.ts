@@ -1,7 +1,7 @@
 import { haptic } from './haptics'
 import { openItem } from './navigation'
 import { playRadio, playSong, playSongs } from './player'
-import { showItemMenu } from './ui'
+import { menuPoint, showItemMenu } from './ui'
 import type { Item, Song } from './models'
 
 /**
@@ -22,6 +22,8 @@ export interface ItemListContext {
   play?: 'list' | 'radio'
   /** Shown as "Playing from …". */
   title?: string
+  /** The list is this playlist of yours: its songs can be removed from it. */
+  playlist?: { id: string; source?: string }
 }
 
 /** Events already handled by an inner list, so an outer one doesn't act on them too. */
@@ -62,23 +64,28 @@ export function useItemDelegation(context: () => ItemListContext) {
     }
   }
 
-  function menu(item: Item, longPress: boolean) {
+  function menu(item: Item, longPress: boolean, event: MouseEvent) {
     haptic(longPress ? 'longPress' : 'tap')
-    showItemMenu({ item, list: item.type === 'song' ? songList(item) : undefined })
+    showItemMenu({
+      item,
+      list: item.type === 'song' ? songList(item) : undefined,
+      playlist: item.type === 'song' ? context().playlist : undefined,
+      at: menuPoint(event),
+    })
   }
 
   return {
     onClick(event: MouseEvent) {
       const hit = locate(event)
       if (!hit?.action) return
-      if (hit.action === 'menu') menu(hit.item, false)
+      if (hit.action === 'menu') menu(hit.item, false, event)
       else if (hit.action === 'open') activate(hit.item)
     },
     onContextmenu(event: MouseEvent) {
       const hit = locate(event)
       if (!hit) return
       event.preventDefault()
-      menu(hit.item, true)
+      menu(hit.item, true, event)
     },
   }
 }

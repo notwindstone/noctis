@@ -23,6 +23,20 @@ describe('manifests', () => {
     expect(supportsPlatform({}, 'ios')).toBe(true)
   })
 
+  test('incompatible plugins and host requirements', () => {
+    const manifest = parseManifest({
+      name: 'x', type: 'unrestricted',
+      incompatible: ['old-ui'], requires: { api: '^1.0.0', libs: ['offline', 'offline', 'player'] },
+    })
+    expect(manifest.incompatible).toEqual({ 'old-ui': '*' })
+    expect(manifest.requires).toEqual({ api: '^1.0.0', libs: ['offline', 'player'] })
+    expect(parseManifest({ name: 'x', type: 'unrestricted', incompatible: { a: '<2.0.0' } }).incompatible).toEqual({ a: '<2.0.0' })
+    expect(parseManifest({ name: 'x', type: 'unrestricted' }).requires).toEqual({ libs: [] })
+    expect(() => parseManifest({ name: 'x', type: 'unrestricted', incompatible: { 'Bad Id': '*' } })).toThrow(ManifestError)
+    expect(() => parseManifest({ name: 'x', type: 'unrestricted', requires: { api: 'soon' } })).toThrow(ManifestError)
+    expect(parseManifest({ name: 'x', type: 'unrestricted', logo: 'icon.png' }).logo).toBe('icon.png')
+  })
+
   test('both-sides plugins require their client half by default', () => {
     const manifest = parseManifest({ name: 'Stats', type: 'unrestricted', side: 'both', version: '1.4.0' })
     expect(manifest.client).toEqual({ required: true, versions: '^1.4.0' })

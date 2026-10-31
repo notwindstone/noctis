@@ -91,7 +91,7 @@ export const SourceList = defineComponent({
     return () => {
       const ids = shown()
       return h('div', { class: 'lyr-src' }, [
-        h('p', { class: 'lyr-src-hint type-body-medium muted' }, 'Drag to set the order. Earlier sources win when two have the same kind of lyrics.'),
+        h('p', { class: 'lyr-src-hint type-body-small muted' }, 'Drag to set the order. Earlier sources win when two have the same kind of lyrics.'),
         h(
           'ol',
           { ref: list, class: ['settings-group', 'lyr-src-list', settling.value ? 'is-settling' : ''], onPointermove: onMove, onPointerup: onUp, onPointercancel: onUp },
@@ -115,9 +115,10 @@ export const SourceList = defineComponent({
                   [
                     h('span', { class: 'settings-row-text' }, [
                       h('span', { class: 'type-body-large' }, `${index + 1}. ${source.name}`),
-                      h('span', { class: 'type-body-medium muted' }, failure && !off ? `Last try: ${failure}` : source.description),
+                      h('span', { class: 'type-body-medium muted' }, failure && !off ? `Last try: ${/failed to fetch|network|load failed/i.test(failure) ? "couldn't reach it" : failure}` : source.description),
                     ]),
-                    h('span', { class: ['switch', off ? '' : 'is-on'], 'aria-hidden': 'true' }, [h('span')]),
+                    // The app's switch, check mark and all (SettingsRow.vue), so these match the rows around them.
+                    h('span', { class: ['switch', off ? '' : 'is-on'], 'aria-hidden': 'true' }, [h('span', null, off ? [] : [h(Noctis.C.MIcon, { name: 'check', size: 16 })])]),
                   ],
                 ),
                 h('span', { class: 'lyr-src-handle', 'aria-label': `Move ${source.name}`, onPointerdown: (event: PointerEvent) => onDown(event, id) }, [h(Noctis.C.MIcon, { name: 'drag' })]),

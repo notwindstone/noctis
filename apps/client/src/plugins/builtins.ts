@@ -3,6 +3,7 @@ import { navigate } from '../navigation'
 import { cancelDownload, download, isOnDevice, offlineState, removeOffline, transfers } from '../offline'
 import { addToQueue, chapters, currentChapter, currentSong, playNext, playRadio, playSongs, removeFromQueue, seek, shufflePlay, startRadio } from '../player'
 import { formatTime } from '../format'
+import { addToPlaylistDialog, deletePlaylist, removeFromPlaylist, renamePlaylist, uploadPlaylist, LOCAL_PLAYLISTS, serverWritable } from '../playlists'
 import { notify } from '../snackbar'
 import { closePlayer, confirm, openPlayer, queueOpen, showChoice, showPlayFrom, type ItemMenuRequest } from '../ui'
 import { getAlbum, getPlaylist, shareLink } from '../services/api'
@@ -55,7 +56,12 @@ function registerBuiltInActions() {
   registerAction<MenuContext<Song>>('song.playNext', ({ item }) => playNext(item), OWNER)
   registerAction<MenuContext<Song>>('song.addToQueue', ({ item }) => addToQueue(item), OWNER)
   registerAction<MenuContext<Song>>('song.startRadio', ({ item }) => void startRadio(item), OWNER)
-  registerAction<MenuContext<Song>>('song.like', ({ item }) => toggleLike(item), OWNER)
+  // From a menu there's no heart to watch fill in: say what happened.
+  registerAction<MenuContext<Song>>('song.like', async ({ item, handlers }) => {
+    const wasLiked = isLiked(item.id)
+    await toggleLike(item)
+    if (isLiked(item.id) !== wasLiked) handlers.success(wasLiked ? 'Removed from liked songs' : 'Added to liked songs')
+  }, OWNER)
   registerAction<MenuContext<Song>>('song.download', ({ item }) => {
     if (offlineState(item.id) === 'downloading') cancelDownload(item.id)
     else void download(item)
@@ -71,6 +77,11 @@ function registerBuiltInActions() {
         handlers.success()
       },
     })
+  }, OWNER)
+  registerAction<MenuContext<Song>>('song.addToPlaylist', ({ item }) => void addToPlaylistDialog([item]), OWNER)
+  registerAction<MenuContext<Song>>('song.removeFromPlaylist', ({ item, playlist }) => {
+    if (!playlist) return false
+    return removeFromPlaylist(playlist, item)
   }, OWNER)
   registerAction<MenuContext<Song>>('song.removeFromQueue', ({ queueIndex }) => {
     if (queueIndex === undefined) return false
@@ -98,6 +109,18 @@ function registerBuiltInActions() {
   registerAction<MenuContext<Album | Playlist>>('collection.open', ({ item }) => {
     go(item.type === 'album' ? { name: 'album', id: item.id, source: item.source } : { name: 'playlist', id: item.id, source: item.source })
   }, OWNER)
+  registerAction<MenuContext<Album | Playlist>>('collection.addToPlaylist', async ({ item, handlers }) => {
+    handlers.pending()
+    try {
+      void addToPlaylistDialog(await songsOf(item))
+      handlers.reset()
+    } catch (error) {
+      handlers.error("Couldn't load the songs", error)
+    }
+  }, OWNER)
+  registerAction<MenuContext<Playlist>>('playlist.rename', ({ item }) => renamePlaylist(item), OWNER)
+  registerAction<MenuContext<Playlist>>('playlist.delete', ({ item }) => deletePlaylist(item), OWNER)
+  registerAction<MenuContext<Playlist>>('playlist.upload', ({ item }) => void uploadPlaylist(item), OWNER)
   registerAction<MenuContext<Playlist>>('playlist.playRadio', ({ item }) => void playRadio(item), OWNER)
   registerAction<MenuContext<Album>>('album.goToArtist', ({ item }) => goToArtist(item.artists), OWNER)
 
@@ -121,6 +144,7 @@ function registerBuiltInActions() {
     openPlayer()
     queueOpen.value = true
   }, OWNER)
+  registerAction<PlayerContext>('player.addToPlaylist', ({ song }) => void addToPlaylistDialog([song]), OWNER)
   registerAction<PlayerContext>('player.chapters', () => showChapters(), OWNER)
   registerAction<PlayerContext>('player.download', ({ song, handlers }) => {
     const state = offlineState(song.id)
@@ -149,12 +173,14 @@ function defineBuiltInEntries() {
   const isPlaying = (item: Song) => currentSong.value?.id === item.id && currentSong.value?.source === item.source
   const song: ActionEntry<MenuContext<Song>>[] = [
     // In the player's menu (the song that's playing): where its audio comes from.
-    { id: 'play-from', icon: 'tune', label: 'Play from…', action: 'song.playFrom', visible: ({ item }) => isPlaying(item) },
-    { id: 'play-from-here', icon: 'play', label: 'Play from here', action: 'song.playFromHere', visible: ({ list }) => Boolean(list) },
-    { id: 'play-next', icon: 'play-next', label: 'Play next', action: 'song.playNext' },
-    { id: 'add-to-queue', icon: 'add-queue', label: 'Add to queue', action: 'song.addToQueue' },
-    { id: 'start-radio', icon: 'radio', label: 'Start radio', action: 'song.startRadio' },
+    // Not "Play from…": it sat right above "Play from here" and read as the same thing.
+    { id: 'play-from', icon: 'tune', label: 'Play from another source…', action: 'song.playFrom', visible: ({ item }) => isPlaying(item), group: 'play' },
+    { id: 'play-from-here', icon: 'play', label: 'Play from here', action: 'song.playFromHere', visible: ({ list }) => Boolean(list), group: 'play' },
+    { id: 'play-next', icon: 'play-next', label: 'Play next', action: 'song.playNext', group: 'play' },
+    { id: 'add-to-queue', icon: 'add-queue', label: 'Add to queue', action: 'song.addToQueue', group: 'play' },
+    { id: 'start-radio', icon: 'radio', label: 'Start radio', action: 'song.startRadio', group: 'play' },
     {
+      group: 'library',
       id: 'like',
       icon: 'favorite',
       label: ({ item }) => (isLiked(item.id) ? 'Remove from liked songs' : 'Like'),
@@ -162,31 +188,42 @@ function defineBuiltInEntries() {
       action: 'song.like',
     },
     {
+      group: 'library',
       id: 'download',
-      icon: 'download',
-      label: ({ item }) => {
-        const state = offlineState(item.id)
-        return state === 'downloading' ? 'Cancel download' : state === 'cached' ? 'Keep offline' : 'Download'
-      },
+      icon: ({ item }) => (offlineState(item.id) === 'downloading' ? 'close' : 'download'),
+      // "Download" for a cached song too: it's the same thing everywhere else.
+      label: ({ item }) => (offlineState(item.id) === 'downloading' ? 'Cancel download' : 'Download'),
       action: 'song.download',
       visible: ({ item }) => !isOnDevice(item) && offlineState(item.id) !== 'downloaded',
     },
     {
+      group: 'library',
       id: 'remove-download',
       icon: 'delete',
       label: 'Remove download',
       action: 'song.removeDownload',
       visible: ({ item }) => offlineState(item.id) === 'downloaded',
     },
+    { id: 'add-to-playlist', icon: 'playlist-add', label: 'Add to playlist', action: 'song.addToPlaylist', group: 'library' },
     {
+      group: 'library',
+      id: 'remove-from-playlist',
+      icon: 'close',
+      label: 'Remove from this playlist',
+      action: 'song.removeFromPlaylist',
+      visible: ({ playlist }) => playlist !== undefined,
+    },
+    {
+      group: 'library',
       id: 'remove-from-queue',
       icon: 'close',
       label: 'Remove from queue',
       action: 'song.removeFromQueue',
       visible: ({ queueIndex }) => queueIndex !== undefined,
     },
-    { id: 'go-to-album', icon: 'album', label: 'Go to album', action: 'song.goToAlbum', visible: ({ item }) => Boolean(item.album) },
+    { id: 'go-to-album', icon: 'album', label: 'Go to album', action: 'song.goToAlbum', visible: ({ item }) => Boolean(item.album), group: 'go' },
     {
+      group: 'go',
       id: 'go-to-artist',
       icon: 'artist',
       label: ({ item }) => {
@@ -196,12 +233,13 @@ function defineBuiltInEntries() {
       action: 'song.goToArtist',
       visible: ({ item }) => item.artists.some((artist) => artist.id),
     },
-    { id: 'copy-link', icon: 'share', label: 'Copy link', action: 'item.copyLink', visible: hasLink },
+    { id: 'copy-link', icon: 'share', label: 'Copy link', action: 'item.copyLink', visible: hasLink, group: 'share' },
   ]
 
   const collection = (kind: 'album' | 'playlist'): ActionEntry<MenuContext<Album | Playlist>>[] => [
-    { id: 'play', icon: 'play', label: 'Play', action: 'collection.play', visible: ({ item }) => !(item.type === 'playlist' && item.radio) },
+    { id: 'play', icon: 'play', label: 'Play', action: 'collection.play', visible: ({ item }) => !(item.type === 'playlist' && item.radio), group: 'play' },
     {
+      group: 'play',
       id: 'play-radio',
       icon: 'play',
       label: 'Play',
@@ -209,6 +247,7 @@ function defineBuiltInEntries() {
       visible: ({ item }) => item.type === 'playlist' && Boolean(item.radio),
     },
     {
+      group: 'play',
       id: 'shuffle',
       icon: 'shuffle',
       label: 'Shuffle',
@@ -216,6 +255,7 @@ function defineBuiltInEntries() {
       visible: ({ item }) => !(item.type === 'playlist' && item.radio),
     },
     {
+      group: 'play',
       id: 'add-to-queue',
       icon: 'add-queue',
       label: 'Add to queue',
@@ -223,9 +263,18 @@ function defineBuiltInEntries() {
       visible: ({ item }) => !(item.type === 'playlist' && item.radio),
     },
     {
+      group: 'library',
+      id: 'add-to-playlist',
+      icon: 'playlist-add',
+      label: 'Add to playlist',
+      action: 'collection.addToPlaylist',
+      visible: ({ item }) => !(item.type === 'playlist' && item.radio),
+    },
+    {
+      group: 'go',
       id: 'open',
       icon: kind === 'album' ? 'album' : 'playlist',
-      label: kind === 'album' ? 'Go to album' : 'Open playlist',
+      label: kind === 'album' ? 'Open album' : 'Open playlist',
       action: 'collection.open',
       visible: ({ item }) => !(item.type === 'playlist' && item.radio),
     },
@@ -234,6 +283,7 @@ function defineBuiltInEntries() {
   const album: ActionEntry<MenuContext<Album>>[] = [
     ...collection('album'),
     {
+      group: 'go',
       id: 'go-to-artist',
       icon: 'artist',
       label: ({ item }) => {
@@ -243,21 +293,33 @@ function defineBuiltInEntries() {
       action: 'album.goToArtist',
       visible: ({ item }) => item.artists.some((artist) => artist.id),
     },
-    { id: 'copy-link', icon: 'share', label: 'Copy link', action: 'item.copyLink', visible: hasLink },
+    { id: 'copy-link', icon: 'share', label: 'Copy link', action: 'item.copyLink', visible: hasLink, group: 'share' },
   ]
 
+  const yours = ({ item }: MenuContext<Playlist>) => item.editable === true
   const playlist: ActionEntry<MenuContext<Playlist>>[] = [
     ...collection('playlist'),
-    { id: 'copy-link', icon: 'share', label: 'Copy link', action: 'item.copyLink', visible: hasLink },
+    { id: 'rename', icon: 'edit', label: 'Rename', action: 'playlist.rename', visible: yours, group: 'edit' },
+    {
+      group: 'edit',
+      id: 'upload',
+      icon: 'cloud',
+      label: 'Sync to the server',
+      action: 'playlist.upload',
+      visible: (context) => context.item.source === LOCAL_PLAYLISTS && serverWritable.value,
+    },
+    { id: 'delete', icon: 'delete', label: 'Delete playlist', action: 'playlist.delete', visible: yours, group: 'edit' },
+    { id: 'copy-link', icon: 'share', label: 'Copy link', action: 'item.copyLink', visible: hasLink, group: 'share' },
   ]
 
   const artist: ActionEntry<MenuContext>[] = [
-    { id: 'open', icon: 'artist', label: 'Open artist', action: 'artist.open' },
-    { id: 'copy-link', icon: 'share', label: 'Copy link', action: 'item.copyLink', visible: hasLink },
+    { id: 'open', icon: 'artist', label: 'Open artist', action: 'artist.open', group: 'go' },
+    { id: 'copy-link', icon: 'share', label: 'Copy link', action: 'item.copyLink', visible: hasLink, group: 'share' },
   ]
 
   const player: ActionEntry<PlayerContext>[] = [
     { id: 'queue', icon: 'queue', label: 'Up next', filled: () => queueOpen.value, action: 'player.queue' },
+    { id: 'add-to-playlist', icon: 'playlist-add', label: 'Playlist', action: 'player.addToPlaylist' },
     { id: 'chapters', icon: 'list', label: 'Chapters', action: 'player.chapters', visible: () => chapters.value.length > 1 },
     {
       id: 'download',

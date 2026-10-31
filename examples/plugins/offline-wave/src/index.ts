@@ -14,7 +14,6 @@ import type { ActionEntry, PluginScope, Song } from './host'
 const SECTION = { id: 'offline-wave', icon: 'downloaded', title: 'Offline wave', description: 'Download a batch of songs before you travel' }
 
 const SIZES = [25, 50, 100, 200, 500]
-const CONCURRENCIES = [1, 2, 3, 4]
 /** Radios page in ~20–25 songs; this keeps a bad continuation from looping forever. */
 const MAX_RADIO_PAGES = 20
 
@@ -26,7 +25,7 @@ function messageOf(error: unknown): string {
 
 export default function offlineWave({ Plugin, Noctis }: PluginScope) {
   const { computed, reactive, ref } = Noctis.packages.vue
-  const { library, navigation, offline, player, snackbar, ui } = Noctis.libs
+  const { library, navigation, offline, player, preferences, snackbar, ui } = Noctis.libs
 
   function storedChoice(key: string, fallback: number, choices: number[]): number {
     const value = Plugin.storage.get<number>(key, fallback)
@@ -34,7 +33,6 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
   }
 
   const count = ref(storedChoice('count', 100, SIZES))
-  const concurrency = ref(storedChoice('concurrency', 2, CONCURRENCIES))
   const includeQueue = ref(Plugin.storage.get<boolean>('includeQueue', true) ?? true)
   const ask = ref(Plugin.storage.get<boolean>('ask', true) ?? true)
 
@@ -48,6 +46,9 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
     error: '',
     cancelled: false,
   })
+
+  /** The songs this wave handed to the download queue, so stopping can take them out of it again. */
+  let queued: Song[] = []
 
   const running = computed(() => state.phase === 'generating' || state.phase === 'downloading')
 
@@ -63,7 +64,7 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
 
     const offer = (songs: readonly Song[] | null | undefined) => {
       for (const song of songs ?? []) {
-        if (picked.length >= target) return
+        if (picked.length >= target || state.cancelled) return
         if (!song || song.type !== 'song' || !song.id) continue
         if (seen.has(song.id)) continue
         seen.add(song.id)
@@ -88,7 +89,7 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
 
       let continuation = page.continuation
       let playlistId = page.playlistId
-      for (let pages = 0; picked.length < target && continuation && pages < MAX_RADIO_PAGES; pages++) {
+      for (let pages = 0; picked.length < target && continuation && pages < MAX_RADIO_PAGES && !state.cancelled; pages++) {
         try {
           const more = await Noctis.api.queueMore(continuation, playlistId, seedSong.source)
           offer(more.songs)
@@ -119,19 +120,19 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
 
     const tried = new Set<string>()
     for (const seedSong of seeds) {
-      if (picked.length >= target) break
+      if (picked.length >= target || state.cancelled) break
       if (!seedSong || tried.has(seedSong.id)) continue
       tried.add(seedSong.id)
       await growFromRadio(seedSong)
     }
 
     // Services without radios (or an empty one) can still fill the wave from what's here.
-    if (picked.length < target) {
+    if (picked.length < target && !state.cancelled) {
       offer(library.likedSongs.value)
       offer(library.history.value.map((entry) => entry.song))
     }
 
-    if (picked.length < target) {
+    if (picked.length < target && !state.cancelled) {
       try {
         const home = await Noctis.api.loadHome()
         for (const section of home.sections) {
@@ -156,7 +157,10 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
     state.total = songs.length
     state.done = 0
     state.failed = 0
+    queued = songs
 
+    // The app's queue paces them (Settings → Storage → Simultaneous downloads, one limit for
+    // every download); each one settles when it's saved, failed or taken out of it by "Stop".
     let next = 0
     const worker = async () => {
       for (;;) {
@@ -168,7 +172,7 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
         try {
           await offline.download(song, 'download')
           if (offline.offlineState(song.id) === 'downloaded') state.done += 1
-          else state.failed += 1
+          else if (!state.cancelled) state.failed += 1
         } catch (error) {
           state.failed += 1
           Plugin.warn(`Couldn't download "${song.title}": ${messageOf(error)}`)
@@ -176,9 +180,10 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
       }
     }
 
-    const workers = Array.from({ length: Math.min(concurrency.value, songs.length) }, worker)
+    const workers = Array.from({ length: Math.min(preferences.downloadConcurrency.value, songs.length) }, worker)
     await Promise.all(workers)
     state.current = ''
+    queued = []
   }
 
   async function runWave(seed?: Song) {
@@ -239,10 +244,22 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
     }
   }
 
+  /** Stop now: nothing more is generated, and what is queued or mid-transfer is dropped. */
   function stopWave() {
     if (!running.value) return
     state.cancelled = true
-    snackbar.notify('Stopping after the songs already downloading')
+    for (const song of queued) offline.cancelDownload(song.id)
+    snackbar.notify('Wave stopped')
+  }
+
+  function askToStop() {
+    ui.confirm({
+      title: 'Stop this wave?',
+      message: 'Songs still waiting are dropped; the ones already saved stay.',
+      confirmLabel: 'Stop',
+      destructive: true,
+      onConfirm: stopWave,
+    })
   }
 
   /* ------------------------------------------------------------------ *
@@ -251,11 +268,11 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
 
   const playerEntry: ActionEntry<{ song: Song }> = {
     id: 'offline-wave',
-    icon: () => (running.value ? 'downloading' : 'downloaded'),
+    icon: () => (running.value ? 'downloading' : 'download'),
     label: () => {
-      if (state.phase === 'generating') return 'Building wave…'
-      if (state.phase === 'downloading') return `Wave ${state.done + state.failed}/${state.total}`
-      return `Keep ${count.value} offline`
+      if (state.phase === 'generating') return 'Building wave… (tap to stop)'
+      if (state.phase === 'downloading') return `Wave ${state.done + state.failed}/${state.total} (tap to stop)`
+      return 'Download a wave'
     },
     action: 'offline-wave.start',
     progress: () => (running.value ? (state.total > 0 ? (state.done + state.failed) / state.total : 0.05) : undefined),
@@ -263,10 +280,18 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
 
   const songEntry: ActionEntry<{ item: Song }> = {
     id: 'offline-wave',
-    icon: 'downloaded',
-    label: 'Download an offline wave',
+    icon: 'download',
+    label: 'Download a wave from here',
     action: 'offline-wave.startFrom',
     visible: () => !running.value,
+  }
+
+  const stopEntry: ActionEntry<{ item: Song }> = {
+    id: 'offline-wave-stop',
+    icon: 'close',
+    label: 'Stop the wave',
+    action: 'offline-wave.stop',
+    visible: () => running.value,
   }
 
   function removeEntry(entries: ActionEntry[], entry: ActionEntry) {
@@ -306,7 +331,7 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
         if (state.skipped > 0) parts.push(`${state.skipped} already offline`)
         if (state.failed > 0) parts.push(`${state.failed} failed`)
         if (state.cancelled) parts.push('stopped')
-        return parts.length > 0 ? parts.join(' · ') : state.done > 0 ? 'Ready for the road' : 'Nothing new to download'
+        return parts.length > 0 ? parts.join(' • ') : state.done > 0 ? 'Ready for the road' : 'Nothing new to download'
       }
       default:
         return ''
@@ -357,24 +382,16 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
           },
         },
         {
+          // One limit for every download, the app's: this used to be a second one that only capped it further.
           id: 'concurrency',
-          icon: 'bolt',
-          title: 'Downloads at once',
-          description: 'Lower this on a slow connection',
-          get disabled() {
-            return running.value
+          icon: 'layers',
+          title: 'Simultaneous downloads',
+          get value() {
+            const n = preferences.downloadConcurrency.value
+            return n === 1 ? 'One at a time (Settings → Storage)' : `${n} at a time (Settings → Storage)`
           },
-          select: {
-            title: 'Downloads at once',
-            options: CONCURRENCIES.map((value) => ({ value: String(value), label: value === 1 ? 'One at a time' : `${value} at a time` })),
-            get value() {
-              return String(concurrency.value)
-            },
-            set(value) {
-              concurrency.value = Number(value)
-              Plugin.storage.set('concurrency', concurrency.value)
-            },
-          },
+          chevron: true,
+          onClick: () => void navigation.navigate({ name: 'settings-page', page: 'storage' }),
         },
         {
           id: 'ask',
@@ -393,8 +410,8 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
         },
         {
           id: 'start',
-          icon: 'downloaded',
-          title: 'Download a wave now',
+          icon: 'download',
+          title: 'Download a wave',
           get description() {
             if (running.value) return statusDescription()
             const song = player.currentSong.value
@@ -409,11 +426,12 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
           id: 'stop',
           icon: 'close',
           title: 'Stop this wave',
+          description: 'Drops the songs still waiting and stops the ones transferring',
           destructive: true,
           get hidden() {
             return !running.value
           },
-          onClick: stopWave,
+          onClick: askToStop,
         },
         {
           id: 'downloads',
@@ -453,22 +471,28 @@ export default function offlineWave({ Plugin, Noctis }: PluginScope) {
 
   function attach() {
     Plugin.registerAction<{ song?: Song }>('offline-wave.start', ({ song }) => {
+      // A wave that's running: the same button stops it.
+      if (running.value) return askToStop()
       if (startWave(song) === false) return false
     })
     Plugin.registerAction<{ item: Song }>('offline-wave.startFrom', ({ item }) => {
       if (startWave(item) === false) return false
     })
+    Plugin.registerAction('offline-wave.stop', () => askToStop())
     Noctis.ActionCollections.playerActions.push(playerEntry as ActionEntry)
-    Noctis.ActionCollections.songMenu.push(songEntry as ActionEntry)
+    Noctis.ActionCollections.songMenu.push(songEntry as ActionEntry, stopEntry as ActionEntry)
     defineSettings()
   }
 
   function detach() {
     state.cancelled = true
+    for (const song of queued) offline.cancelDownload(song.id)
     Plugin.unregisterAction('offline-wave.start')
     Plugin.unregisterAction('offline-wave.startFrom')
+    Plugin.unregisterAction('offline-wave.stop')
     removeEntry(Noctis.ActionCollections.playerActions, playerEntry as ActionEntry)
     removeEntry(Noctis.ActionCollections.songMenu, songEntry as ActionEntry)
+    removeEntry(Noctis.ActionCollections.songMenu, stopEntry as ActionEntry)
     Plugin.removeSection(SECTION.id)
   }
 

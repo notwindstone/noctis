@@ -54,14 +54,38 @@ export async function openCookieLogin(options: { url: string; cookieUrl: string;
 export const AUTH_CALLBACK = `${location.origin}/auth-callback.html`
 
 /**
- * Load `url` in a hidden WebView and resolve with the body of the first response whose
- * URL contains `match` — letting a site's own code do its session handshake (the
- * Spotify plugin reads the web player's access token this way). The WebView shares the
- * app's cookies, so a session signed in with openAuthWindow carries over. Device only.
+ * Load `url` in a WebView and resolve with `{ url, body }` of the first response the
+ * page's own code fetches whose URL contains `match` — letting a site do its session
+ * handshake (the Spotify plugin reads the web player's access token this way). Apps only.
+ *
+ * - Android and iOS: a hidden WebView that shares cookies with openAuthWindow's.
+ * - Desktop: a visible incognito window (its cookies are its own), hooking the page's
+ *   fetch/XHR. `fallbackUrl` is loaded directly, its page text taken as the response, if the
+ *   page's own request wasn't seen in time. `userAgent` is mobile only: the desktop
+ *   webview's own is already a real browser's.
+ * - `login` signs in first: the site's sign-in page is shown until the cookie is set, then
+ *   `url` is loaded signed in. Desktop does it in the same window and returns `cookies`, the
+ *   site's Cookie header, to renew the session with later; mobile runs openAuthWindow (done
+ *   when the page heads for cookieUrl's site) before the capture.
  */
-export async function captureWebResponse(options: { url: string; match: string; userAgent?: string; timeoutMs?: number }) {
+export async function captureWebResponse(options: {
+  url: string
+  match: string
+  userAgent?: string
+  timeoutMs?: number
+  title?: string
+  fallbackUrl?: string
+  login?: { url: string; cookieUrl: string; cookie: string }
+}): Promise<{ url: string; body: string; cookies?: string }> {
+  const { login, match, ...rest } = options
+  if (isDesktop) {
+    return invoke('capture_web_response', { ...rest, pattern: match, loginUrl: login?.url, loginCookieUrl: login?.cookieUrl, loginCookie: login?.cookie })
+  }
   if (!hasNoctisPlugin) throw new Error('Only available in the apps')
-  return Noctis.captureResponse(options)
+  // The sign-in window closes the moment it heads for the site (the hidden WebView shares its
+  // cookies); openCookieLogin would keep the whole site loading in it.
+  if (login) await openAuthWindow({ url: login.url, redirect: new URL(login.cookieUrl).origin, title: options.title })
+  return Noctis.captureResponse({ url: options.url, match, userAgent: options.userAgent, timeoutMs: options.timeoutMs })
 }
 
 /** Sign a site out: remove the cookies sent to `url` (other sites keep theirs). */
@@ -69,5 +93,5 @@ export async function clearSiteCookies(url: string) {
   if (hasNoctisPlugin) await Noctis.clearCookies({ url })
 }
 
-/** Whether openCookieLogin works here (captureWebResponse is Android only). */
+/** Whether openCookieLogin and captureWebResponse work here (the apps, not the browser). */
 export const canCaptureWeb = hasNoctisPlugin || isDesktop

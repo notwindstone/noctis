@@ -18,7 +18,9 @@
     "pack-plugin": "bun scripts/pack-plugin.mjs",
     "build:web": "bun run --filter @noctis/client build",
     "dev:desktop": "bun run --filter @noctis/client desktop",
-    "build:desktop": "bun run --filter @noctis/client desktop:build"
+    "build:desktop": "bun run --filter @noctis/client desktop:build",
+    "build-desktop": "bun scripts/build-desktop.mjs",
+    "serve-plugins": "bun scripts/serve-plugins.mjs"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.10",

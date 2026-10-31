@@ -6,6 +6,6 @@ import { C } from '../../plugins/components'
   <div class="about-hero">
     <span class="about-logo"><C.MIcon name="music" filled :size="40" /></span>
     <strong class="type-headline-small">Noctis</strong>
-    <span class="type-body-medium muted">A Material You music client</span>
+    <span class="type-body-medium muted">A music client and server, reshaped by plugins</span>
   </div>
 </template>

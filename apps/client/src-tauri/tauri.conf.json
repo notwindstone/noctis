@@ -49,6 +49,35 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "longDescription": "Noctis plays music from your own server and from streaming services, and plugins reshape everything else: screens, buttons, themes, lyrics, new services.",
+    "copyright": "Noctis",
+    "linux": {
+      "deb": {
+        "section": "sound",
+        "recommends": ["gstreamer1.0-plugins-good", "gstreamer1.0-libav"]
+      },
+      "rpm": {
+        "release": "1"
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "dmg": {
+        "windowSize": { "width": 600, "height": 400 },
+        "appPosition": { "x": 160, "y": 190 },
+        "applicationFolderPosition": { "x": 440, "y": 190 }
+      }
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    },
     "fileAssociations": [
       {
         "ext": [

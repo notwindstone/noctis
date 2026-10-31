@@ -113,7 +113,7 @@ export function defineAccountSettings() {
     () => {
       const blocks: SettingsBlock[] = accountEntries.value.flatMap(([id, entry]) => blocksFor(id, entry))
       if (blocks.length === 0) blocks.push({ id: 'empty', type: 'note', text: 'No account yet: services from plugins (YouTube Music, SoundCloud…) and servers you connect to show their accounts here.' })
-      else blocks.push({ id: 'note', type: 'note', text: 'Each service keeps its own account. Signing in here is the same as in the service’s settings.' })
+      else blocks.push({ id: 'note', type: 'note', text: "Each service keeps its own account. Signing in here is the same as in the service's settings." })
       const list = Rows[ACCOUNTS_SECTION]
       if (list) list.splice(0, list.length, ...blocks)
     },

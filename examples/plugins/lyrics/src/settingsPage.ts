@@ -171,7 +171,7 @@ export function buildSettings() {
         ['auto', 'Automatic'],
         ['builtin', 'Built in only'],
         ...[...romanizers.values()].filter((r) => r.id !== 'builtin').map((r): [string, string] => [r.id, r.name]),
-      ], 'Automatic: the source’s own romaji, then built in, then the AI for kanji if it is set up'),
+      ], "Automatic: the source's own romaji, then built in, then the AI for kanji if it is set up"),
     ]),
     { id: 'n-romanize', type: 'note' as const, text: 'The built-in romanizer reads kana, Hangul, Chinese and Cyrillic. Japanese kanji need a dictionary: NetEase ships romaji for many songs, and the AI provider below can do the rest.' },
 

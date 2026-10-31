@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { formatTime } from '../format'
 import { haptic } from '../haptics'
 
-const props = defineProps<{ position: number; duration: number; disabled?: boolean; /** Seconds where a chapter starts: drawn as small gaps in the bar. */ marks?: number[] }>()
+const props = defineProps<{ position: number; duration: number; disabled?: boolean; /** Seconds where a chapter starts: drawn as small gaps in the bar. */ marks?: number[]; /** Seconds loaded so far, drawn as a grey stretch ahead of the position. */ buffered?: number }>()
 const emit = defineEmits<{ seek: [seconds: number] }>()
 
 const track = ref<HTMLElement | null>(null)
@@ -12,6 +12,9 @@ const preview = ref(0)
 
 const shown = computed(() => (dragging.value ? preview.value : props.position))
 const percent = computed(() => (props.duration > 0 ? Math.min(100, Math.max(0, (shown.value / props.duration) * 100)) : 0))
+
+/** Where the loaded stretch ends, never before the position. */
+const bufferedPercent = computed(() => (props.duration > 0 ? Math.min(100, Math.max(percent.value, ((props.buffered ?? 0) / props.duration) * 100)) : 0))
 
 function ratioAt(clientX: number): number {
   const rect = track.value?.getBoundingClientRect()
@@ -69,6 +72,12 @@ function onKey(event: KeyboardEvent) {
     >
       <span class="seek-active" :style="{ width: `max(0px, calc(${percent}% - 6px))` }" />
       <span class="seek-inactive" :style="{ left: `min(100%, calc(${percent}% + 6px))` }" />
+      <span
+        v-show="bufferedPercent > percent"
+        class="seek-buffered"
+        :class="{ 'is-complete': bufferedPercent >= 99.5 }"
+        :style="{ left: `min(100%, calc(${percent}% + 6px))`, width: `max(0px, calc(${bufferedPercent - percent}% - 6px))` }"
+      />
       <span
         v-for="mark in marks ?? []"
         v-show="mark > 0 && duration > 0 && mark < duration"

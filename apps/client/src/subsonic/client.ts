@@ -57,10 +57,13 @@ const VERSION = '1.16.1'
  */
 export const connectionEpoch = ref(0)
 
-let onNetworkError: (() => void) | null = null
+// A holder object, not a bare let: this module sits in an import cycle (server.ts
+// registers the handler while this file may still be mid-initialization), and a
+// closure over a not-yet-initialized let would throw a TDZ error.
+const networkError = { handler: null as (() => void) | null }
 /** server.ts hears about requests that never got an answer, to start reconnecting. */
 export function setNetworkErrorHandler(handler: () => void) {
-  onNetworkError = handler
+  networkError.handler = handler
 }
 
 export class SubsonicError extends Error {
@@ -101,11 +104,11 @@ export type SubsonicPayload = Record<string, any>
 /** Call an endpoint; resolves to the "subsonic-response" payload, or throws SubsonicError. */
 export async function subsonic(endpoint: string, params: Record<string, string | number | string[] | undefined> = {}, auth = credentials.value): Promise<SubsonicPayload> {
   const response = await httpRequest(restUrl(endpoint, { ...params, f: 'json' }, auth)).catch((error) => {
-    onNetworkError?.()
+    networkError.handler?.()
     throw error
   })
   const body = (response.data as { 'subsonic-response'?: SubsonicPayload } | null)?.['subsonic-response']
-  if (!body && [502, 503, 504].includes(response.status)) onNetworkError?.()
+  if (!body && [502, 503, 504].includes(response.status)) networkError.handler?.()
   if (!body) throw new SubsonicError(0, `The server answered HTTP ${response.status}, not OpenSubsonic`)
   if (body.status !== 'ok') throw new SubsonicError(body.error?.code ?? 0, body.error?.message ?? 'The server refused the request')
   return body

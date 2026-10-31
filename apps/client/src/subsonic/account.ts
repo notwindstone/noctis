@@ -59,7 +59,7 @@ const methods: SignInMethod[] = [
     id: 'api-key',
     icon: 'fingerprint',
     label: 'Sign in with an API key',
-    description: 'Preferred: create one in the server’s settings (OpenSubsonic API keys)',
+    description: "Preferred: create one in the server's settings (OpenSubsonic API keys)",
     get hidden() {
       return serverKind.value !== 'opensubsonic'
     },
@@ -84,7 +84,7 @@ const methods: SignInMethod[] = [
     id: 'password',
     icon: 'password',
     label: 'Sign in with username and password',
-    description: 'For servers without API keys (Navidrome’s demo, older Subsonic servers)',
+    description: "For servers without API keys (Navidrome's demo, older Subsonic servers)",
     get hidden() {
       return serverKind.value !== 'opensubsonic'
     },
@@ -104,8 +104,8 @@ export const serverAccount: ServiceAccount = {
   get info() {
     const auth = credentials.value
     if (!auth) return null
-    const how = serverKind.value === 'noctis' ? 'session' : 'apiKey' in auth ? 'API key' : 'username and password'
-    return { name: auth.username, handle: `${serverUrl.value.replace(/^https?:\/\//, '')} · ${how}` }
+    const how = 'apiKey' in auth ? 'API key' : 'password'
+    return { name: auth.username, handle: `${serverUrl.value.replace(/^https?:\/\//, '')} • ${how}` }
   },
   get sessionKey() {
     return `${serverUrl.value}|${credentials.value?.username ?? ''}|${connectionEpoch.value}`

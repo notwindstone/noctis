@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { resolveLoadOrder } from '../src/resolve'
+import { hostProblems, resolveLoadOrder } from '../src/resolve'
 
 const plugin = (id: string, version: string, dependencies: Record<string, string> = {}) => ({ id, manifest: { version, dependencies } })
 
@@ -20,6 +20,24 @@ describe('load order', () => {
     ])
     expect(order).toEqual(['b', 'e'])
     expect(problems.map((problem) => `${problem.id}:${problem.kind}`).sort()).toEqual(['a:version', 'c:blocked', 'd:missing'])
+  })
+
+  test('incompatible plugins: the one listed first stays, whoever declares it', () => {
+    const declared = { id: 'b', manifest: { version: '1.0.0', dependencies: {}, incompatible: { a: '*' } } }
+    const { order, problems } = resolveLoadOrder([plugin('a', '1.0.0'), declared, plugin('c', '1.0.0')])
+    expect(order).toEqual(['a', 'c'])
+    expect(problems).toEqual([{ id: 'b', kind: 'incompatible', other: 'a' }])
+    // Declared by the earlier one, and only for versions in the range.
+    const earlier = { id: 'a', manifest: { version: '1.0.0', dependencies: {}, incompatible: { b: '<2.0.0' } } }
+    expect(resolveLoadOrder([earlier, plugin('b', '1.5.0')]).order).toEqual(['a'])
+    expect(resolveLoadOrder([earlier, plugin('b', '2.0.0')]).order).toEqual(['a', 'b'])
+  })
+
+  test('host requirements', () => {
+    const host = { api: '1.2.0', libs: ['player'] }
+    expect(hostProblems('x', { api: '^1.0.0', libs: ['player'] }, host)).toEqual([])
+    expect(hostProblems('x', { api: '^2.0.0', libs: ['offline'] }, host)).toHaveLength(2)
+    expect(hostProblems('x', undefined, host)).toEqual([])
   })
 
   test('cycles are reported and skipped', () => {

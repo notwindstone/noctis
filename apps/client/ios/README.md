@@ -7,7 +7,7 @@ Built with [xtool](https://xtool.sh) (SwiftPM, no Xcode project), so it works fr
 | --- | --- |
 | `NoctisApp.swift`, `NoctisViewController.swift` | SwiftUI entry → Capacitor's `CAPBridgeViewController`; finds the web assets in the SwiftPM bundle |
 | `NoctisPlugin.swift` | The `Noctis` Capacitor plugin (`src/native.ts`): haptics, lock screen controls, notifications, opened `.noctis` files |
-| `WebSignIn.swift` | `openLogin`/`openAuth`/`openCookieLogin`/`captureResponse`/`clearCookies` with `WKWebView` |
+| `WebSignIn.swift` | `openLogin`/`openAuth`/`openCookieLogin`/`captureResponse`/`clearCookies` (`captureWebResponse` also takes `login`, which `auth.ts` runs as `openCookieLogin` first) with `WKWebView` |
 | `LocalMusic.swift` | Music folders picked in Files (security-scoped bookmarks), tags and covers via AVFoundation |
 
 `Sources/Noctis/public` and `capacitor.config.json` are symlinks to what `cap sync` writes into

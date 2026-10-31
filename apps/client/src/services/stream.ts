@@ -1,6 +1,7 @@
 import { sourceOf, type Song, type StreamInfo } from '../models'
 import { resolveChosen, resolveFallback } from '../playFrom'
 import { writeLog } from '../plugins/log'
+import { isDesktop } from '../native'
 import { audioQuality } from '../preferences'
 import { request } from './api'
 
@@ -18,7 +19,9 @@ function preferEfficient(): boolean {
   if (audioQuality.value === 'low') return true
   if (audioQuality.value === 'high') return false
   const connection = (navigator as Navigator & { connection?: NetworkInformationLike }).connection
-  return Boolean(connection?.saveData || /(^|-)2g|3g/.test(connection?.effectiveType ?? ''))
+  // effectiveType is a rough latency guess that desktop webviews often get wrong ("3g" on a fast
+  // line), which silently dropped YouTube Music to ~47 kbps; there only the Data Saver flag counts.
+  return Boolean(connection?.saveData || (!isDesktop && /(^|-)2g|3g/.test(connection?.effectiveType ?? '')))
 }
 
 /**
@@ -51,4 +54,9 @@ export async function resolveStream(song: Song): Promise<StreamInfo> {
 
 export function forgetStream(songId: string) {
   streams.delete(songId)
+}
+
+/** Plugins resolve differently after an update: nothing resolved before it is kept. */
+export function forgetStreams() {
+  streams.clear()
 }

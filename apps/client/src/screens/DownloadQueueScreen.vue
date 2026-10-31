@@ -11,6 +11,7 @@ import {
   download,
   failures,
   nowRunning,
+  retryFailures,
   transfers,
   waiting,
 } from '../offline'
@@ -24,30 +25,24 @@ const busy = computed(() => running.value.length > 0 || waiting.value.length > 0
 const progressOf = (song: Song) => transfers.get(song.id)?.progress ?? 0
 
 const summary = computed(() => {
-  if (batch.active) return `${batchPosition.value}${batch.failed ? ` · ${batch.failed} failed` : ''}`
-  if (batch.finished) {
-    const songs = `${batch.done} ${batch.done === 1 ? 'song' : 'songs'}`
-    return batch.failed ? `Downloaded ${songs}, ${batch.failed} failed` : `Downloaded ${songs}`
-  }
+  if (batch.active) return `${batchPosition.value}${batch.failed ? ` • ${batch.failed} failed` : ''}`
+  // Once it's over, the sections below (or the empty state) say it; a "Downloaded 3 songs" line above "Nothing downloading" contradicted it.
   return ''
 })
 </script>
 
 <template>
   <div class="screen">
-    <C.TopAppBar title="Downloading" back :reveal-at="48" />
-    <h1 class="screen-headline type-headline-medium">Downloading</h1>
+    <C.TopAppBar title="Download queue" back :reveal-at="48" />
+    <h1 class="screen-headline type-headline-medium">Download queue</h1>
 
     <p v-if="summary" class="downloads-summary type-body-large">{{ summary }}</p>
-    <div v-if="busy" class="downloads-actions">
-      <button class="downloads-button type-label-large" type="button" @click="cancelDownloads">
-        <C.MIcon name="close" :size="20" />
-        Cancel all
-      </button>
-    </div>
 
     <template v-if="running.length > 0">
-      <h2 class="downloads-heading type-title-small">Downloading now</h2>
+      <h2 class="downloads-heading type-title-small">
+        Downloading now
+        <button class="text-button" type="button" @click="cancelDownloads">Cancel all</button>
+      </h2>
       <div class="downloads-list">
         <div v-for="song in running" :key="song.id" class="item-row downloads-row">
           <span class="item-row-art"><C.Thumb :src="song.thumbnail" :size="52" shape="rounded" icon="music" /></span>
@@ -64,7 +59,7 @@ const summary = computed(() => {
     </template>
 
     <template v-if="waiting.length > 0">
-      <h2 class="downloads-heading type-title-small">Waiting · {{ waiting.length }}</h2>
+      <h2 class="downloads-heading type-title-small">Waiting • {{ waiting.length }}</h2>
       <div class="downloads-list">
         <div v-for="song in waiting" :key="song.id" class="item-row downloads-row">
           <span class="item-row-art"><C.Thumb :src="song.thumbnail" :size="52" shape="rounded" icon="music" /></span>
@@ -81,8 +76,11 @@ const summary = computed(() => {
 
     <template v-if="failures.length > 0">
       <h2 class="downloads-heading type-title-small">
-        Failed · {{ failures.length }}
-        <button class="downloads-link type-label-large" type="button" @click="clearFailures">Clear</button>
+        Failed • {{ failures.length }}
+        <span class="downloads-heading-actions">
+          <button class="text-button" type="button" @click="clearFailures">Clear</button>
+          <button class="text-button" type="button" @click="retryFailures()">Retry all</button>
+        </span>
       </h2>
       <div class="downloads-list">
         <div v-for="{ song, message } in failures" :key="song.id" class="item-row downloads-row">
@@ -91,7 +89,7 @@ const summary = computed(() => {
             <span class="item-row-title type-body-large">{{ song.title }}</span>
             <span class="item-row-subtitle type-body-medium"><span>{{ message }}</span></span>
           </span>
-          <button class="icon-button" type="button" :aria-label="`Retry ${song.title}`" @click="download(song)">
+          <button class="icon-button" type="button" :aria-label="`Retry ${song.title}`" :title="`Retry ${song.title}`" @click="download(song)">
             <C.MIcon name="refresh" />
           </button>
         </div>

@@ -5,6 +5,7 @@ import { formatTime } from '../format'
 import { haptic, tap } from '../haptics'
 import { currentIndex, isPlaying, jumpTo, moveInQueue, queue, queueTitle, removeFromQueue } from '../player'
 import { useSheetDrag } from '../sheetDrag'
+import { menuPoint, showItemMenu, SIDE_BY_SIDE_PLAYER } from '../ui'
 import { artistNames } from '../models'
 
 const emit = defineEmits<{ close: [] }>()
@@ -20,7 +21,7 @@ const settling = ref(false)
 
 // Drag the panel down to dismiss; touches on the reorder handles never move it.
 /** The desktop layout puts the queue beside the player: it slides in from the right and is pushed back out. */
-const WIDE = '(min-width: 900px) and (min-aspect-ratio: 6 / 5)'
+const WIDE = SIDE_BY_SIDE_PLAYER
 const wideQuery = window.matchMedia(WIDE)
 const sideways = () => wideQuery.matches
 /** The close arrow points where the panel goes: right beside the player, down as a sheet. */
@@ -122,6 +123,16 @@ function onListClick(event: MouseEvent) {
   else if (action === 'remove') void removeRow(hit.index)
 }
 
+/** Right click (or a long press) on a row: the song's menu, with "Remove from queue". */
+function onListContextmenu(event: MouseEvent) {
+  const hit = rowOf(event)
+  const song = hit ? queue.value[hit.index] : undefined
+  if (!hit || !song) return
+  event.preventDefault()
+  haptic('longPress')
+  showItemMenu({ item: song, queueIndex: hit.index === currentIndex.value ? undefined : hit.index, at: menuPoint(event) })
+}
+
 function onListPointerDown(event: PointerEvent) {
   const handle = (event.target as Element).closest<HTMLElement>('.queue-handle')
   const hit = handle ? rowOf(event) : null
@@ -202,7 +213,7 @@ function play(index: number) {
       <span class="sheet-handle" aria-hidden="true" />
       <div class="queue-title">
         <h3 class="type-title-large">Up next</h3>
-        <span class="type-body-medium muted">{{ queueTitle || 'Queue' }} · {{ queue.length }} songs</span>
+        <span class="type-body-medium muted">{{ queueTitle || 'Queue' }} • {{ queue.length }} songs</span>
       </div>
       <button class="icon-button" type="button" aria-label="Close queue" @click="emit('close')">
         <C.MIcon :name="isSideways ? 'chevron-right' : 'collapse'" />
@@ -214,6 +225,7 @@ function play(index: number) {
       class="queue-list"
       :class="{ 'is-settling': settling }"
       @click="onListClick"
+      @contextmenu="onListContextmenu"
       @pointerdown="onListPointerDown"
       @pointermove="onHandleMove"
       @pointerup="onHandleUp"
@@ -232,14 +244,14 @@ function play(index: number) {
           <span class="item-row-art">
             <C.Thumb :src="song.thumbnail" :size="44" />
             <span v-if="index === currentIndex" class="item-row-playing" aria-hidden="true">
-              <span v-if="isPlaying" class="eq"><span /><span /><span /></span>
+              <C.PlayingBars v-if="isPlaying" />
               <C.MIcon v-else name="pause" filled :size="18" />
             </span>
           </span>
           <span class="item-row-text">
             <span class="item-row-title type-body-large">{{ song.title }}</span>
             <span class="item-row-subtitle type-body-medium">
-              <span>{{ artistNames(song.artists) }}<template v-if="song.duration"> · {{ formatTime(song.duration) }}</template></span>
+              <span>{{ artistNames(song.artists) }}<template v-if="song.duration"> • {{ formatTime(song.duration) }}</template></span>
             </span>
           </span>
         </button>

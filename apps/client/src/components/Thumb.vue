@@ -17,6 +17,9 @@ const props = withDefaults(
   { src: undefined, size: 64, shape: 'rounded', icon: 'music', eager: false },
 )
 
+/** For layouts that change without a picture (an artist page with no photo): it loaded, or it didn't. */
+const emit = defineEmits<{ loaded: []; failed: [] }>()
+
 const failed = ref(false)
 const loaded = ref(false)
 /** hq720 stills don't exist for every (older) video; fall back to mqdefault once. */
@@ -67,6 +70,7 @@ function retry() {
 
 function fail() {
   failed.value = true
+  emit('failed')
   clearTimeout(loadTimer)
   clearTimeout(retryTimer)
   const delay = RETRY_DELAYS[attempt.value]
@@ -111,6 +115,7 @@ function onLoad(event: Event) {
   }
   loaded.value = true
   clearTimers()
+  emit('loaded')
 }
 </script>
 

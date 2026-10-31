@@ -183,7 +183,9 @@ function lostServer() {
   scheduleReconnect()
 }
 
-setNetworkErrorHandler(lostServer)
+// Registered lazily: this module and subsonic/client.ts form an import cycle, and
+// whichever runs second would otherwise touch state the other hasn't built yet.
+if (typeof queueMicrotask === 'function') queueMicrotask(() => setNetworkErrorHandler(lostServer))
 
 function retryNow() {
   if (serverStatus.value !== 'error' || !serverUrl.value || serverKind.value === null) return

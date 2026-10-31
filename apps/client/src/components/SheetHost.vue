@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { C } from '../plugins/components'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { tap } from '../haptics'
 import { executeAction, resolveEntry, visibleEntries, type ActionEntry } from '../plugins/actions'
 import { menuCollection, notifyHandlers } from '../plugins/builtins'
@@ -18,8 +18,16 @@ const entries = computed(() => {
   const request = itemMenu.value
   if (!request) return []
   const collection = menuCollection(request.item) as ActionEntry<ItemMenuRequest>[]
-  return visibleEntries(collection, request).map((entry) => ({ entry, ...resolveEntry(entry, request) }))
+  return visibleEntries(collection, request).map((entry, index, shown) => ({
+    entry,
+    ...resolveEntry(entry, request),
+    // A divider where the group changes (plugins' entries, with none, get their own section).
+    divider: index > 0 && entry.group !== shown[index - 1].group,
+  }))
 })
+
+/** Opened with a mouse: a menu at the pointer instead of the bottom sheet. */
+const at = computed(() => itemMenu.value?.at ?? null)
 
 const subtitle = computed(() => {
   const target = item.value
@@ -39,6 +47,9 @@ function run(entry: ActionEntry<ItemMenuRequest>) {
 }
 
 /* Choice dialog */
+/** One of the options is the current value: a setting, with radio buttons. Otherwise a list of actions. */
+const choiceIsSetting = computed(() => choiceDialog.value?.options.some((option) => option.value === choiceDialog.value?.value) ?? false)
+
 function choose(value: string) {
   const dialog = choiceDialog.value
   choiceDialog.value = null
@@ -48,9 +59,15 @@ function choose(value: string) {
 /* Text dialog */
 const text = ref('')
 const textBusy = ref(false)
-watch(textDialog, () => {
-  text.value = ''
+const textField = ref<HTMLInputElement | HTMLTextAreaElement | null>(null)
+watch(textDialog, async (dialog) => {
+  text.value = dialog?.initial ?? ''
   textBusy.value = false
+  if (!dialog) return
+  // Ready to type, keyboard up, without tapping the field first; a name being edited is selected.
+  await nextTick()
+  textField.value?.focus()
+  if (dialog.initial) textField.value?.select()
 })
 
 async function submitText() {
@@ -76,14 +93,28 @@ async function confirmAction() {
 </script>
 
 <template>
-  <C.BottomSheet :open="item !== null" :label="item ? `Options` : undefined" @close="close">
+  <C.ContextMenu :open="item !== null && at !== null" :at="at" :label="item ? `Options for ${item.type === 'artist' ? item.name : item.title}` : undefined" @close="close">
+    <template v-if="item">
+      <template v-for="{ entry, icon, label, filled, disabled, divider } in entries" :key="entry.id">
+        <hr v-if="divider" class="context-menu-divider" />
+        <button class="context-menu-item" type="button" role="menuitem" :disabled="disabled" @click="run(entry)">
+          <C.MIcon :name="icon" :filled="filled" :size="20" />
+          <span>{{ label }}</span>
+        </button>
+      </template>
+    </template>
+  </C.ContextMenu>
+
+  <C.BottomSheet :open="item !== null && at === null" :label="item ? `Options` : undefined" @close="close">
     <template v-if="item">
       <div class="menu-header">
+        <!-- Eager: a lazy image in a sheet that's still sliding in waited until well after it settled. -->
         <C.Thumb
           :src="item.thumbnail"
           :size="56"
           :shape="item.type === 'artist' ? 'circle' : 'rounded'"
-          :icon="item.type === 'artist' ? 'artist' : 'music'"
+          :icon="item.type === 'artist' ? 'artist' : item.type === 'album' ? 'album' : item.type === 'playlist' ? 'playlist' : 'music'"
+          eager
         />
         <div class="menu-header-text">
           <strong class="type-title-medium">{{ item.type === 'artist' ? item.name : item.title }}</strong>
@@ -91,33 +122,30 @@ async function confirmAction() {
         </div>
       </div>
       <div class="sheet-scroll">
-        <button
-          v-for="{ entry, icon, label, filled, disabled } in entries"
-          :key="entry.id"
-          class="menu-item"
-          type="button"
-          :disabled="disabled"
-          @click="run(entry)"
-        >
-          <C.MIcon :name="icon" :filled="filled" />
-          <span class="type-body-large">{{ label }}</span>
-        </button>
+        <template v-for="{ entry, icon, label, filled, disabled, divider } in entries" :key="entry.id">
+          <hr v-if="divider" class="menu-divider" />
+          <button class="menu-item" type="button" :disabled="disabled" @click="run(entry)">
+            <C.MIcon :name="icon" :filled="filled" />
+            <span class="type-body-large">{{ label }}</span>
+          </button>
+        </template>
       </div>
     </template>
   </C.BottomSheet>
 
   <C.DialogShell :open="choiceDialog !== null" :title="choiceDialog?.title ?? ''" @close="choiceDialog = null">
-    <div class="choice-list" role="radiogroup">
+    <div class="choice-list" :role="choiceIsSetting ? 'radiogroup' : 'menu'">
       <button
         v-for="option in choiceDialog?.options ?? []"
         :key="option.value"
         class="choice-option"
         type="button"
-        role="radio"
-        :aria-checked="option.value === choiceDialog?.value"
+        :role="choiceIsSetting ? 'radio' : 'menuitem'"
+        :aria-checked="choiceIsSetting ? option.value === choiceDialog?.value : undefined"
         @click="choose(option.value)"
       >
-        <span class="radio" aria-hidden="true" />
+        <span v-if="choiceIsSetting" class="radio" aria-hidden="true" />
+        <C.MIcon v-else-if="option.icon" class="choice-icon" :name="option.icon" />
         <span class="choice-text">
           <span class="type-body-large">{{ option.label }}</span>
           <span v-if="option.description" class="type-body-medium muted">{{ option.description }}</span>
@@ -135,6 +163,7 @@ async function confirmAction() {
     <p v-if="textDialog?.description" class="type-body-medium muted dialog-description">{{ textDialog.description }}</p>
     <textarea
       v-if="textDialog?.multiline"
+      ref="textField"
       v-model="text"
       class="text-field"
       rows="5"
@@ -145,12 +174,13 @@ async function confirmAction() {
     <input
       v-else
       :key="textDialog?.title"
+      ref="textField"
       v-model="text"
       class="text-field"
       :type="textDialog?.password ? 'password' : 'text'"
       :placeholder="textDialog?.placeholder"
       :autocomplete="textDialog?.password ? 'current-password' : 'off'"
-      autocapitalize="off"
+      :autocapitalize="textDialog?.capitalize ? 'sentences' : 'off'"
       @keydown.enter="submitText"
     />
     <template #actions>

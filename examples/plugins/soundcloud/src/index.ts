@@ -146,7 +146,7 @@ async function getCollection({ id }: { id: string }): Promise<CollectionPage> {
     id,
     kind: collection.type === 'album' ? 'album' : 'playlist',
     title: raw.title,
-    subtitle: [user?.username ?? 'SoundCloud', raw.track_count ? `${raw.track_count} tracks` : ''].filter(Boolean).join(' · '),
+    subtitle: [user?.username ?? 'SoundCloud', raw.track_count ? `${raw.track_count} tracks` : ''].filter(Boolean).join(' • '),
     description: raw.description || undefined,
     thumbnail: collection.thumbnail,
     artists: user ? [{ id: `${SOURCE}:user:${user.id}`, name: user.username }] : [],

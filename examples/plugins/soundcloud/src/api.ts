@@ -292,7 +292,7 @@ export function toCollection(playlist: Raw): Album | Playlist {
     source: SOURCE,
     id: playlistId(playlist.id),
     title: playlist.title,
-    subtitle: [playlist.user?.username, playlist.track_count ? `${playlist.track_count} tracks` : ''].filter(Boolean).join(' · '),
+    subtitle: [playlist.user?.username, playlist.track_count ? `${playlist.track_count} tracks` : ''].filter(Boolean).join(' • '),
     thumbnail,
   }
 }

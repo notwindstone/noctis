@@ -22,7 +22,23 @@ export type PluginPlatform = (typeof PLUGIN_PLATFORMS)[number]
 /** Every platform, including ones that don't exist yet. */
 export const ALL_PLATFORMS = '*'
 
+/**
+ * Version of the plugin API (`Noctis` and `Plugin` as plugins see them). Plugins can ask for
+ * a range of it in `requires.api`. Bump the minor for additions, the major for breaking changes.
+ */
+export const PLUGIN_API_VERSION = '1.0.0'
+
+/** What a plugin needs from the app it runs in, besides other plugins. */
+export interface PluginRequirements {
+  /** Range of PLUGIN_API_VERSION the plugin was written for. */
+  api?: string
+  /** Names under `Noctis.libs` it uses, e.g. ["notifications", "offline"]. A client without one doesn't start it. */
+  libs: string[]
+}
+
 export interface PluginManifest {
+  /** The plugin's id, so it stays the same whatever the archive is called (file hosts rename files). Default: the archive's file name. */
+  id?: string
   name: string
   /** Only "unrestricted" for now: no sandbox. */
   type: 'unrestricted'
@@ -31,7 +47,10 @@ export interface PluginManifest {
   side: PluginSide
   authors: string[]
   description?: string
-  /** https: or data:image/ URL. */
+  /**
+   * The plugin's icon: an https: or data:image/ URL, or an image file in the archive
+   * ("icon.png", up to 256 KB; Noctis inlines it when it reads the archive).
+   */
   logo?: string
   /** Where the source lives, e.g. a repository URL. */
   source?: string
@@ -40,6 +59,10 @@ export interface PluginManifest {
   languages?: string[]
   /** Plugin id → semver range. Checked on each side the plugin runs on. */
   dependencies: Record<string, string>
+  /** Plugin id → semver range ("*": any version) it can't run alongside. Either plugin may say so; the one installed later doesn't start. */
+  incompatible: Record<string, string>
+  /** What it needs from the app. */
+  requires: PluginRequirements
   /** Where the client half runs: platform names, or ["*"] (the default) for everywhere. */
   platforms: string[]
   /** For "both" plugins: what the server asks of connecting clients. */
@@ -55,6 +78,10 @@ export interface ClientRequirement {
 
 /** Plugin ids: also archive file names and URL segments. */
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/
+
+/** Image files a logo may point at inside an archive. */
+export const LOGO_FILE = /^[\w][\w. -]{0,63}\.(png|jpe?g|webp|gif|svg)$/i
+export const MAX_LOGO_BYTES = 256 * 1024
 
 export function isValidPluginId(id: string): boolean {
   return PLUGIN_ID.test(id)
@@ -77,6 +104,7 @@ export function parseManifest(value: unknown): PluginManifest {
   const data = value
 
   if (typeof data.name !== 'string' || !data.name.trim()) fail('metadata.json needs a "name"')
+  if (data.id !== undefined && (typeof data.id !== 'string' || !isValidPluginId(data.id))) fail('"id" must be a plugin id: lowercase letters, digits, ".", "_" or "-"')
   if (data.type === 'sandbox') fail('Sandboxed plugins aren\'t supported yet; use "type": "unrestricted"')
   if (data.type !== 'unrestricted') fail('metadata.json "type" must be "unrestricted"')
 
@@ -89,8 +117,8 @@ export function parseManifest(value: unknown): PluginManifest {
 
   if (data.authors !== undefined && !isStringArray(data.authors)) fail('"authors" must be an array of strings')
   if (data.description !== undefined && typeof data.description !== 'string') fail('"description" must be a string')
-  if (data.logo !== undefined && (typeof data.logo !== 'string' || !/^(https:|data:image\/)/.test(data.logo || 'https:'))) {
-    fail('"logo" must be an https: or data:image/ URL')
+  if (data.logo !== undefined && (typeof data.logo !== 'string' || !/^(https:|data:image\/)/.test(data.logo || 'https:') && !LOGO_FILE.test(data.logo))) {
+    fail('"logo" must be an https: or data:image/ URL, or an image file in the archive like "icon.png"')
   }
   if (data.source !== undefined && typeof data.source !== 'string') fail('"source" must be a string')
 
@@ -101,6 +129,32 @@ export function parseManifest(value: unknown): PluginManifest {
       if (!isValidPluginId(id)) fail(`"${id}" in "dependencies" isn't a valid plugin id`)
       if (typeof range !== 'string' || !isValidRange(range)) fail(`"${range}" isn't a valid version range for dependency "${id}"`)
       dependencies[id] = range
+    }
+  }
+
+  const incompatible: Record<string, string> = {}
+  if (data.incompatible !== undefined) {
+    // A list of ids is shorthand for "any version of these".
+    const raw = isStringArray(data.incompatible) ? Object.fromEntries(data.incompatible.map((id) => [id, '*'])) : data.incompatible
+    if (!isRecord(raw)) fail('"incompatible" must be a list of plugin ids, or map them to version ranges')
+    for (const [id, range] of Object.entries(raw)) {
+      if (!isValidPluginId(id)) fail(`"${id}" in "incompatible" isn't a valid plugin id`)
+      if (typeof range !== 'string' || !isValidRange(range)) fail(`"${range}" isn't a valid version range for "${id}" in "incompatible"`)
+      incompatible[id] = range
+    }
+  }
+
+  const requires: PluginRequirements = { libs: [] }
+  if (data.requires !== undefined) {
+    if (!isRecord(data.requires)) fail('"requires" must be an object like { "api": "^1.0.0", "libs": ["offline"] }')
+    const { api, libs } = data.requires
+    if (api !== undefined) {
+      if (typeof api !== 'string' || !isValidRange(api)) fail('"requires.api" must be a version range')
+      requires.api = api
+    }
+    if (libs !== undefined) {
+      if (!isStringArray(libs)) fail('"requires.libs" must be an array of names under Noctis.libs')
+      requires.libs = [...new Set(libs)]
     }
   }
 
@@ -132,6 +186,7 @@ export function parseManifest(value: unknown): PluginManifest {
   }
 
   return {
+    id: data.id as string | undefined,
     name: data.name.trim().slice(0, 80),
     type: 'unrestricted',
     version,
@@ -143,6 +198,8 @@ export function parseManifest(value: unknown): PluginManifest {
     categories: isStringArray(data.categories) ? data.categories : undefined,
     languages: isStringArray(data.languages) ? data.languages : undefined,
     dependencies,
+    incompatible,
+    requires,
     platforms,
     client,
   }

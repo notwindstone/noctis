@@ -26,11 +26,17 @@ const isRecord = (value: unknown) => typeof value === 'object' && value !== null
 
 export const installedPlugins = persisted<InstalledPlugin[]>('noctis:plugins', [], isArray)
 
-// Plugins installed before manifests had `side` and `dependencies`.
-if (installedPlugins.value.some((plugin) => !plugin.metadata.side || !plugin.metadata.dependencies)) {
+// Plugins installed before manifests had `side`, `dependencies`, `incompatible` and `requires`.
+if (installedPlugins.value.some((plugin) => !plugin.metadata.side || !plugin.metadata.dependencies || !plugin.metadata.incompatible || !plugin.metadata.requires)) {
   installedPlugins.value = installedPlugins.value.map((plugin) => ({
     ...plugin,
-    metadata: { ...plugin.metadata, side: plugin.metadata.side ?? 'client', dependencies: plugin.metadata.dependencies ?? {} },
+    metadata: {
+      ...plugin.metadata,
+      side: plugin.metadata.side ?? 'client',
+      dependencies: plugin.metadata.dependencies ?? {},
+      incompatible: plugin.metadata.incompatible ?? {},
+      requires: plugin.metadata.requires ?? { libs: [] },
+    },
   }))
 }
 
@@ -42,6 +48,12 @@ export const approvedHashes = persisted<Record<string, true>>('noctis:plugins:ap
 
 /** Master switch; off starts the app without running any plugin ("safe mode"). */
 export const pluginsActive = persisted('noctis:plugins:active', true, isBoolean)
+
+/**
+ * Installing a newer version of an enabled plugin keeps it enabled. The user asked for that
+ * code themselves (a file, a link, a collection they added); off, every update asks again.
+ */
+export const keepEnabledOnUpdate = persisted('noctis:plugins:keep-enabled', true, isBoolean)
 
 /** Off unless turned on. */
 export function isEnabled(plugin: InstalledPlugin): boolean {

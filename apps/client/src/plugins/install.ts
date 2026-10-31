@@ -1,15 +1,20 @@
 import { CapacitorHttp } from '@capacitor/core'
 import { describePlatforms, PluginArchiveError, readPluginArchive, sha256Hex, supportsPlatform, type PluginArchive } from '@noctis/plugin-core'
 import { isNative, platform } from '../native'
+import { forgetStreams } from '../services/stream'
 import { writeLog } from './log'
-import { disablePlugin, isRunning } from './runtime'
-import { findPlugin, forgetPluginConsent, installedPlugins, type InstalledPlugin } from './store'
+import { disablePlugin, enablePlugin, isRunning } from './runtime'
+import { approvedHashes, findPlugin, forgetPluginConsent, installedPlugins, isEnabled, keepEnabledOnUpdate, type InstalledPlugin } from './store'
 
 /**
  * Installing plugins from archives (read and validated by @noctis/plugin-core): a
  * `.zip` / `.noctis` file with metadata.json and index.js. The archive's file name,
  * minus the extension, is the plugin id. Server plugins are refused, and so are plugins
  * whose `platforms` don't include this app; plugins for both sides install their client half.
+ *
+ * A plugin that is already installed (same id: `id` in metadata.json, else the file name) is
+ * updated in place, so its settings and storage stay, and if it was enabled
+ * the new version is too (Settings → Plugins → "Keep plugins enabled when updating").
  */
 
 /** A plugin that can't be installed, with a message meant for people. */
@@ -25,6 +30,8 @@ export interface InstallResult {
   replaced: boolean
   /** The code is identical to what was installed (it stays enabled if it was). */
   sameCode: boolean
+  /** The new version replaced a running one and was started again. */
+  restarted: boolean
 }
 
 export async function installFromArchive(fileName: string, bytes: Uint8Array): Promise<InstallResult> {
@@ -36,16 +43,19 @@ export async function installFromArchive(fileName: string, bytes: Uint8Array): P
     throw error
   }
 
-  const { id, manifest: metadata } = archive
+  const { manifest: metadata } = archive
   if (metadata.side === 'server') fail(`${metadata.name} is a server plugin. Install it on a Noctis server instead.`)
   if (!supportsPlatform(metadata, platform)) fail(`${metadata.name} doesn't run here: it's made for ${describePlatforms(metadata)}.`)
   // "both" plugins bring their client half; the server half is the server's business.
   const code = archive.client ?? ''
   const hash = await sha256Hex(code)
 
+  const { id } = archive
   const existing = findPlugin(id)
   const sameCode = existing?.sha256 === hash
-  // New code under the same id: stop the old one; the new code needs approving again.
+  // New code for an installed plugin: stop the old one. It runs again if it was on and the
+  // setting allows; otherwise the new code needs approving like any other.
+  const wasEnabled = existing ? isEnabled(existing) : false
   if (existing && !sameCode && isRunning(existing)) await disablePlugin(existing)
 
   // Nothing installed under this id: whatever consent is left over from an earlier install
@@ -57,8 +67,20 @@ export async function installFromArchive(fileName: string, bytes: Uint8Array): P
     ? installedPlugins.value.map((item) => (item.id === id ? plugin : item))
     : [...installedPlugins.value, plugin]
 
-  writeLog('noctis', 'info', `Installed ${id} ${metadata.version} (sha256 ${hash.slice(0, 12)}…)`)
-  return { plugin, replaced: Boolean(existing), sameCode }
+  let restarted = false
+  if (existing && !sameCode) {
+    // The old code is gone: its consent goes with it, unless the new code inherits it below.
+    forgetPluginConsent(existing.sha256)
+    if (wasEnabled && keepEnabledOnUpdate.value) {
+      approvedHashes.value = { ...approvedHashes.value, [hash]: true }
+      restarted = await enablePlugin(plugin)
+      if (!restarted) writeLog(id, 'warn', 'The new version failed to start; see its log')
+    }
+  }
+
+  writeLog('noctis', 'info', `${existing ? 'Updated' : 'Installed'} ${id} ${metadata.version} (sha256 ${hash.slice(0, 12)}…)${restarted ? ', started' : ''}`)
+  if (existing && !sameCode) forgetStreams()
+  return { plugin, replaced: Boolean(existing), sameCode, restarted }
 }
 
 export async function installFromFile(file: File): Promise<InstallResult> {
@@ -72,6 +94,33 @@ function base64ToBytes(base64: string): Uint8Array {
   return bytes
 }
 
+/** Hosts on this machine or this network, where a development server runs and plain http is fine. */
+function isLocalHost(host: string): boolean {
+  return (
+    host === 'localhost' ||
+    host.endsWith('.local') ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    host === '[::1]'
+  )
+}
+
+/** Plugins come over https; plain http only from this machine or network (a development server). */
+export function checkPluginUrl(url: string): URL {
+  let parsed: URL
+  try {
+    parsed = new URL(url.trim())
+  } catch {
+    fail("That isn't a valid URL")
+  }
+  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLocalHost(parsed.hostname))) {
+    fail('Plugins can only be downloaded over https (http works for addresses on your own network)')
+  }
+  return parsed
+}
+
 /** Download a file as bytes: native HTTP on a device (no CORS), fetch in the browser. */
 export async function downloadBytes(url: string): Promise<Uint8Array> {
   if (isNative) {
@@ -79,20 +128,14 @@ export async function downloadBytes(url: string): Promise<Uint8Array> {
     if (response.status < 200 || response.status >= 300) fail(`Download failed (HTTP ${response.status})`)
     return base64ToBytes(String(response.data))
   }
-  const response = await fetch(url)
+  // Never a stale copy: a development server answers with a new build under the same address.
+  const response = await fetch(url, { cache: 'no-store' })
   if (!response.ok) fail(`Download failed (HTTP ${response.status})`)
   return new Uint8Array(await response.arrayBuffer())
 }
 
 export async function installFromUrl(url: string): Promise<InstallResult> {
-  let parsed: URL
-  try {
-    parsed = new URL(url.trim())
-  } catch {
-    fail("That isn't a valid URL")
-  }
-  if (parsed.protocol !== 'https:') fail('Plugins can only be downloaded over https')
-
+  const parsed = checkPluginUrl(url)
   const bytes = await downloadBytes(parsed.href)
   const fileName = decodeURIComponent(parsed.pathname.split('/').pop() || 'plugin.zip')
   return installFromArchive(fileName, bytes)

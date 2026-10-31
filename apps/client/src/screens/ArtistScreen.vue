@@ -6,7 +6,7 @@ import { useAsync } from '../composables'
 import { haptic } from '../haptics'
 import { useItemDelegation } from '../itemActions'
 import { openBrowse, type Route } from '../navigation'
-import { playFromQueueSource } from '../player'
+import { playFromQueueSource, playSongs, shufflePlay, startRadio } from '../player'
 import { schemeStyle } from '../theme'
 import { getArtist } from '../services/api'
 import type { Song } from '../models'
@@ -30,6 +30,11 @@ const tint = computed(() => (hue.value === null ? {} : schemeStyle(hue.value)))
 
 const expanded = ref(false)
 
+/** Servers hand out a cover address for every artist, picture or not: a failed one counts as none. */
+const photoFailed = ref(false)
+watch(() => data.value?.thumbnail, () => (photoFailed.value = false))
+const hasPhoto = computed(() => Boolean(data.value?.thumbnail) && !photoFailed.value)
+
 /** The first list shelf is "Top songs"; show it as a playable list, the rest as rows. */
 const topSongs = computed(() => data.value?.sections.find((section) => section.layout === 'list') ?? null)
 const topSongList = computed(() => (topSongs.value?.items ?? []).filter((item): item is Song => item.type === 'song'))
@@ -37,18 +42,41 @@ const otherSections = computed(() => data.value?.sections.filter((section) => se
 
 const topSongActions = useItemDelegation(() => ({ items: topSongList.value, play: 'list', title: data.value?.name }))
 
+/*
+ * The same three actions as an album page. A service without an artist shuffle or radio
+ * (most OpenSubsonic servers) gets them from the top songs instead of greyed-out buttons.
+ */
+const canPlay = computed(() => topSongList.value.length > 0)
+const canShuffle = computed(() => Boolean(data.value?.shuffle) || topSongList.value.length > 1)
+const canRadio = computed(() => Boolean(data.value?.radio) || topSongList.value.length > 0)
+
+function play() {
+  const page = data.value
+  if (!page || !canPlay.value) return
+  haptic('press')
+  playSongs(topSongList.value, 0, page.name)
+}
+
 function shuffle() {
   const page = data.value
-  if (!page?.shuffle) return
+  if (!page) return
   haptic('press')
-  void playFromQueueSource({ ...page.shuffle, title: page.name, source: source.value })
+  if (page.shuffle) void playFromQueueSource({ ...page.shuffle, title: page.name, source: source.value })
+  else shufflePlay(topSongList.value, page.name)
 }
 
 function radio() {
   const page = data.value
-  if (!page?.radio) return
+  if (!page) return
   haptic('press')
-  void playFromQueueSource({ ...page.radio, title: `${page.name} radio`, source: source.value })
+  if (page.radio) void playFromQueueSource({ ...page.radio, title: `${page.name} radio`, source: source.value })
+  else if (topSongList.value[0]) void startRadio(topSongList.value[0])
+}
+
+/** On the artist's own page their name goes without saying: the album, plus anyone featured. */
+function topSongLine(song: Song) {
+  const others = song.artists.filter((artist) => (artist.id ? artist.id !== id.value : artist.name !== data.value?.name))
+  return [others.map((artist) => artist.name).join(', '), song.album?.name].filter(Boolean).join(' • ')
 }
 </script>
 
@@ -60,20 +88,40 @@ function radio() {
     <C.StateView v-else-if="error && !data" kind="error" title="Couldn't load this artist" :message="error" action="Try again" @action="run" />
 
     <template v-else-if="data">
-      <header class="artist-hero">
-        <C.Thumb class="artist-hero-image" :src="data.thumbnail" :size="720" shape="square" icon="artist" eager />
-        <div class="artist-hero-fade" aria-hidden="true" />
-        <h1 class="artist-name type-display-small">{{ data.name }}</h1>
+      <!-- Without a photo: the page's tint and a round placeholder, not a screen-sized icon. -->
+      <div v-if="!hasPhoto" class="collection-tint" aria-hidden="true" />
+      <header class="artist-hero" :class="{ 'no-image': !hasPhoto }">
+        <template v-if="hasPhoto">
+          <C.Thumb class="artist-hero-image" :src="data.thumbnail" :size="720" shape="square" icon="artist" eager />
+          <div class="artist-hero-fade" aria-hidden="true" />
+        </template>
+        <div class="artist-hero-text">
+          <!-- Wide windows blur the photo into a backdrop and show it sharp here (main.css). -->
+          <C.Thumb
+            class="artist-hero-portrait"
+            :src="data.thumbnail"
+            :size="320"
+            shape="circle"
+            icon="artist"
+            eager
+            @failed="photoFailed = true"
+            @loaded="photoFailed = false"
+          />
+          <h1 class="artist-name type-display-small">{{ data.name }}</h1>
+        </div>
       </header>
 
-      <div class="artist-actions">
-        <button class="filled-button large" type="button" :disabled="!data.shuffle" @click="shuffle">
+      <div v-if="canPlay || canShuffle || canRadio" class="collection-actions artist-actions">
+        <button v-if="canPlay" class="filled-button large" type="button" @click="play">
+          <C.MIcon name="play" filled />
+          Play
+        </button>
+        <button v-if="canShuffle" class="tonal-button large" type="button" @click="shuffle">
           <C.MIcon name="shuffle" />
           Shuffle
         </button>
-        <button class="tonal-button large" type="button" :disabled="!data.radio" @click="radio">
+        <button v-if="canRadio" class="icon-button large tonal" type="button" aria-label="Start radio" title="Start radio" @click="radio">
           <C.MIcon name="radio" />
-          Radio
         </button>
       </div>
 
@@ -96,7 +144,7 @@ function radio() {
           </button>
         </header>
         <div class="section-list" @click="topSongActions.onClick" @contextmenu="topSongActions.onContextmenu">
-          <C.ItemRow v-for="(song, index) in topSongList" :key="song.id" :item="song" :index="index" />
+          <C.ItemRow v-for="(song, index) in topSongList" :key="song.id" :item="song" :index="index" :subtitle="topSongLine(song)" />
         </div>
       </section>
 

@@ -5,13 +5,14 @@ import { haptic } from './haptics'
 import { invoke } from '@tauri-apps/api/core'
 import { isDesktop, isNative } from './native'
 import { navigate } from './navigation'
+import { networkTick } from './network'
 import * as notifications from './notifications'
 import { cacheEnabled, downloadConcurrency, downloadMaxMinutes, downloadNotifications, maxCacheMb, saveAsFiles } from './preferences'
 import { writeLog } from './plugins/log'
 import { persisted } from './storage'
 import { fetchRange } from './http'
-import { artistNames, sourceOf, type Song } from './models'
-import { isStationSong } from './stations'
+import { artistNames, sourceOf, STATION_SECONDS, type Song } from './models'
+import { isStationSong, markStation } from './stations'
 import { services } from './services/registry'
 import { forgetStream, resolveStream } from './services/stream'
 
@@ -111,6 +112,8 @@ function bytesToBase64(bytes: ArrayBuffer): string {
 }
 
 class Cancelled extends Error {}
+/** Not an error: the song can't be saved (a station) and is dropped from the run quietly. */
+class Skipped extends Error {}
 
 async function fetchAll(
   url: string,
@@ -153,6 +156,15 @@ async function save(song: Song, kind: OfflineKind, isCancelled?: () => boolean):
   const refusal = notDownloadable(song, kind)
   if (refusal) throw new Error(refusal)
   const stream = await resolveStream(song)
+  // Stations only show their length once the stream is resolved: leave them out from here on.
+  if (stream.live || (stream.duration ?? 0) >= STATION_SECONDS) {
+    markStation(song.id)
+    writeLog('noctis', 'info', `"${song.title}" is a station (${stream.live ? 'live stream' : `${Math.round((stream.duration ?? 0) / 3600)} h long`}); not saving it`)
+    throw new Skipped('It is a station, not a song')
+  }
+  // The bytes only exist decrypted in the content decryption module: what fetchRange
+  // would get back is the still-encrypted file.
+  if (stream.drm) throw new Error('This stream is DRM-protected and can\'t be saved as a file')
   const total = stream.contentLength
   if (!total) throw new Error('Unknown file size')
 
@@ -237,8 +249,29 @@ const running = new Map<string, Job>()
 export const nowRunning = shallowReactive(new Map<string, Song>())
 /** Songs waiting for their turn, in order (for the download queue page). */
 export const waiting = shallowRef<Song[]>([])
-/** Songs that failed, with why, until retried or cleared. */
-export const failures = shallowRef<{ song: Song; message: string }[]>([])
+/** Songs that failed, with why, until retried or cleared. `offline`: for lack of a connection (retried when it's back). */
+export const failures = shallowRef<{ song: Song; message: string; offline?: boolean }[]>([])
+
+const OFFLINE_ERROR = /failed to fetch|networkerror|network error|load failed|timed? ?out|unable to resolve|internet/i
+
+/** What a failed download says on the queue page: words, not "Failed to fetch". */
+function failureFor(error: unknown): { message: string; offline: boolean } {
+  const message = error instanceof Error ? error.message : String(error)
+  if (OFFLINE_ERROR.test(message) || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
+    return { message: "Offline: retries when you're back", offline: true }
+  }
+  return { message: message.length > 120 ? `${message.slice(0, 120)}…` : message, offline: false }
+}
+
+/** Try every failed song again. */
+export function retryFailures(only: (failure: { offline?: boolean }) => boolean = () => true) {
+  for (const failure of failures.value.filter(only)) void download(failure.song, 'download')
+}
+
+// The connection is back: songs that failed for lack of it go again on their own.
+watch(networkTick, () => {
+  if (navigator.onLine !== false) retryFailures((failure) => failure.offline === true)
+})
 export const clearFailures = () => {
   failures.value = []
 }
@@ -274,8 +307,8 @@ export const batchFraction = computed(() => {
   return Math.min(1, (batch.done + batch.failed + partial) / batch.total)
 })
 
-/** "3 out of 12": the second line, which is what a collapsed notification shows, so it stays readable whatever the song names. */
-export const batchPosition = computed(() => `${Math.min(batch.done + batch.failed + 1, batch.total)} out of ${batch.total}`)
+/** "3 of 12 downloaded": the second line, which is what a collapsed notification shows, so it stays readable whatever the song names. */
+export const batchPosition = computed(() => `${batch.done} of ${batch.total} downloaded`)
 
 export const batchText = computed(() => {
   if (batch.active) return 'Downloading'
@@ -358,7 +391,7 @@ async function saveWithRetries(song: Song, isCancelled: () => boolean): Promise<
     try {
       return await save(song, 'download', isCancelled)
     } catch (error) {
-      if (error instanceof Cancelled || isCancelled() || attempt >= ATTEMPTS) throw error
+      if (error instanceof Cancelled || error instanceof Skipped || isCancelled() || attempt >= ATTEMPTS) throw error
       writeLog('noctis', 'info', `Download of "${song.title}" failed (${(error as Error).message}), trying again`)
       // The stream URL may be what went stale: resolve a fresh one.
       forgetStream(song.id)
@@ -375,11 +408,11 @@ async function run(job: Job) {
     batch.done++
   } catch (error) {
     forgetStream(song.id)
-    if (error instanceof Cancelled || job.cancelled) {
+    if (error instanceof Cancelled || error instanceof Skipped || job.cancelled) {
       batch.total--
     } else {
       batch.failed++
-      failures.value = [...failures.value.filter((entry) => entry.song.id !== song.id), { song, message: (error as Error).message }]
+      failures.value = [...failures.value.filter((entry) => entry.song.id !== song.id), { song, ...failureFor(error) }]
       writeLog('noctis', 'warn', `Couldn't download "${song.title}": ${(error as Error).message}`)
     }
   } finally {
@@ -597,6 +630,7 @@ export async function localSource(id: string): Promise<string | null> {
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(0, Math.round(bytes / 1024))} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+  // "512 MB", not "512.0 MB" (the limit it's shown next to is a round number).
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1).replace(/\.0$/, '')} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2).replace(/\.?0+$/, '')} GB`
 }

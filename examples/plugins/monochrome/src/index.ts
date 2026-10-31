@@ -114,7 +114,7 @@ function toTidalPlaylist(playlist: Raw): Playlist {
     source: SOURCE,
     id: tidalPlaylistId(playlist.uuid),
     title: playlist.title,
-    subtitle: ['TIDAL', playlist.numberOfTracks ? `${playlist.numberOfTracks} tracks` : ''].filter(Boolean).join(' · '),
+    subtitle: ['TIDAL', playlist.numberOfTracks ? `${playlist.numberOfTracks} tracks` : ''].filter(Boolean).join(' • '),
     thumbnail: tidalImage(playlist.squareImage ?? playlist.image, 480),
   }
 }
@@ -233,7 +233,7 @@ async function pickFromTidal(id: string): Promise<CollectionPage> {
     id,
     kind: 'album',
     title: data.title ?? title,
-    subtitle: ['TIDAL', data.releaseDate?.slice(0, 4), data.numberOfTracks ? `${data.numberOfTracks} songs` : ''].filter(Boolean).join(' · '),
+    subtitle: ['TIDAL', data.releaseDate?.slice(0, 4), data.numberOfTracks ? `${data.numberOfTracks} songs` : ''].filter(Boolean).join(' • '),
     thumbnail: tidalImage(data.cover, 640),
     artists: [{ name: artist }],
     year: data.releaseDate?.slice(0, 4),
@@ -266,8 +266,8 @@ async function getAlbum({ id }: { id: string }): Promise<CollectionPage> {
     id,
     kind: 'album',
     title: data.title,
-    subtitle: [album.kind, album.year, data.trackCount ? `${data.trackCount} songs` : '', data.label].filter(Boolean).join(' · '),
-    secondSubtitle: 'Lossless · FLAC',
+    subtitle: [album.kind, album.year, data.trackCount ? `${data.trackCount} songs` : '', data.label].filter(Boolean).join(' • '),
+    secondSubtitle: 'Lossless • FLAC',
     thumbnail: album.thumbnail,
     artists: album.artists,
     year: album.year,
@@ -284,7 +284,7 @@ async function getPlaylist({ id }: { id: string }): Promise<CollectionPage> {
     id,
     kind: 'playlist',
     title: playlist.title ?? 'Playlist',
-    subtitle: ['TIDAL', playlist.numberOfTracks ? `${playlist.numberOfTracks} tracks` : ''].filter(Boolean).join(' · '),
+    subtitle: ['TIDAL', playlist.numberOfTracks ? `${playlist.numberOfTracks} tracks` : ''].filter(Boolean).join(' • '),
     description: playlist.description || undefined,
     thumbnail: tidalImage(playlist.squareImage ?? playlist.image, 480),
     artists: [],
@@ -483,7 +483,7 @@ const KIND_LABEL: Record<Instance['kind'], string> = {
 function promptInstance() {
   showTextDialog({
     title: 'Add an API instance',
-    description: 'A hifi-api instance (like api.monochrome.tf), a tracks API (like tracks.monochrome.st) or a Deezer instance. Its kind is detected when it’s added.',
+    description: "A hifi-api instance (like api.monochrome.tf), a tracks API (like tracks.monochrome.st) or a Deezer instance. Its kind is detected when it's added.",
     placeholder: 'https://…',
     confirmLabel: 'Add',
     async onConfirm(value) {
@@ -528,7 +528,7 @@ function defineSettings(Plugin: PluginScope['Plugin']) {
           id: instance.url,
           icon: instance.kind === 'tracks' ? 'server' : 'playlist',
           title: new URL(instance.url).host,
-          description: `${KIND_LABEL[instance.kind]}${instance.version ? ` · ${instance.version}` : ''}`,
+          description: `${KIND_LABEL[instance.kind]}${instance.version ? ` • ${instance.version}` : ''}`,
           onClick() {
             confirm({
               title: `Remove ${new URL(instance.url).host}?`,
@@ -565,7 +565,7 @@ function defineSettings(Plugin: PluginScope['Plugin']) {
       Noctis.group('add', [
         { id: 'add', icon: 'add-link', title: 'Add an instance', description: 'hifi-api, a tracks API or a Deezer instance', onClick: promptInstance },
       ]),
-      { id: 'suggested-header', type: 'header', title: 'From Monochrome’s instance list', get hidden() { return suggestedRows.every((row) => row.hidden) } },
+      { id: 'suggested-header', type: 'header', title: "From Monochrome's instance list", get hidden() { return suggestedRows.every((row) => row.hidden) } },
       Noctis.group('suggested', suggestedRows as never),
       {
         id: 'note',

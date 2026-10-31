@@ -1,4 +1,4 @@
-import { describePlatforms, describeProblem, resolveLoadOrder, supportsPlatform } from '@noctis/plugin-core'
+import { describePlatforms, describeProblem, hostProblems, resolveLoadOrder, supportsPlatform } from '@noctis/plugin-core'
 import { shallowReactive } from 'vue'
 import { platform } from '../native'
 import { writeLog } from './log'
@@ -45,6 +45,12 @@ async function cleanRun(plugin: InstalledPlugin): Promise<boolean> {
     runStates[plugin.sha256] = 'failed'
     return false
   }
+  const unmet = hostProblems(plugin.id, plugin.metadata.requires, { libs: Object.keys(noctisNamespace().libs) })
+  if (unmet.length > 0) {
+    writeLog(plugin.id, 'error', `Not started: ${unmet.join('; ')}`)
+    runStates[plugin.sha256] = 'failed'
+    return false
+  }
   runStates[plugin.sha256] = 'starting'
   const api = new PluginAPI(plugin.id)
   const started = performance.now()
@@ -60,6 +66,23 @@ async function cleanRun(plugin: InstalledPlugin): Promise<boolean> {
   runStates[plugin.sha256] = 'running'
   writeLog(plugin.id, 'info', `Started in ${(performance.now() - started).toFixed(1)} ms`)
   return true
+}
+
+/**
+ * Why a plugin can't be turned on right now (other enabled plugins it needs or clashes
+ * with, things the app lacks), as sentences. Empty: go ahead.
+ */
+export function blockersOf(plugin: InstalledPlugin): string[] {
+  const others = installedPlugins.value.filter((item) => item.id !== plugin.id && isEnabled(item))
+  // The plugin goes last: when two clash, the one already running keeps running.
+  const { problems } = resolveLoadOrder([...others, plugin].map(({ id, metadata }) => ({ id, manifest: metadata })))
+  const messages = problems
+    .filter((problem) => problem.id === plugin.id)
+    .map((problem) => {
+      const installed = problem.kind === 'missing' && installedPlugins.value.some((item) => item.id === problem.dependency)
+      return installed ? `${plugin.metadata.name} needs ${problem.dependency} ${problem.wanted}; turn it on first` : describeProblem(problem)
+    })
+  return [...messages, ...hostProblems(plugin.id, plugin.metadata.requires, { libs: Object.keys(noctisNamespace().libs) })]
 }
 
 /** Enable (and run) a plugin. Resolves to false if it failed to start. */

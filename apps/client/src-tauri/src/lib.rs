@@ -47,6 +47,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             auth::open_auth,
             auth::open_cookie_login,
+            auth::capture_web_response,
             files::offline_delete,
             files::offline_dir,
             files::offline_move,
@@ -77,5 +78,11 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building Noctis")
-        .run(|_app, _event| {});
+        .run(|_app, _event| {
+            // Clicking the Dock icon while the window is hidden (closed to the tray) brings it back.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { has_visible_windows: false, .. } = _event {
+                tray::show_window(_app);
+            }
+        });
 }

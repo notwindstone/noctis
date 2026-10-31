@@ -4,6 +4,7 @@ import { version as vueVersion } from 'vue'
 import AboutHero from '../components/settings/AboutHero.vue'
 import SeedSwatches from '../components/settings/SeedSwatches.vue'
 import StorageMeter from '../components/settings/StorageMeter.vue'
+import { songCount } from '../format'
 import { clearHistory, clearSearchHistory, history, searchHistory } from '../library'
 import { navigate } from '../navigation'
 import { batch, batchPosition, cached, clearCache, clearDownloads, downloads, formatBytes, usage } from '../offline'
@@ -15,6 +16,8 @@ import {
   cacheEnabled,
   downloadConcurrency,
   downloadNotifications,
+  saveLiked,
+  type SaveLiked,
   contentCountry,
   contentLanguage,
   hapticsEnabled,
@@ -26,17 +29,20 @@ import {
   skipFailed,
   minimizeToTray,
   keepAwake,
+  liveBars,
   mediaControls,
   pauseHistory,
   persistentQueue,
   motion,
   playerArtworkColors,
+  showStreamInfo,
   previousRestart,
   pureBlack,
   type AudioQuality,
   type PreviousRestart,
 } from '../preferences'
 import { colorSource, effectiveColorSource, isDark, mode, supportsSystemColor, type ColorSource, type ThemeMode } from '../theme'
+import { analysisSupported } from '../analysis'
 import { language, languageName, languageOptions, languagePreference, t } from '../i18n'
 import { hasNoctisPlugin, isDesktop, platform } from '../native'
 import { notify } from '../snackbar'
@@ -90,14 +96,14 @@ const appearanceBlocks: SettingsBlock[] = [
         },
       },
       get value() {
-        return languagePreference.value === 'system' ? `${t('Use system language')} · ${languageName(language.value)}` : undefined
+        return languagePreference.value === 'system' ? `${t('Use system language')} • ${languageName(language.value)}` : undefined
       },
     },
   ]),
   group('tray', [
     {
       id: 'minimize-to-tray',
-      icon: 'tune',
+      icon: 'minimize',
       title: 'Minimize to tray',
       description: 'Closing the window keeps Noctis (and the music) running in the system tray',
       toggle: bool(minimizeToTray),
@@ -110,7 +116,7 @@ const appearanceBlocks: SettingsBlock[] = [
   group('motion', [
     {
       id: 'motion',
-      icon: 'tune',
+      icon: 'animation',
       title: 'Animations',
       description: 'Some systems switch animations off for every app; "Always on" keeps Noctis\'s',
       select: {
@@ -194,6 +200,13 @@ const appearanceBlocks: SettingsBlock[] = [
       title: 'Player colours from artwork',
       description: 'Tint the player with the colours of the album art',
       toggle: bool(playerArtworkColors),
+    },
+    {
+      id: 'stream-info',
+      icon: 'quality',
+      title: 'Show audio format',
+      description: 'Codec, bitrate, sampling rate and size under the artist in the player',
+      toggle: bool(showStreamInfo),
     },
   ]),
 ]
@@ -290,7 +303,7 @@ const playbackBlocks: SettingsBlock[] = [
     },
     {
       id: 'skip-shorter',
-      icon: 'next',
+      icon: 'timer',
       title: 'Leave out short songs',
       description: 'Autoplay and radios skip songs shorter than this',
       select: {
@@ -315,7 +328,7 @@ const playbackBlocks: SettingsBlock[] = [
     },
     {
       id: 'skip-longer',
-      icon: 'next',
+      icon: 'hourglass',
       title: 'Leave out long songs',
       description: 'Autoplay and radios skip songs longer than this: mixes, station recordings, hour-long uploads',
       select: {
@@ -379,6 +392,17 @@ const playbackBlocks: SettingsBlock[] = [
       title: 'Pause listening history',
       description: "Don't add songs to Recently played",
       toggle: bool(pauseHistory),
+    },
+    {
+      id: 'live-bars',
+      icon: 'equalizer',
+      title: 'Animate playing bars with the music',
+      get description() {
+        return analysisSupported
+          ? 'The bars next to the playing song move with the sound. Off: a looping animation. Streams the app can\'t read keep the looping one.'
+          : "This device can't read the audio, so the bars keep their looping animation."
+      },
+      toggle: bool(liveBars),
     },
     { id: 'haptics', icon: 'vibrate', title: 'Haptic feedback', description: 'A soft tap on touches', toggle: bool(hapticsEnabled) },
   ]),
@@ -477,7 +501,7 @@ const contentBlocks: SettingsBlock[] = [
     },
     {
       id: 'region',
-      icon: 'tune',
+      icon: 'flag',
       title: 'Region',
       select: {
         title: 'Content region',
@@ -491,7 +515,7 @@ const contentBlocks: SettingsBlock[] = [
       },
     },
   ]),
-  { id: 'note', type: 'note', text: 'Language and region are passed to services: they change what YouTube Music recommends and the language of titles and labels.' },
+  { id: 'note', type: 'note', text: 'Language and region are passed to services: they change what services recommend and the language of titles and labels.' },
 ]
 
 /* ------------------------------------------------------------------ *
@@ -510,8 +534,10 @@ const storageBlocks: SettingsBlock[] = [
       icon: 'downloaded',
       title: 'Downloaded songs',
       get value() {
-        return `${downloads.value.length} songs · ${formatBytes(usage.value.download)}`
+        return `${songCount(downloads.value.length)} • ${formatBytes(usage.value.download)}`
       },
+      chevron: true,
+      onClick: () => navigate({ name: 'collection', id: 'downloads' }),
     },
     {
       id: 'download-queue',
@@ -520,11 +546,12 @@ const storageBlocks: SettingsBlock[] = [
       get value() {
         return batch.active ? batchPosition.value : 'Nothing downloading'
       },
+      chevron: true,
       onClick: () => navigate({ name: 'downloads-queue' }),
     },
     {
       id: 'download-concurrency',
-      icon: 'downloading',
+      icon: 'layers',
       title: 'Simultaneous downloads',
       description: 'Some services allow fewer at once, or space them out, to avoid being rate limited.',
       select: {
@@ -539,6 +566,26 @@ const storageBlocks: SettingsBlock[] = [
       },
     },
     {
+      id: 'save-liked',
+      icon: 'favorite',
+      title: 'Save liked songs',
+      description: 'What happens to a song when you like it. "Download" also queues the songs you already liked; "Cache" is trimmed with the rest of the cache.',
+      select: {
+        title: 'Save liked songs',
+        options: [
+          { value: 'off', label: 'Off' },
+          { value: 'cache', label: 'Cache them' },
+          { value: 'download', label: 'Download them' },
+        ],
+        get value() {
+          return saveLiked.value
+        },
+        set(value) {
+          saveLiked.value = value as SaveLiked
+        },
+      },
+    },
+    {
       id: 'download-notifications',
       icon: 'notifications',
       title: 'Download notifications',
@@ -546,21 +593,8 @@ const storageBlocks: SettingsBlock[] = [
       toggle: bool(downloadNotifications),
     },
     {
-      id: 'remove-downloads',
-      icon: 'delete',
-      title: 'Remove all downloads',
-      destructive: true,
-      get disabled() {
-        return downloads.value.length === 0
-      },
-      onClick: () => ask('Remove all downloads?', 'Downloaded songs will need a connection again.', clearDownloads),
-    },
-  ]),
-  { id: 'cache-header', type: 'header', title: 'Cache' },
-  group('cache', [
-    {
       id: 'download-max-length',
-      icon: 'download',
+      icon: 'hourglass',
       title: 'Longest song to download',
       description: 'Longer ones (mixes, hour-long uploads) are left out when downloading a playlist or album. Stations never are.',
       select: {
@@ -587,6 +621,19 @@ const storageBlocks: SettingsBlock[] = [
       },
     },
     {
+      id: 'remove-downloads',
+      icon: 'delete',
+      title: 'Remove all downloads',
+      destructive: true,
+      get disabled() {
+        return downloads.value.length === 0
+      },
+      onClick: () => ask('Remove all downloads?', 'Downloaded songs will need a connection again.', clearDownloads),
+    },
+  ]),
+  { id: 'cache-header', type: 'header', title: 'Cache' },
+  group('cache', [
+    {
       id: 'save-as-files',
       icon: 'folder',
       title: 'Save as regular files',
@@ -596,7 +643,7 @@ const storageBlocks: SettingsBlock[] = [
     },
     {
       id: 'show-files',
-      icon: 'folder',
+      icon: 'open-external',
       title: 'Show saved files',
       description: 'Open the folder with downloaded and cached songs',
       hidden: !isDesktop,
@@ -651,7 +698,7 @@ const storageBlocks: SettingsBlock[] = [
       icon: 'delete',
       title: 'Clear cache',
       get value() {
-        return `${cached.value.length} songs · ${formatBytes(usage.value.cache)}`
+        return `${songCount(cached.value.length)} • ${formatBytes(usage.value.cache)}`
       },
       get disabled() {
         return cached.value.length === 0
@@ -666,7 +713,7 @@ const storageBlocks: SettingsBlock[] = [
       icon: 'history',
       title: 'Clear listening history',
       get value() {
-        return `${history.value.length} songs`
+        return songCount(history.value.length)
       },
       get disabled() {
         return history.value.length === 0
@@ -700,10 +747,10 @@ const aboutBlocks: SettingsBlock[] = [
   { id: 'hero', type: 'component', component: AboutHero },
   group('about', [
     { id: 'version', icon: 'info', title: 'Version', value: '0.2.0' },
-    { id: 'built-with', icon: 'code', title: 'Built with', value: `Vue ${vueVersion}${shell[platform] ? ` · ${shell[platform]}` : ''}` },
-    { id: 'platform', icon: 'tune', title: 'Platform', value: platformLabel },
+    { id: 'built-with', icon: 'code', title: 'Built with', value: `Vue ${vueVersion}${shell[platform] ? ` • ${shell[platform]}` : ''}` },
+    { id: 'platform', icon: 'devices', title: 'Platform', value: platformLabel },
   ]),
-  { id: 'note', type: 'note', text: 'Noctis is not affiliated with YouTube or Google. Inspired by InnerTune and ArchiveTune.' },
+  { id: 'note', type: 'note', text: "Noctis isn't affiliated with the services its plugins connect to." },
 ]
 
 export function defineBuiltInSettings() {

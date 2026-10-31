@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { C } from '../plugins/components'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { songCount } from '../format'
 import { tap } from '../haptics'
 import { t } from '../i18n'
@@ -14,7 +14,8 @@ import { readPageCache, writePageCache } from '../pageCache'
 import { usePullToRefresh } from '../pullToRefresh'
 import { notify } from '../snackbar'
 import { getLibraryArtists, getLibraryPlaylists } from '../services/api'
-import { servicesReady } from '../services/registry'
+import { LOCAL_PLAYLISTS, newPlaylistDialog, localPlaylistItems, ownPlaylists, playlistsVersion } from '../playlists'
+import { activeService, servicesReady } from '../services/registry'
 import {
   account,
   hasAccounts,
@@ -31,6 +32,8 @@ import type { Artist, Item, Playlist } from '../models'
 defineProps<{ route: Route; screenKey: number; isRoot: boolean }>()
 
 const playlists = ref<Playlist[]>([])
+/** Playlists on the server when another service's library is the one shown. */
+const serverLists = ref<Playlist[]>([])
 const artists = ref<Artist[]>([])
 const loadingRemote = ref(false)
 const remoteError = ref(false)
@@ -64,6 +67,17 @@ async function loadRemote(quiet = false) {
   }
 }
 
+async function loadServerLists() {
+  // The server's own library already lists them when it is the active service.
+  serverLists.value = activeService.value?.id === 'noctis-server' ? [] : (await ownPlaylists(false)).filter((item) => item.source !== LOCAL_PLAYLISTS)
+}
+
+// Playlists made, changed or deleted anywhere.
+watch(playlistsVersion, () => {
+  void loadServerLists()
+  if (activeService.value?.id === 'noctis-server') void loadRemote(true)
+})
+
 const { pull, dragging, refreshing } = usePullToRefresh(root, () =>
   Promise.all([loadRemote(true), signedIn.value ? refreshAccount() : null]),
 )
@@ -71,6 +85,7 @@ const { pull, dragging, refreshing } = usePullToRefresh(root, () =>
 // Open straight into the last fetched library; only fetch when there's nothing cached.
 onMounted(async () => {
   void loadLocalLibrary()
+  void loadServerLists()
   await servicesReady()
   const cached = hasLibrary.value ? readPageCache<LibraryCache>('library') : null
   if (cached) {
@@ -98,19 +113,20 @@ const tiles = computed<Tile[]>(() => [
   {
     id: 'liked',
     title: 'Liked songs',
-    detail: syncsLikes.value ? 'Synced' : songCount(likedSongs.value.length),
+    // Kept by the service: its count isn't known here, but where they are is.
+    detail: syncsLikes.value ? `On ${serviceName.value}` : songCount(likedSongs.value.length),
     icon: 'favorite',
   },
   {
     id: 'downloads',
     title: 'Downloads',
-    detail: downloads.value.length ? `${songCount(downloads.value.length)} · ${formatBytes(usage.value.download)}` : 'Offline songs',
+    detail: downloads.value.length ? `${songCount(downloads.value.length)} • ${formatBytes(usage.value.download)}` : 'Offline songs',
     icon: 'downloaded',
   },
   {
     id: 'cached',
     title: 'Cached',
-    detail: cached.value.length ? `${songCount(cached.value.length)} · ${formatBytes(usage.value.cache)}` : 'Played songs',
+    detail: cached.value.length ? `${songCount(cached.value.length)} • ${formatBytes(usage.value.cache)}` : 'Played songs',
     icon: 'cached',
   },
   {
@@ -134,7 +150,9 @@ const tiles = computed<Tile[]>(() => [
 
 const recent = computed<Item[]>(() => history.value.slice(0, 12).map((entry) => entry.song))
 
-const shownPlaylists = computed(() => playlists.value.slice(0, 20))
+const allPlaylists = computed(() => [...localPlaylistItems.value, ...serverLists.value, ...playlists.value])
+const shownPlaylists = computed(() => allPlaylists.value.slice(0, 20))
+const showSignIn = computed(() => !hasLibrary.value && hasAccounts.value && !signedIn.value)
 const artistCards = computed(() => shownArtists.value.slice(0, 20))
 const playlistActions = useItemDelegation(() => ({ items: shownPlaylists.value }))
 const artistActions = useItemDelegation(() => ({ items: artistCards.value }))
@@ -171,17 +189,20 @@ function open(id: CollectionId) {
       </button>
     </div>
 
-    <section v-if="hasLibrary || (hasAccounts && !signedIn)" class="home-section">
+    <section class="home-section">
       <header class="section-header">
-        <button class="section-header-text" type="button" :disabled="!hasLibrary" @click="navigate({ name: 'library-playlists' })">
+        <button class="section-header-text" type="button" @click="navigate({ name: 'library-playlists' })">
           <span class="section-title type-title-large">{{ t('Your playlists') }}</span>
         </button>
-        <button v-if="hasLibrary" class="icon-button" type="button" aria-label="All playlists" @click="navigate({ name: 'library-playlists' })">
+        <button class="icon-button" type="button" aria-label="New playlist" @click="newPlaylistDialog()">
+          <C.MIcon name="add" />
+        </button>
+        <button class="icon-button" type="button" aria-label="All playlists" @click="navigate({ name: 'library-playlists' })">
           <C.MIcon name="chevron-right" />
         </button>
       </header>
 
-      <div v-if="!hasLibrary" class="signin-card">
+      <div v-if="showSignIn" class="signin-card">
         <C.MIcon name="playlist" :size="28" />
         <div>
           <p class="type-title-medium">Your {{ serviceName }} playlists</p>
@@ -189,16 +210,18 @@ function open(id: CollectionId) {
         </div>
         <button class="filled-button" type="button" @click="openAccountSettings">Sign in</button>
       </div>
-      <div v-else-if="loadingRemote && playlists.length === 0" class="skeleton-row" aria-hidden="true">
+      <div v-if="loadingRemote && allPlaylists.length === 0" class="skeleton-row" aria-hidden="true">
         <span v-for="card in 4" :key="card" class="skeleton skeleton-card" />
       </div>
-      <p v-else-if="remoteError" class="type-body-medium muted section-note">
+      <p v-else-if="remoteError && allPlaylists.length === 0" class="type-body-medium muted section-note">
         Couldn't load your playlists. <button class="link-button" type="button" @click="loadRemote()">Retry</button>
       </p>
-      <div v-else-if="playlists.length > 0" class="carousel" @click="playlistActions.onClick" @contextmenu="playlistActions.onContextmenu">
-        <C.ItemCard v-for="(item, index) in shownPlaylists" :key="item.id" :item="item" :index="index" />
+      <div v-else-if="allPlaylists.length > 0" class="carousel" @click="playlistActions.onClick" @contextmenu="playlistActions.onContextmenu">
+        <C.ItemCard v-for="(item, index) in shownPlaylists" :key="`${item.source}:${item.id}`" :item="item" :index="index" />
       </div>
-      <p v-else class="type-body-medium muted section-note">You haven't saved any playlists yet.</p>
+      <p v-else-if="!showSignIn" class="type-body-medium muted section-note">
+        You haven't made any playlists yet. <button class="link-button" type="button" @click="newPlaylistDialog()">Create one</button>
+      </p>
     </section>
 
     <section v-if="shownArtists.length > 0" class="home-section">

@@ -2,10 +2,12 @@ import { shallowReactive, type Component } from 'vue'
 import BottomNav from '../components/BottomNav.vue'
 import BottomSheet from '../components/BottomSheet.vue'
 import CollectionView from '../components/CollectionView.vue'
+import ContextMenu from '../components/ContextMenu.vue'
 import DialogShell from '../components/DialogShell.vue'
 import ItemCard from '../components/ItemCard.vue'
 import ItemRow from '../components/ItemRow.vue'
 import MIcon from '../components/MIcon.vue'
+import PlayingBars from '../components/PlayingBars.vue'
 import PlayerArt from '../components/PlayerArt.vue'
 import PlayerSheet from '../components/PlayerSheet.vue'
 import PlayFromDialog from '../components/PlayFromDialog.vue'
@@ -51,6 +53,7 @@ type BuiltInComponentName =
   | 'SheetHost'
   | 'SnackbarHost'
   | 'BottomSheet'
+  | 'ContextMenu'
   | 'DialogShell'
   | 'PlayFromDialog'
   | 'QueuePanel'
@@ -65,6 +68,7 @@ type BuiltInComponentName =
   | 'StateView'
   | 'RefreshIndicator'
   | 'MIcon'
+  | 'PlayingBars'
   | 'Thumb'
   | 'HomeScreen'
   | 'LibraryScreen'
@@ -91,6 +95,7 @@ const BUILT_IN: Record<BuiltInComponentName, Component> = {
   SnackbarHost,
   // Sheets, dialogs and the player's parts
   BottomSheet,
+  ContextMenu,
   DialogShell,
   PlayFromDialog,
   QueuePanel,
@@ -106,6 +111,7 @@ const BUILT_IN: Record<BuiltInComponentName, Component> = {
   StateView,
   RefreshIndicator,
   MIcon,
+  PlayingBars,
   Thumb,
   // Screens
   HomeScreen,

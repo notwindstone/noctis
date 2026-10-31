@@ -18,7 +18,7 @@ const info = computed(() => (account.value?.signedIn ? account.value.info : null
     <span class="account-card-text">
       <strong class="type-title-medium">{{ entry.name }}</strong>
       <span class="type-body-medium muted">
-        {{ account?.signedIn ? `Signed in${info?.name ? ` as ${info.name}` : ''}${info?.handle ? ` · ${info.handle}` : ''}` : (account?.signInDescription ?? 'Not signed in') }}
+        {{ account?.signedIn ? `Signed in${info?.name ? ` as ${info.name}` : ''}${info?.handle ? ` • ${info.handle}` : ''}` : (account?.signInDescription ?? 'Not signed in') }}
       </span>
     </span>
   </div>

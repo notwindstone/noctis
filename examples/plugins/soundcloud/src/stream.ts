@@ -101,7 +101,7 @@ export async function resolveStream({ song, efficient }: { song: Song; efficient
     // Label releases often come only DRM-encrypted (cbc/ctr-encrypted-hls); the player
     // then tries the song's other sources, e.g. YouTube Music found by searching.
     const encrypted = transcodings.some((item) => /encrypted/.test(item.format.protocol))
-    throw new StreamError(encrypted ? 'SoundCloud only has this track DRM-protected, which Noctis can’t play' : 'SoundCloud has no stream this app can play for this track')
+    throw new StreamError(encrypted ? "SoundCloud only has this track DRM-protected, which Noctis can't play" : 'SoundCloud has no stream this app can play for this track')
   }
 
   const { url } = await api<{ url: string }>(transcoding.url, { track_authorization: track.track_authorization })

@@ -3,6 +3,7 @@ import type { WebPoSignalOutput } from 'bgutils-js/shared-types'
 import { buildURL, getHeaders } from 'bgutils-js/utils'
 import { WebPoMinter } from 'bgutils-js/webpo'
 import { ytFetch } from './http'
+import { Noctis } from './host'
 
 /**
  * Proof-of-origin tokens for googlevideo, minted the way YouTube's web player does it:
@@ -22,7 +23,13 @@ interface MinterState {
 
 let state: Promise<MinterState> | null = null
 
-async function createMinter(): Promise<MinterState> {
+/**
+ * `ownUserAgent`: send the page's own User-Agent with the request instead of the
+ * Chrome one ytFetch fakes. BotGuard folds navigator.userAgent into its snapshot, and
+ * desktop webviews (WebView2 is Edge) differ from it, so a mismatch is the first
+ * suspect when Google answers with no integrity token.
+ */
+async function createMinter(ownUserAgent: boolean): Promise<MinterState> {
   const challenge = await getChallenge({ fetchFunction: ytFetch, requestKey: REQUEST_KEY, useYouTubeAPI: false })
 
   const interpreter = challenge.interpreterJavascript?.privateDoNotAccessOrElseSafeScriptWrappedValue
@@ -42,7 +49,7 @@ async function createMinter(): Promise<MinterState> {
 
   const response = await ytFetch(buildURL('GenerateIT', true), {
     method: 'POST',
-    headers: getHeaders(),
+    headers: ownUserAgent ? { ...getHeaders(), 'user-agent': navigator.userAgent } : getHeaders(),
     body: JSON.stringify([REQUEST_KEY, botguardResponse]),
   })
   if (!response.ok) throw new Error(`Integrity token request failed (${response.status})`)
@@ -52,7 +59,10 @@ async function createMinter(): Promise<MinterState> {
     number,
     string,
   ]
-  if (!integrityToken) throw new Error('No integrity token')
+  if (!integrityToken) {
+    Noctis.writeLog('youtube-music', 'warn', `No integrity token (own user agent ${ownUserAgent}, page UA ${navigator.userAgent}): ${JSON.stringify([integrityToken, estimatedTtlSecs, mintRefreshThreshold]).slice(0, 200)}`)
+    throw new Error('No integrity token')
+  }
 
   const minter = await WebPoMinter.create(
     { integrityToken, estimatedTtlSecs, mintRefreshThreshold, websafeFallbackToken },
@@ -68,7 +78,7 @@ async function minter(): Promise<WebPoMinter> {
     const current = await state.catch(() => null)
     if (current && Date.now() < current.refreshAt) return current.minter
   }
-  state = createMinter()
+  state = createMinter(false).catch(() => createMinter(true))
   state.catch(() => {
     state = null
   })
@@ -89,4 +99,14 @@ export async function poTokenFor(videoId: string): Promise<string> {
 /** Warm up BotGuard early so the first song doesn't wait for it. */
 export function prewarmPoToken() {
   void minter().catch(() => {})
+}
+
+/** A token bound to a video as bytes, for SABR streams (they ask for one when the cold-start token runs out). */
+export async function poTokenBytesFor(binding: string): Promise<Uint8Array> {
+  try {
+    return await (await minter()).mint(binding)
+  } catch (error) {
+    state = null
+    return (await minter()).mint(binding)
+  }
 }

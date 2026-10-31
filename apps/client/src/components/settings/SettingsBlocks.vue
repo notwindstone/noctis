@@ -55,7 +55,8 @@ function activate(row: SettingsRowDef) {
 <template>
   <template v-for="block in blocks" :key="block.id">
     <template v-if="!block.hidden">
-      <div v-if="block.type === 'group'" class="settings-group">
+      <!-- A group with nothing to show would still leave its gap. -->
+      <div v-if="block.type === 'group'" v-show="block.rows.some((row) => !row.hidden)" class="settings-group">
         <template v-for="row in block.rows" :key="row.id">
           <component
             :is="C.SettingsRow"

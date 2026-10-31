@@ -17,6 +17,7 @@ import {
   scanWholeDevice,
 } from '../local/library'
 import { defineSection, group, type SettingsRowDef } from '../plugins/rows'
+import { songCount } from '../format'
 import { navigate } from '../navigation'
 import { notify } from '../snackbar'
 import { confirm } from '../ui'
@@ -44,7 +45,7 @@ async function add() {
     if (!added) return
     const { folder, merged } = added
     const songs = localTracks.value.filter((track) => track.folderId === folder.id).length
-    notify(`Added "${folder.name}": ${songs} songs${merged.length > 0 ? `, including ${merged.map((item) => `"${item.name}"`).join(', ')}` : ''}`)
+    notify(`Added "${folder.name}": ${songCount(songs)}${merged.length > 0 ? `, including ${merged.map((item) => `"${item.name}"`).join(', ')}` : ''}`)
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error))
   }
@@ -59,7 +60,7 @@ export function defineLocalSettings() {
       get description() {
         const count = localTracks.value.length
         if (count === 0) return nativeMusic ? 'Play the music on this device' : 'Play music from folders on this device'
-        return `${count} ${count === 1 ? 'song' : 'songs'} on this device`
+        return `${songCount(count)} on this device`
       },
     },
     [
@@ -84,7 +85,7 @@ export function defineLocalSettings() {
           title: 'Scan the whole device',
           get description() {
             if (musicPermission.value !== 'granted') return PERMISSION_TEXT[musicPermission.value] ?? PERMISSION_TEXT.prompt
-            return scanning.value ? `Scanning… ${scanCount.value} songs` : `${deviceCount()} songs found by Android's media index`
+            return scanning.value ? `Scanning… ${scanCount.value} songs` : `${songCount(deviceCount())} found by Android's media index`
           },
           toggle: {
             get value() {
@@ -111,7 +112,7 @@ export function defineLocalSettings() {
       group('actions', [
         {
           id: 'add',
-          icon: 'add-link',
+          icon: 'new-folder',
           get title() {
             return hasMediaStore ? 'Add a folder the scan missed' : 'Add a folder'
           },
@@ -134,7 +135,7 @@ export function defineLocalSettings() {
           get disabled() {
             return scanning.value
           },
-          onClick: () => void scanLocalLibrary().then((count) => notify(`${count} songs on this device`)),
+          onClick: () => void scanLocalLibrary().then((count) => notify(`${songCount(count)} on this device`)),
         },
       ]),
       {
@@ -161,7 +162,7 @@ export function defineLocalSettings() {
           title: folder.name,
           get description() {
             const count = localTracks.value.filter((track) => track.folderId === folder.id).length
-            return `${count} ${count === 1 ? 'song' : 'songs'}${folder.scanned ? ` · scanned ${new Date(folder.scanned).toLocaleDateString()}` : ''}`
+            return `${count} ${count === 1 ? 'song' : 'songs'}${folder.scanned ? ` • scanned ${new Date(folder.scanned).toLocaleDateString()}` : ''}`
           },
           onClick: () =>
             confirm({

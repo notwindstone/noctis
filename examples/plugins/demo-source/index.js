@@ -203,7 +203,7 @@ const DemoScreen = {
     const { C } = Noctis
     return () =>
       h('div', { class: 'screen' }, [
-        h(C.TopAppBar, { title: 'Demo', back: true }),
+        h(C.TopAppBar, { title: 'Demo screen', back: true, revealAt: 48 }),
         h('h1', { class: 'screen-headline type-headline-medium' }, 'Demo screen'),
         h('p', { class: 'settings-note type-body-medium muted' }, 'This screen comes from a plugin, rendered with the app\'s own Vue and components.'),
         h(
